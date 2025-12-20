@@ -17,6 +17,11 @@ COPY . .
 RUN mkdir -p public
 
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Set API_URL for build-time rewrite configuration
+ARG API_URL=http://api:8000
+ENV API_URL=${API_URL}
+
 RUN npm run build
 
 # Production image

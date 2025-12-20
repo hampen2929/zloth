@@ -26,10 +26,10 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        - API_URL=http://api:8000
     ports:
       - "3000:3000"
-    environment:
-      - API_URL=http://api:8000
     depends_on:
       - api
     restart: unless-stopped
