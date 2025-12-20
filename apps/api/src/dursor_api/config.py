@@ -33,8 +33,13 @@ class Settings(BaseSettings):
     # Security
     encryption_key: str = Field(default="")  # Must be set in production
 
-    # GitHub
+    # GitHub (Legacy PAT - deprecated, use GitHub App instead)
     github_pat: str = Field(default="")
+
+    # GitHub App Configuration
+    github_app_id: str = Field(default="")
+    github_app_private_key: str = Field(default="")  # Base64 encoded
+    github_app_installation_id: str = Field(default="")
 
     def model_post_init(self, __context) -> None:
         """Set derived paths after initialization."""

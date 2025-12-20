@@ -7,6 +7,7 @@ import type {
   ModelProfileCreate,
   Repo,
   RepoCloneRequest,
+  RepoSelectRequest,
   Task,
   TaskCreate,
   TaskDetail,
@@ -20,6 +21,9 @@ import type {
   PRCreated,
   PRUpdate,
   PRUpdated,
+  GitHubAppConfig,
+  GitHubAppConfigSave,
+  GitHubRepository,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -80,7 +84,29 @@ export const reposApi = {
       body: JSON.stringify(data),
     }),
 
+  select: (data: RepoSelectRequest) =>
+    fetchApi<Repo>('/repos/select', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   get: (id: string) => fetchApi<Repo>(`/repos/${id}`),
+};
+
+// GitHub
+export const githubApi = {
+  getConfig: () => fetchApi<GitHubAppConfig>('/github/config'),
+
+  saveConfig: (data: GitHubAppConfigSave) =>
+    fetchApi<GitHubAppConfig>('/github/config', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  listRepos: () => fetchApi<GitHubRepository[]>('/github/repos'),
+
+  listBranches: (owner: string, repo: string) =>
+    fetchApi<string[]>(`/github/repos/${owner}/${repo}/branches`),
 };
 
 // Tasks

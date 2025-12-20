@@ -1,47 +1,59 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { reposApi, tasksApi, modelsApi } from '@/lib/api';
-import type { ModelProfile } from '@/types';
+import RepoSelector from '@/components/RepoSelector';
 import useSWR from 'swr';
 
 export default function HomePage() {
   const router = useRouter();
-  const [repoUrl, setRepoUrl] = useState('');
+  const [selectedRepo, setSelectedRepo] = useState<{
+    owner: string;
+    repo: string;
+    branch: string;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { data: models } = useSWR('models', modelsApi.list);
 
+  const handleRepoSelect = useCallback((owner: string, repo: string, branch: string) => {
+    setSelectedRepo({ owner, repo, branch });
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!repoUrl.trim()) return;
+    if (!selectedRepo) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      // Clone the repository
-      const repo = await reposApi.clone({ repo_url: repoUrl.trim() });
+      // Clone/select the repository
+      const repo = await reposApi.select({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+      });
 
       // Create a new task
       const task = await tasksApi.create({
         repo_id: repo.id,
-        title: `Task for ${repo.repo_url}`,
+        title: `Task for ${selectedRepo.owner}/${selectedRepo.repo}`,
       });
 
       // Navigate to the task page
       router.push(`/tasks/${task.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clone repository');
+      setError(err instanceof Error ? err.message : 'Failed to select repository');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto py-8">
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold mb-4">dursor</h1>
         <p className="text-gray-400 text-lg">
@@ -59,11 +71,9 @@ export default function HomePage() {
         </h2>
         {!models || models.length === 0 ? (
           <p className="text-gray-500 text-sm">
-            No models configured.{' '}
-            <a href="/settings" className="text-blue-400 hover:underline">
-              Add API keys
-            </a>{' '}
-            to get started.
+            No models configured. Open{' '}
+            <span className="text-blue-400">Settings</span>{' '}
+            from the sidebar to add API keys.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -79,24 +89,11 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Repository Input */}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Repository Selection */}
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label
-            htmlFor="repo-url"
-            className="block text-sm font-medium text-gray-300 mb-2"
-          >
-            GitHub Repository URL
-          </label>
-          <input
-            id="repo-url"
-            type="text"
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="https://github.com/owner/repo"
-            className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-500"
-            disabled={loading}
-          />
+          <h2 className="text-lg font-medium text-white mb-4">Select Repository</h2>
+          <RepoSelector onSelect={handleRepoSelect} disabled={loading} />
         </div>
 
         {error && (
@@ -107,53 +104,12 @@ export default function HomePage() {
 
         <button
           type="submit"
-          disabled={loading || !repoUrl.trim()}
+          disabled={loading || !selectedRepo}
           className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
         >
-          {loading ? 'Cloning Repository...' : 'Start New Task'}
+          {loading ? 'Setting up workspace...' : 'Start New Task'}
         </button>
       </form>
-
-      {/* Recent Tasks */}
-      <div className="mt-12">
-        <h2 className="text-lg font-medium mb-4">Recent Tasks</h2>
-        <RecentTasks />
-      </div>
-    </div>
-  );
-}
-
-function RecentTasks() {
-  const { data: tasks, error } = useSWR('tasks', () => tasksApi.list());
-
-  if (error) {
-    return (
-      <p className="text-gray-500 text-sm">Failed to load recent tasks.</p>
-    );
-  }
-
-  if (!tasks) {
-    return <p className="text-gray-500 text-sm">Loading...</p>;
-  }
-
-  if (tasks.length === 0) {
-    return <p className="text-gray-500 text-sm">No tasks yet.</p>;
-  }
-
-  return (
-    <div className="space-y-2">
-      {tasks.slice(0, 5).map((task) => (
-        <a
-          key={task.id}
-          href={`/tasks/${task.id}`}
-          className="block p-4 bg-gray-900 hover:bg-gray-800 rounded-lg border border-gray-800 transition-colors"
-        >
-          <div className="font-medium">{task.title || 'Untitled Task'}</div>
-          <div className="text-sm text-gray-500 mt-1">
-            {new Date(task.updated_at).toLocaleString()}
-          </div>
-        </a>
-      ))}
     </div>
   );
 }

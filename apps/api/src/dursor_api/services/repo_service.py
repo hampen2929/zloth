@@ -7,16 +7,24 @@ from pathlib import Path
 import git
 
 from dursor_api.config import settings
-from dursor_api.domain.models import Repo, RepoCloneRequest
+from dursor_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
 from dursor_api.storage.dao import RepoDAO
+
+# Forward declaration for type hints
+GitHubService = None
 
 
 class RepoService:
     """Service for managing Git repositories."""
 
-    def __init__(self, dao: RepoDAO):
+    def __init__(self, dao: RepoDAO, github_service: "GitHubService | None" = None):
         self.dao = dao
         self.workspaces_dir = settings.workspaces_dir
+        self._github_service = github_service
+
+    def set_github_service(self, github_service: "GitHubService") -> None:
+        """Set the GitHub service (for dependency injection)."""
+        self._github_service = github_service
 
     async def clone(self, data: RepoCloneRequest) -> Repo:
         """Clone a repository.
@@ -75,6 +83,58 @@ class RepoService:
             Repo object or None if not found.
         """
         return await self.dao.find_by_url(repo_url)
+
+    async def select(self, data: RepoSelectRequest, github_service: "GitHubService") -> Repo:
+        """Select and clone a repository by owner/repo name using GitHub App auth.
+
+        Args:
+            data: Selection request with owner, repo, and optional branch.
+            github_service: GitHub service for authenticated cloning.
+
+        Returns:
+            Repo object with clone information.
+        """
+        # Construct the repo URL
+        repo_url = f"https://github.com/{data.owner}/{data.repo}"
+
+        # Check if already cloned
+        existing = await self.find_by_url(repo_url)
+        if existing:
+            # Optionally update to the requested branch
+            if data.branch:
+                workspace_path = Path(existing.workspace_path)
+                if workspace_path.exists():
+                    repo = git.Repo(workspace_path)
+                    repo.git.checkout(data.branch)
+            return existing
+
+        # Get authenticated clone URL
+        clone_url = await github_service.clone_url(data.owner, data.repo)
+
+        # Generate unique workspace path
+        workspace_id = str(uuid.uuid4())
+        workspace_path = self.workspaces_dir / workspace_id
+
+        # Clone the repository
+        branch = data.branch or "main"
+        repo = git.Repo.clone_from(
+            clone_url,
+            workspace_path,
+            depth=1,
+            branch=branch,
+        )
+
+        # Get repository info
+        default_branch = repo.active_branch.name
+        latest_commit = repo.head.commit.hexsha
+
+        # Save to database (store public URL, not auth URL)
+        return await self.dao.create(
+            repo_url=repo_url,
+            default_branch=default_branch,
+            latest_commit=latest_commit,
+            workspace_path=str(workspace_path),
+        )
 
     async def update_workspace(self, repo_id: str) -> Repo | None:
         """Pull latest changes to workspace.

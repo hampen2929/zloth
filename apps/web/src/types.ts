@@ -165,3 +165,33 @@ export interface PRUpdated {
   url: string;
   latest_commit: string;
 }
+
+// GitHub App Configuration
+export interface GitHubAppConfig {
+  app_id: string | null;
+  installation_id: string | null;
+  is_configured: boolean;
+  source: 'env' | 'db' | null;
+}
+
+export interface GitHubAppConfigSave {
+  app_id: string;
+  private_key?: string;
+  installation_id: string;
+}
+
+// GitHub Repository (for selection by name)
+export interface GitHubRepository {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: string;
+  default_branch: string;
+  private: boolean;
+}
+
+export interface RepoSelectRequest {
+  owner: string;
+  repo: string;
+  branch?: string;
+}

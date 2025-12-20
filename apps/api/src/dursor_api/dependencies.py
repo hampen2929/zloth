@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from dursor_api.config import settings
 from dursor_api.services.crypto_service import CryptoService
+from dursor_api.services.github_service import GitHubService
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
 from dursor_api.services.run_service import RunService
@@ -100,3 +101,9 @@ async def get_pr_service() -> PRService:
     run_dao = await get_run_dao()
     repo_service = await get_repo_service()
     return PRService(pr_dao, task_dao, run_dao, repo_service)
+
+
+async def get_github_service() -> GitHubService:
+    """Get the GitHub service."""
+    db = await get_db()
+    return GitHubService(db)

@@ -2,9 +2,10 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.domain.models import Repo, RepoCloneRequest
-from dursor_api.dependencies import get_repo_service
+from dursor_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
+from dursor_api.dependencies import get_repo_service, get_github_service
 from dursor_api.services.repo_service import RepoService
+from dursor_api.services.github_service import GitHubService
 
 router = APIRouter(prefix="/repos", tags=["repos"])
 
@@ -19,6 +20,21 @@ async def clone_repo(
         return await repo_service.clone(data)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to clone: {str(e)}")
+
+
+@router.post("/select", response_model=Repo, status_code=201)
+async def select_repo(
+    data: RepoSelectRequest,
+    repo_service: RepoService = Depends(get_repo_service),
+    github_service: GitHubService = Depends(get_github_service),
+) -> Repo:
+    """Select and clone a repository by owner/repo name using GitHub App authentication."""
+    try:
+        return await repo_service.select(data, github_service)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to select repository: {str(e)}")
 
 
 @router.get("/{repo_id}", response_model=Repo)
