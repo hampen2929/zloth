@@ -2,9 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { reposApi, tasksApi, modelsApi } from '@/lib/api';
+import { reposApi, tasksApi } from '@/lib/api';
 import RepoSelector from '@/components/RepoSelector';
-import useSWR from 'swr';
 
 export default function HomePage() {
   const router = useRouter();
@@ -15,8 +14,6 @@ export default function HomePage() {
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const { data: models } = useSWR('models', modelsApi.list);
 
   const handleRepoSelect = useCallback((owner: string, repo: string, branch: string) => {
     setSelectedRepo({ owner, repo, branch });
@@ -62,31 +59,6 @@ export default function HomePage() {
         <p className="text-gray-500 mt-2">
           Compare outputs from different models. Choose the best. Create PRs.
         </p>
-      </div>
-
-      {/* Model Status */}
-      <div className="mb-8 p-4 bg-gray-900 rounded-lg border border-gray-800">
-        <h2 className="text-sm font-medium text-gray-400 mb-3">
-          Configured Models
-        </h2>
-        {!models || models.length === 0 ? (
-          <p className="text-gray-500 text-sm">
-            No models configured. Open{' '}
-            <span className="text-blue-400">Settings</span>{' '}
-            from the sidebar to add API keys.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {models.map((model) => (
-              <span
-                key={model.id}
-                className="px-2 py-1 bg-gray-800 rounded text-sm text-gray-300"
-              >
-                {model.display_name || model.model_name}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Repository Selection */}
