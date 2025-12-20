@@ -307,8 +307,11 @@ function GitHubAppTab() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // When source is 'env', the config is read-only
+  const isEnvConfig = config?.source === 'env';
+
   useEffect(() => {
-    if (config) {
+    if (config && config.source !== 'env') {
       setAppId(config.app_id || '');
       setInstallationId(config.installation_id || '');
       // Private key is not returned for security
@@ -378,79 +381,118 @@ function GitHubAppTab() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            App ID
-          </label>
-          <input
-            type="text"
-            value={appId}
-            onChange={(e) => setAppId(e.target.value)}
-            placeholder="123456"
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Find this in your GitHub App settings page
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Private Key
-          </label>
-          <textarea
-            value={privateKey}
-            onChange={(e) => setPrivateKey(e.target.value)}
-            placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
-            rows={4}
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            {config?.is_configured
-              ? 'Leave blank to keep existing key. Paste new key to update.'
-              : 'Paste the private key generated from your GitHub App'}
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Installation ID
-          </label>
-          <input
-            type="text"
-            value={installationId}
-            onChange={(e) => setInstallationId(e.target.value)}
-            placeholder="12345678"
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Find this in your organization's installed apps settings
-          </p>
-        </div>
-
-        {saveError && (
-          <div className="p-3 bg-red-900/30 border border-red-800 rounded text-red-400 text-sm">
-            {saveError}
+      {/* Environment variables display (read-only) */}
+      {isEnvConfig && (
+        <div className="space-y-4 mb-6">
+          <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-300 mb-3">Configuration from Environment Variables</h4>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-400">App ID</span>
+                <span className="font-mono text-sm text-white bg-gray-700 px-2 py-1 rounded">
+                  {config?.app_id_masked || '***'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-400">Private Key</span>
+                <span className={`text-sm px-2 py-1 rounded ${
+                  config?.has_private_key
+                    ? 'text-green-400 bg-green-900/30'
+                    : 'text-red-400 bg-red-900/30'
+                }`}>
+                  {config?.has_private_key ? 'Configured' : 'Not set'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-400">Installation ID</span>
+                <span className="font-mono text-sm text-white bg-gray-700 px-2 py-1 rounded">
+                  {config?.installation_id_masked || '***'}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-3">
+              To modify these values, update your .env file and restart the application.
+            </p>
           </div>
-        )}
-
-        {success && (
-          <div className="p-3 bg-green-900/30 border border-green-800 rounded text-green-400 text-sm">
-            Configuration saved successfully!
-          </div>
-        )}
-
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={loading || !appId || !installationId}
-            className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded font-medium transition-colors"
-          >
-            {loading ? 'Saving...' : 'Save Configuration'}
-          </button>
         </div>
-      </form>
+      )}
+
+      {/* Manual configuration form (only when not using env) */}
+      {!isEnvConfig && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              App ID
+            </label>
+            <input
+              type="text"
+              value={appId}
+              onChange={(e) => setAppId(e.target.value)}
+              placeholder="123456"
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Find this in your GitHub App settings page
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Private Key
+            </label>
+            <textarea
+              value={privateKey}
+              onChange={(e) => setPrivateKey(e.target.value)}
+              placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
+              rows={4}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {config?.is_configured
+                ? 'Leave blank to keep existing key. Paste new key to update.'
+                : 'Paste the private key generated from your GitHub App'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Installation ID
+            </label>
+            <input
+              type="text"
+              value={installationId}
+              onChange={(e) => setInstallationId(e.target.value)}
+              placeholder="12345678"
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Find this in your organization's installed apps settings
+            </p>
+          </div>
+
+          {saveError && (
+            <div className="p-3 bg-red-900/30 border border-red-800 rounded text-red-400 text-sm">
+              {saveError}
+            </div>
+          )}
+
+          {success && (
+            <div className="p-3 bg-green-900/30 border border-green-800 rounded text-green-400 text-sm">
+              Configuration saved successfully!
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={loading || !appId || !installationId}
+              className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded font-medium transition-colors"
+            >
+              {loading ? 'Saving...' : 'Save Configuration'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {/* Environment variable info */}
       <div className="mt-6 p-4 bg-gray-800/30 border border-gray-700 rounded-lg">

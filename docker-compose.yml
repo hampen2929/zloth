@@ -13,19 +13,23 @@ services:
     environment:
       - DURSOR_HOST=0.0.0.0
       - DURSOR_PORT=8000
-      - DURSOR_DEBUG=false
+      - DURSOR_DEBUG=${DURSOR_DEBUG:-false}
+      - DURSOR_LOG_LEVEL=${DURSOR_LOG_LEVEL:-INFO}
       - DURSOR_ENCRYPTION_KEY=${DURSOR_ENCRYPTION_KEY}
-      - DURSOR_GITHUB_PAT=${DURSOR_GITHUB_PAT}
+      - DURSOR_GITHUB_PAT=${DURSOR_GITHUB_PAT:-}
+      - DURSOR_GITHUB_APP_ID=${DURSOR_GITHUB_APP_ID:-}
+      - DURSOR_GITHUB_APP_PRIVATE_KEY=${DURSOR_GITHUB_APP_PRIVATE_KEY:-}
+      - DURSOR_GITHUB_APP_INSTALLATION_ID=${DURSOR_GITHUB_APP_INSTALLATION_ID:-}
     restart: unless-stopped
 
   web:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        - API_URL=http://api:8000
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://api:8000
     depends_on:
       - api
     restart: unless-stopped

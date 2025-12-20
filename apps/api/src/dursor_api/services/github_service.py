@@ -23,6 +23,14 @@ class GitHubService:
         self.db = db
         self._token_cache: dict[str, tuple[str, float]] = {}
 
+    def _mask_value(self, value: str, visible_chars: int = 4) -> str:
+        """Mask a value, showing only the last few characters."""
+        if not value:
+            return ""
+        if len(value) <= visible_chars:
+            return "*" * len(value)
+        return "*" * (len(value) - visible_chars) + value[-visible_chars:]
+
     async def get_config(self) -> GitHubAppConfig:
         """Get GitHub App configuration status."""
         # Check environment variables first
@@ -33,19 +41,25 @@ class GitHubService:
         ):
             return GitHubAppConfig(
                 app_id=settings.github_app_id,
+                app_id_masked=self._mask_value(settings.github_app_id),
                 installation_id=settings.github_app_installation_id,
+                installation_id_masked=self._mask_value(settings.github_app_installation_id),
+                has_private_key=True,
                 is_configured=True,
                 source="env",
             )
 
         # Check database
         row = await self.db.fetch_one(
-            "SELECT app_id, installation_id FROM github_app_config WHERE id = 1"
+            "SELECT app_id, installation_id, private_key FROM github_app_config WHERE id = 1"
         )
         if row and row["app_id"] and row["installation_id"]:
             return GitHubAppConfig(
                 app_id=row["app_id"],
+                app_id_masked=self._mask_value(row["app_id"]),
                 installation_id=row["installation_id"],
+                installation_id_masked=self._mask_value(row["installation_id"]),
+                has_private_key=bool(row.get("private_key")),
                 is_configured=True,
                 source="db",
             )

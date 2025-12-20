@@ -169,7 +169,10 @@ export interface PRUpdated {
 // GitHub App Configuration
 export interface GitHubAppConfig {
   app_id: string | null;
+  app_id_masked: string | null;
   installation_id: string | null;
+  installation_id_masked: string | null;
+  has_private_key: boolean;
   is_configured: boolean;
   source: 'env' | 'db' | null;
 }

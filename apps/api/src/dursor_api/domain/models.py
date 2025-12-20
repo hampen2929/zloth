@@ -300,7 +300,10 @@ class GitHubAppConfig(BaseModel):
     """GitHub App configuration status."""
 
     app_id: str | None = None
+    app_id_masked: str | None = None  # Masked version for display
     installation_id: str | None = None
+    installation_id_masked: str | None = None  # Masked version for display
+    has_private_key: bool = False
     is_configured: bool = False
     source: str | None = None  # 'env' or 'db'
 

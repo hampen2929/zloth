@@ -24,11 +24,11 @@ class Settings(BaseSettings):
 
     # Paths
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent)
-    workspaces_dir: Path = Field(default=None)
-    data_dir: Path = Field(default=None)
+    workspaces_dir: Path | None = Field(default=None)
+    data_dir: Path | None = Field(default=None)
 
     # Database
-    database_url: str = Field(default=None)
+    database_url: str | None = Field(default=None)
 
     # Security
     encryption_key: str = Field(default="")  # Must be set in production
