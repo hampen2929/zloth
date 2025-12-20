@@ -85,3 +85,13 @@ CREATE TABLE IF NOT EXISTS prs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_prs_task ON prs(task_id);
+
+-- GitHub App configuration (singleton table)
+CREATE TABLE IF NOT EXISTS github_app_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Singleton constraint
+    app_id TEXT NOT NULL,
+    private_key TEXT NOT NULL,              -- Base64 encoded private key
+    installation_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

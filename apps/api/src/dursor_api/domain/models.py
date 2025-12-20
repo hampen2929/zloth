@@ -289,3 +289,44 @@ class PRUpdated(BaseModel):
 
     url: str
     latest_commit: str
+
+
+# ============================================================
+# GitHub App Configuration
+# ============================================================
+
+
+class GitHubAppConfig(BaseModel):
+    """GitHub App configuration status."""
+
+    app_id: str | None = None
+    installation_id: str | None = None
+    is_configured: bool = False
+    source: str | None = None  # 'env' or 'db'
+
+
+class GitHubAppConfigSave(BaseModel):
+    """Request for saving GitHub App configuration."""
+
+    app_id: str
+    private_key: str | None = None  # Optional for updates
+    installation_id: str
+
+
+class GitHubRepository(BaseModel):
+    """GitHub repository information."""
+
+    id: int
+    name: str
+    full_name: str
+    owner: str
+    default_branch: str
+    private: bool
+
+
+class RepoSelectRequest(BaseModel):
+    """Request for selecting a repository by name."""
+
+    owner: str
+    repo: str
+    branch: str | None = None
