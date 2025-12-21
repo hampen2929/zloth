@@ -9,7 +9,7 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   {
     value: 'openai',
     label: 'OpenAI',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini'],
+    models: ['gpt-5-mini'],
   },
   {
     value: 'anthropic',

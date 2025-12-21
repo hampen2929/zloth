@@ -66,12 +66,20 @@ class LLMClient:
             all_messages.append({"role": "system", "content": system})
         all_messages.extend(messages)
 
-        response = await self._openai_client.chat.completions.create(
-            model=self.config.model_name,
-            messages=all_messages,
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-        )
+        # gpt-5-mini uses max_completion_tokens and doesn't support temperature
+        if self.config.model_name == "gpt-5-mini":
+            response = await self._openai_client.chat.completions.create(
+                model=self.config.model_name,
+                messages=all_messages,
+                max_completion_tokens=self.config.max_tokens,
+            )
+        else:
+            response = await self._openai_client.chat.completions.create(
+                model=self.config.model_name,
+                messages=all_messages,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            )
 
         return response.choices[0].message.content or ""
 
