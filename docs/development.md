@@ -247,9 +247,13 @@ ALTER TABLE runs ADD COLUMN new_column TEXT;
 | `DURSOR_DEBUG` | Debug mode | `false` |
 | `DURSOR_LOG_LEVEL` | Log level | `INFO` |
 | `DURSOR_ENCRYPTION_KEY` | Encryption key | Required |
-| `DURSOR_GITHUB_PAT` | GitHub PAT | Required (for PR creation) |
+| `DURSOR_GITHUB_APP_ID` | GitHub App ID | Optional* |
+| `DURSOR_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (base64) | Optional* |
+| `DURSOR_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Optional* |
 | `DURSOR_WORKSPACES_DIR` | Workspaces path | `./workspaces` |
 | `DURSOR_DATA_DIR` | Data directory | `./data` |
+
+*GitHub App configuration can also be set via the Settings UI.
 
 ## Troubleshooting
 
@@ -274,13 +278,13 @@ A: Delete `data/dursor.db` and restart
 
 A:
 1. Verify repository URL is correct
-2. For private repos, check PAT has permissions
+2. For private repos, ensure the GitHub App is installed on the repository
 
 **Q: Cannot create PR**
 
 A:
-1. Check `DURSOR_GITHUB_PAT` is set
-2. Verify PAT has `repo` scope
+1. Configure GitHub App in Settings or via environment variables
+2. Verify the GitHub App has `Contents` (read & write) and `Pull requests` (read & write) permissions
 3. Check push permission to repository
 
 ## Performance

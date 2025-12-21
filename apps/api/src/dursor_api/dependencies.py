@@ -100,7 +100,8 @@ async def get_pr_service() -> PRService:
     task_dao = await get_task_dao()
     run_dao = await get_run_dao()
     repo_service = await get_repo_service()
-    return PRService(pr_dao, task_dao, run_dao, repo_service)
+    github_service = await get_github_service()
+    return PRService(pr_dao, task_dao, run_dao, repo_service, github_service)
 
 
 async def get_github_service() -> GitHubService:

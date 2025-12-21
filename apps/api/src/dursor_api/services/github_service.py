@@ -265,3 +265,48 @@ class GitHubService:
             raise ValueError("GitHub App not configured")
 
         return f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
+
+    async def get_auth_url(self, owner: str, repo: str) -> str:
+        """Get authenticated URL for git push operations.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+
+        Returns:
+            Authenticated git URL.
+        """
+        return await self.clone_url(owner, repo)
+
+    async def create_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        title: str,
+        head: str,
+        base: str,
+        body: str | None = None,
+    ) -> dict:
+        """Create a Pull Request via GitHub API.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            title: PR title.
+            head: Head branch name.
+            base: Base branch name.
+            body: PR body (optional).
+
+        Returns:
+            GitHub API response as dict containing 'number' and 'html_url'.
+        """
+        return await self._github_request(
+            "POST",
+            f"/repos/{owner}/{repo}/pulls",
+            json={
+                "title": title,
+                "body": body or "",
+                "head": head,
+                "base": base,
+            },
+        )
