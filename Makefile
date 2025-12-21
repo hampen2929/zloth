@@ -7,9 +7,12 @@ build:
 log:
 	docker compose logs -f
 
+venv:
+	uv venv
+
 # Local development - install dependencies
 install-api:
-	cd apps/api && pip install -e ".[dev]"
+	cd apps/api && uv pip install -e ".[dev]"
 
 install-web:
 	cd apps/web && npm install
