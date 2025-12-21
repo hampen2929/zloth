@@ -1,10 +1,58 @@
 """Configuration for dursor API."""
 
+import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class EnvModelConfig(BaseModel):
+    """Model configuration loaded from environment variables."""
+
+    provider: str
+    model_name: str
+    api_key: str
+    display_name: str | None = None
+
+
+def _parse_env_models() -> list[EnvModelConfig]:
+    """Parse model configurations from environment variables.
+
+    Supports format:
+        DURSOR_MODEL_1_PROVIDER=openai
+        DURSOR_MODEL_1_MODEL_NAME=gpt-4o
+        DURSOR_MODEL_1_API_KEY=sk-xxx
+        DURSOR_MODEL_1_DISPLAY_NAME=GPT-4o (optional)
+
+    Returns:
+        List of model configurations.
+    """
+    models: list[EnvModelConfig] = []
+    index = 1
+
+    while True:
+        prefix = f"DURSOR_MODEL_{index}_"
+        provider = os.environ.get(f"{prefix}PROVIDER")
+        model_name = os.environ.get(f"{prefix}MODEL_NAME")
+        api_key = os.environ.get(f"{prefix}API_KEY")
+
+        if not provider or not model_name or not api_key:
+            break
+
+        display_name = os.environ.get(f"{prefix}DISPLAY_NAME")
+        models.append(
+            EnvModelConfig(
+                provider=provider.lower(),
+                model_name=model_name,
+                api_key=api_key,
+                display_name=display_name,
+            )
+        )
+        index += 1
+
+    return models
 
 
 class Settings(BaseSettings):
@@ -50,6 +98,11 @@ class Settings(BaseSettings):
         # Ensure directories exist
         self.workspaces_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def env_models(self) -> list[EnvModelConfig]:
+        """Get model configurations from environment variables."""
+        return _parse_env_models()
 
 
 settings = Settings()
