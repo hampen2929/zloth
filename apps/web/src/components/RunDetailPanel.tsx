@@ -4,6 +4,21 @@ import { useState } from 'react';
 import { prsApi } from '@/lib/api';
 import type { Run } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
+import { Button } from './ui/Button';
+import { Input, Textarea } from './ui/Input';
+import { useToast } from './ui/Toast';
+import { cn } from '@/lib/utils';
+import {
+  DocumentTextIcon,
+  CodeBracketIcon,
+  CommandLineIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ClockIcon,
+  ArrowPathIcon,
+  ArrowTopRightOnSquareIcon,
+  DocumentDuplicateIcon,
+} from '@heroicons/react/24/outline';
 
 interface RunDetailPanelProps {
   run: Run;
@@ -12,6 +27,12 @@ interface RunDetailPanelProps {
 }
 
 type Tab = 'summary' | 'diff' | 'logs';
+
+const tabConfig: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'summary', label: 'Summary', icon: <DocumentTextIcon className="w-4 h-4" /> },
+  { id: 'diff', label: 'Diff', icon: <CodeBracketIcon className="w-4 h-4" /> },
+  { id: 'logs', label: 'Logs', icon: <CommandLineIcon className="w-4 h-4" /> },
+];
 
 export function RunDetailPanel({
   run,
@@ -24,14 +45,15 @@ export function RunDetailPanel({
   const [prBody, setPRBody] = useState('');
   const [creating, setCreating] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const { success, error } = useToast();
 
   const handleCreatePR = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prTitle.trim()) return;
 
     setCreating(true);
-    setError(null);
+    setFormError(null);
 
     try {
       const result = await prsApi.create(taskId, {
@@ -41,86 +63,124 @@ export function RunDetailPanel({
       });
       setPRResult(result);
       onPRCreated();
+      success('Pull request created successfully!');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create PR');
+      const message = err instanceof Error ? err.message : 'Failed to create PR';
+      setFormError(message);
+      error(message);
     } finally {
       setCreating(false);
     }
   };
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'summary', label: 'Summary' },
-    { id: 'diff', label: 'Diff' },
-    { id: 'logs', label: 'Logs' },
-  ];
+  const getStatusBadge = () => {
+    switch (run.status) {
+      case 'succeeded':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400">
+            <CheckCircleIcon className="w-3.5 h-3.5" />
+            Completed
+          </span>
+        );
+      case 'failed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400">
+            <ExclamationTriangleIcon className="w-3.5 h-3.5" />
+            Failed
+          </span>
+        );
+      case 'running':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">
+            <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+            Running
+          </span>
+        );
+      case 'queued':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-gray-500/20 text-gray-400">
+            <ClockIcon className="w-3.5 h-3.5" />
+            Queued
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
       {/* Header */}
-      <div className="p-3 border-b border-gray-800 flex items-center justify-between">
-        <div>
-          <h2 className="font-medium">{run.model_name}</h2>
-          <div className="text-xs text-gray-500">{run.provider}</div>
+      <div className="p-4 border-b border-gray-800">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-100">{run.model_name}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-gray-500">{run.provider}</span>
+              {getStatusBadge()}
+            </div>
+          </div>
+          {run.status === 'succeeded' && run.patch && !prResult && (
+            <Button
+              variant="success"
+              size="sm"
+              onClick={() => setShowPRForm(!showPRForm)}
+            >
+              {showPRForm ? 'Cancel' : 'Create PR'}
+            </Button>
+          )}
         </div>
-        {run.status === 'succeeded' && run.patch && (
-          <button
-            onClick={() => setShowPRForm(!showPRForm)}
-            className="px-3 py-1 bg-green-600 hover:bg-green-700 rounded text-sm transition-colors"
-          >
-            Create PR
-          </button>
-        )}
       </div>
 
       {/* PR Form */}
       {showPRForm && (
-        <div className="p-3 border-b border-gray-800 bg-gray-800/50">
+        <div className="p-4 border-b border-gray-800 bg-gray-800/30 animate-in fade-in duration-200">
           {prResult ? (
-            <div className="text-center py-2">
-              <p className="text-green-400 mb-2">PR created successfully!</p>
+            <div className="flex flex-col items-center text-center py-4">
+              <CheckCircleIcon className="w-10 h-10 text-green-400 mb-3" />
+              <p className="text-green-400 font-medium mb-2">PR created successfully!</p>
               <a
                 href={prResult.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-400 hover:underline"
+                className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors"
               >
                 View PR on GitHub
+                <ArrowTopRightOnSquareIcon className="w-4 h-4" />
               </a>
             </div>
           ) : (
             <form onSubmit={handleCreatePR} className="space-y-3">
-              <input
-                type="text"
+              <Input
                 value={prTitle}
                 onChange={(e) => setPRTitle(e.target.value)}
                 placeholder="PR title"
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                error={formError || undefined}
               />
-              <textarea
+              <Textarea
                 value={prBody}
                 onChange={(e) => setPRBody(e.target.value)}
                 placeholder="PR description (optional)"
                 rows={2}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              {error && (
-                <p className="text-red-400 text-xs">{error}</p>
-              )}
               <div className="flex gap-2">
-                <button
+                <Button
                   type="submit"
-                  disabled={creating || !prTitle.trim()}
-                  className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 rounded text-sm transition-colors"
+                  variant="success"
+                  size="sm"
+                  disabled={!prTitle.trim()}
+                  isLoading={creating}
                 >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-                <button
+                  Create PR
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setShowPRForm(false)}
-                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm transition-colors"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </form>
           )}
@@ -128,42 +188,51 @@ export function RunDetailPanel({
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-800">
-        {tabs.map((tab) => (
+      <div className="flex border-b border-gray-800" role="tablist">
+        {tabConfig.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm transition-colors ${
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset',
               activeTab === tab.id
-                ? 'text-white border-b-2 border-blue-500'
-                : 'text-gray-400 hover:text-white'
-            }`}
+                ? 'text-blue-400 border-b-2 border-blue-500 -mb-[1px]'
+                : 'text-gray-400 hover:text-gray-300'
+            )}
           >
+            {tab.icon}
             {tab.label}
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4" role="tabpanel">
         {run.status === 'running' && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-gray-400">Running...</p>
-            </div>
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-gray-400 font-medium">Running...</p>
+            <p className="text-gray-500 text-sm mt-1">This may take a few moments</p>
           </div>
         )}
 
         {run.status === 'queued' && (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-gray-400">Waiting in queue...</p>
+          <div className="flex flex-col items-center justify-center h-full">
+            <ClockIcon className="w-10 h-10 text-gray-500 mb-4" />
+            <p className="text-gray-400 font-medium">Waiting in queue...</p>
+            <p className="text-gray-500 text-sm mt-1">Your run will start soon</p>
           </div>
         )}
 
         {run.status === 'failed' && (
-          <div className="p-4 bg-red-900/30 border border-red-800 rounded-lg">
-            <h3 className="font-medium text-red-400 mb-2">Execution Failed</h3>
+          <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
+              <h3 className="font-medium text-red-400">Execution Failed</h3>
+            </div>
             <p className="text-sm text-red-300">{run.error}</p>
           </div>
         )}
@@ -171,16 +240,21 @@ export function RunDetailPanel({
         {run.status === 'succeeded' && (
           <>
             {activeTab === 'summary' && (
-              <div>
-                <h3 className="font-medium mb-3">Summary</h3>
-                <p className="text-gray-300">{run.summary}</p>
+              <div className="space-y-6">
+                <div>
+                  <h3 className="font-medium text-gray-200 mb-2">Summary</h3>
+                  <p className="text-gray-300 text-sm leading-relaxed">{run.summary}</p>
+                </div>
 
-                {run.warnings.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium text-yellow-400 mb-2">
-                      Warnings
-                    </h4>
-                    <ul className="list-disc list-inside text-sm text-yellow-300">
+                {run.warnings && run.warnings.length > 0 && (
+                  <div className="p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <ExclamationTriangleIcon className="w-4 h-4 text-yellow-400" />
+                      <h4 className="text-sm font-medium text-yellow-400">
+                        Warnings ({run.warnings.length})
+                      </h4>
+                    </div>
+                    <ul className="list-disc list-inside text-sm text-yellow-300 space-y-1">
                       {run.warnings.map((w, i) => (
                         <li key={i}>{w}</li>
                       ))}
@@ -188,26 +262,27 @@ export function RunDetailPanel({
                   </div>
                 )}
 
-                {run.files_changed.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium mb-2">
-                      Files Changed ({run.files_changed.length})
-                    </h4>
-                    <ul className="space-y-1">
+                {run.files_changed && run.files_changed.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <DocumentDuplicateIcon className="w-4 h-4 text-gray-400" />
+                      <h4 className="text-sm font-medium text-gray-300">
+                        Files Changed ({run.files_changed.length})
+                      </h4>
+                    </div>
+                    <ul className="space-y-2">
                       {run.files_changed.map((f, i) => (
                         <li
                           key={i}
-                          className="text-sm text-gray-400 flex items-center justify-between"
+                          className="flex items-center justify-between p-2 bg-gray-800/50 rounded text-sm"
                         >
-                          <span className="font-mono">{f.path}</span>
-                          <span className="text-xs">
-                            <span className="text-green-400">
-                              +{f.added_lines}
-                            </span>
-                            {' / '}
-                            <span className="text-red-400">
-                              -{f.removed_lines}
-                            </span>
+                          <span className="font-mono text-gray-300 truncate mr-2">
+                            {f.path}
+                          </span>
+                          <span className="flex-shrink-0 text-xs font-medium">
+                            <span className="text-green-400">+{f.added_lines}</span>
+                            <span className="text-gray-600 mx-1">/</span>
+                            <span className="text-red-400">-{f.removed_lines}</span>
                           </span>
                         </li>
                       ))}
@@ -222,15 +297,17 @@ export function RunDetailPanel({
             )}
 
             {activeTab === 'logs' && (
-              <div className="font-mono text-xs space-y-1">
-                {run.logs.length === 0 && (
-                  <p className="text-gray-500">No logs available.</p>
+              <div className="font-mono text-xs space-y-1 bg-gray-800/50 rounded-lg p-3">
+                {!run.logs || run.logs.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No logs available.</p>
+                ) : (
+                  run.logs.map((log, i) => (
+                    <div key={i} className="text-gray-400 leading-relaxed">
+                      <span className="text-gray-600 mr-2 select-none">{i + 1}</span>
+                      {log}
+                    </div>
+                  ))
                 )}
-                {run.logs.map((log, i) => (
-                  <div key={i} className="text-gray-400">
-                    {log}
-                  </div>
-                ))}
               </div>
             )}
           </>
