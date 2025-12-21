@@ -38,15 +38,28 @@ export default function HomePage() {
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [repoSearch, setRepoSearch] = useState('');
 
+  // Refs for dropdown containers
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const repoDropdownRef = useRef<HTMLDivElement>(null);
+  const branchDropdownRef = useRef<HTMLDivElement>(null);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => {
-      setShowModelDropdown(false);
-      setShowRepoDropdown(false);
-      setShowBranchDropdown(false);
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(target)) {
+        setShowModelDropdown(false);
+      }
+      if (repoDropdownRef.current && !repoDropdownRef.current.contains(target)) {
+        setShowRepoDropdown(false);
+      }
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(target)) {
+        setShowBranchDropdown(false);
+      }
     };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // Data fetching
@@ -176,7 +189,7 @@ export default function HomePage() {
           {/* Bottom Bar */}
           <div className="px-4 pb-4 flex items-center justify-between">
             {/* Model Selector */}
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <div className="relative" ref={modelDropdownRef}>
               <button
                 onClick={() => setShowModelDropdown(!showModelDropdown)}
                 className={cn(
@@ -274,7 +287,7 @@ export default function HomePage() {
         {/* Repository and Branch Selection */}
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
           {/* Repository Selector */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <div className="relative" ref={repoDropdownRef}>
             <button
               onClick={() => {
                 setShowRepoDropdown(!showRepoDropdown);
@@ -305,7 +318,6 @@ export default function HomePage() {
                       'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                     )}
                     autoFocus
-                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
                 <div className="max-h-60 overflow-y-auto">
@@ -346,7 +358,7 @@ export default function HomePage() {
           </div>
 
           {/* Branch Selector */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <div className="relative" ref={branchDropdownRef}>
             <button
               onClick={() => {
                 if (selectedRepo) {
