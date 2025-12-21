@@ -5,7 +5,6 @@ import useSWR, { mutate } from 'swr';
 import { tasksApi, runsApi, prsApi, modelsApi } from '@/lib/api';
 import type { Run, RunStatus, ModelProfile } from '@/types';
 import { ChatPanel } from '@/components/ChatPanel';
-import { RunsPanel } from '@/components/RunsPanel';
 import { RunDetailPanel } from '@/components/RunDetailPanel';
 
 interface PageProps {
@@ -58,7 +57,7 @@ export default function TaskPage({ params }: PageProps) {
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-4">
       {/* Left Panel: Chat + Model Selection */}
-      <div className="w-1/3 flex flex-col">
+      <div className="w-1/2 flex flex-col">
         <ChatPanel
           taskId={taskId}
           messages={task.messages}
@@ -67,17 +66,8 @@ export default function TaskPage({ params }: PageProps) {
         />
       </div>
 
-      {/* Middle Panel: Run List */}
-      <div className="w-1/4 flex flex-col">
-        <RunsPanel
-          runs={runs || []}
-          selectedRunId={selectedRunId}
-          onSelectRun={setSelectedRunId}
-        />
-      </div>
-
       {/* Right Panel: Run Details */}
-      <div className="w-5/12 flex flex-col">
+      <div className="w-1/2 flex flex-col">
         {selectedRun ? (
           <RunDetailPanel
             run={selectedRun}
