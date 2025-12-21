@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from dursor_api.domain.models import PR, PRCreate, PRCreated, PRUpdate, PRUpdated
 from dursor_api.dependencies import get_pr_service
-from dursor_api.services.pr_service import PRService
+from dursor_api.services.pr_service import GitHubPermissionError, PRService
 
 router = APIRouter(tags=["prs"])
 
@@ -24,6 +24,8 @@ async def create_pr(
             branch=pr.branch,
             number=pr.number,
         )
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -42,6 +44,8 @@ async def update_pr(
             url=pr.url,
             latest_commit=pr.latest_commit,
         )
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -18,6 +18,12 @@ if TYPE_CHECKING:
     from dursor_api.services.github_service import GitHubService
 
 
+class GitHubPermissionError(Exception):
+    """Raised when GitHub App lacks required permissions."""
+
+    pass
+
+
 class PRService:
     """Service for managing Pull Requests."""
 
@@ -116,7 +122,20 @@ class PRService:
 
         # Push branch using GitHub App authentication
         auth_url = await self.github_service.get_auth_url(owner, repo_name)
-        repo.git.push(auth_url, branch_name)
+        try:
+            repo.git.push(auth_url, branch_name)
+        except git.exc.GitCommandError as e:
+            # Clean up: switch back to default branch and delete the created branch
+            repo.heads[repo_obj.default_branch].checkout()
+            repo.delete_head(branch_name, force=True)
+
+            if "403" in str(e) or "Write access" in str(e):
+                raise GitHubPermissionError(
+                    f"GitHub App lacks write access to {owner}/{repo_name}. "
+                    "Please ensure the GitHub App has 'Contents' permission set to 'Read and write' "
+                    "and is installed on this repository."
+                ) from e
+            raise
 
         # Create PR via GitHub API using GitHub App
         pr_data = await self.github_service.create_pull_request(
@@ -204,7 +223,16 @@ class PRService:
 
         # Push using GitHub App authentication
         auth_url = await self.github_service.get_auth_url(owner, repo_name)
-        repo.git.push(auth_url, pr.branch)
+        try:
+            repo.git.push(auth_url, pr.branch)
+        except git.exc.GitCommandError as e:
+            if "403" in str(e) or "Write access" in str(e):
+                raise GitHubPermissionError(
+                    f"GitHub App lacks write access to {owner}/{repo_name}. "
+                    "Please ensure the GitHub App has 'Contents' permission set to 'Read and write' "
+                    "and is installed on this repository."
+                ) from e
+            raise
 
         latest_commit = repo.head.commit.hexsha
 
