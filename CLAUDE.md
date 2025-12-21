@@ -196,9 +196,13 @@ docker compose down
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `DURSOR_ENCRYPTION_KEY` | API key encryption key | Yes |
-| `DURSOR_GITHUB_PAT` | GitHub PAT (for PR operations) | Yes |
+| `DURSOR_GITHUB_APP_ID` | GitHub App ID | Yes* |
+| `DURSOR_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (base64) | Yes* |
+| `DURSOR_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Yes* |
 | `DURSOR_DEBUG` | Debug mode | No |
 | `DURSOR_LOG_LEVEL` | Log level | No |
+
+*GitHub App can be configured via environment variables or through the Settings UI.
 
 ## Coding Conventions
 
@@ -218,7 +222,7 @@ docker compose down
 ### v0.1 Scope Limitations
 1. **No command execution**: Shell commands disabled for security in v0.1
 2. **Patch output only**: Agents output only Unified diff format patches
-3. **GitHub PAT auth**: v0.1 uses PAT (GitHub App in v0.2)
+3. **GitHub App auth**: Uses GitHub App for authentication (requires Contents and Pull requests permissions)
 
 ### Security
 - API keys encrypted at rest using Fernet (AES-128)
@@ -229,7 +233,7 @@ docker compose down
 
 ### v0.2
 - [ ] Docker sandbox for command execution
-- [ ] GitHub App authentication
+- [x] GitHub App authentication
 - [ ] Review/Meta agent
 - [ ] PR comment-triggered re-runs
 
@@ -249,4 +253,4 @@ A: Try `docker compose build --no-cache`
 A: Check that `DURSOR_ENCRYPTION_KEY` is set
 
 **Q: Cannot create PR**
-A: Verify `DURSOR_GITHUB_PAT` has `repo` scope
+A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull requests` permissions.
