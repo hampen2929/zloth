@@ -4,11 +4,15 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Get project root directory (4 levels up from this file)
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+
+# Load .env file into os.environ
+load_dotenv(_PROJECT_ROOT / ".env")
 
 
 class EnvModelConfig(BaseModel):
