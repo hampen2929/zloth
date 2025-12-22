@@ -50,7 +50,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_task ON messages(task_id);
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL REFERENCES tasks(id),
-    model_id TEXT NOT NULL REFERENCES model_profiles(id),
+    model_id TEXT NOT NULL,          -- can be env model ID (not in model_profiles)
+    model_name TEXT NOT NULL,        -- denormalized for env model support
+    provider TEXT NOT NULL,          -- denormalized for env model support
     instruction TEXT NOT NULL,
     base_ref TEXT,
     status TEXT NOT NULL DEFAULT 'queued',  -- queued, running, succeeded, failed, canceled

@@ -294,28 +294,33 @@ class RunDAO:
         self,
         task_id: str,
         model_id: str,
+        model_name: str,
+        provider: Provider,
         instruction: str,
         base_ref: str | None = None,
     ) -> Run:
-        """Create a new run."""
+        """Create a new run.
+
+        Args:
+            task_id: Task ID.
+            model_id: Model profile ID (can be env model ID).
+            model_name: Model name (denormalized for env model support).
+            provider: Model provider (denormalized for env model support).
+            instruction: Task instruction.
+            base_ref: Base git ref.
+
+        Returns:
+            Created Run object.
+        """
         id = generate_id()
         created_at = now_iso()
 
-        # Get model info
-        cursor = await self.db.connection.execute(
-            "SELECT model_name, provider FROM model_profiles WHERE id = ?",
-            (model_id,),
-        )
-        model_row = await cursor.fetchone()
-        if not model_row:
-            raise ValueError(f"Model profile not found: {model_id}")
-
         await self.db.connection.execute(
             """
-            INSERT INTO runs (id, task_id, model_id, instruction, base_ref, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs (id, task_id, model_id, model_name, provider, instruction, base_ref, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (id, task_id, model_id, instruction, base_ref, RunStatus.QUEUED.value, created_at),
+            (id, task_id, model_id, model_name, provider.value, instruction, base_ref, RunStatus.QUEUED.value, created_at),
         )
         await self.db.connection.commit()
 
@@ -323,8 +328,8 @@ class RunDAO:
             id=id,
             task_id=task_id,
             model_id=model_id,
-            model_name=model_row["model_name"],
-            provider=Provider(model_row["provider"]),
+            model_name=model_name,
+            provider=provider,
             instruction=instruction,
             base_ref=base_ref,
             status=RunStatus.QUEUED,
@@ -334,12 +339,7 @@ class RunDAO:
     async def get(self, id: str) -> Run | None:
         """Get a run by ID."""
         cursor = await self.db.connection.execute(
-            """
-            SELECT r.*, m.model_name, m.provider
-            FROM runs r
-            JOIN model_profiles m ON r.model_id = m.id
-            WHERE r.id = ?
-            """,
+            "SELECT * FROM runs WHERE id = ?",
             (id,),
         )
         row = await cursor.fetchone()
@@ -350,13 +350,7 @@ class RunDAO:
     async def list(self, task_id: str) -> list[Run]:
         """List runs for a task."""
         cursor = await self.db.connection.execute(
-            """
-            SELECT r.*, m.model_name, m.provider
-            FROM runs r
-            JOIN model_profiles m ON r.model_id = m.id
-            WHERE r.task_id = ?
-            ORDER BY r.created_at DESC
-            """,
+            "SELECT * FROM runs WHERE task_id = ? ORDER BY created_at DESC",
             (task_id,),
         )
         rows = await cursor.fetchall()

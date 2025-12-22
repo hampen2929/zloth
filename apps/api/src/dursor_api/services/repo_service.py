@@ -1,5 +1,6 @@
 """Repository management service."""
 
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -26,6 +27,19 @@ class RepoService:
         """Set the GitHub service (for dependency injection)."""
         self._github_service = github_service
 
+    def _ensure_workspaces_writable(self) -> None:
+        """Ensure the workspaces directory exists and is writable.
+
+        Raises:
+            PermissionError: If the directory is not writable.
+        """
+        self.workspaces_dir.mkdir(parents=True, exist_ok=True)
+        if not os.access(self.workspaces_dir, os.W_OK):
+            raise PermissionError(
+                f"Workspaces directory '{self.workspaces_dir}' is not writable. "
+                f"Please fix permissions with: chmod -R u+w {self.workspaces_dir}"
+            )
+
     async def clone(self, data: RepoCloneRequest) -> Repo:
         """Clone a repository.
 
@@ -34,7 +48,13 @@ class RepoService:
 
         Returns:
             Repo object with clone information.
+
+        Raises:
+            PermissionError: If the workspaces directory is not writable.
         """
+        # Ensure workspaces directory is writable
+        self._ensure_workspaces_writable()
+
         # Generate unique workspace path
         workspace_id = str(uuid.uuid4())
         workspace_path = self.workspaces_dir / workspace_id
@@ -93,6 +113,9 @@ class RepoService:
 
         Returns:
             Repo object with clone information.
+
+        Raises:
+            PermissionError: If the workspaces directory is not writable.
         """
         # Construct the repo URL
         repo_url = f"https://github.com/{data.owner}/{data.repo}"
@@ -107,6 +130,9 @@ class RepoService:
                     repo = git.Repo(workspace_path)
                     repo.git.checkout(data.branch)
             return existing
+
+        # Ensure workspaces directory is writable before cloning
+        self._ensure_workspaces_writable()
 
         # Get authenticated clone URL
         clone_url = await github_service.clone_url(data.owner, data.repo)
@@ -167,7 +193,13 @@ class RepoService:
 
         Returns:
             Path to the working copy.
+
+        Raises:
+            PermissionError: If the workspaces directory is not writable.
         """
+        # Ensure workspaces directory is writable
+        self._ensure_workspaces_writable()
+
         source_path = Path(repo.workspace_path)
         target_path = self.workspaces_dir / f"run_{run_id}"
 

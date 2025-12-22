@@ -120,9 +120,17 @@ class Settings(BaseSettings):
         if self.database_url is None:
             self.database_url = f"sqlite+aiosqlite:///{self.data_dir}/dursor.db"
 
-        # Ensure directories exist
-        self.workspaces_dir.mkdir(parents=True, exist_ok=True)
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directories exist and are writable
+        for dir_path, dir_name in [
+            (self.workspaces_dir, "workspaces"),
+            (self.data_dir, "data"),
+        ]:
+            dir_path.mkdir(parents=True, exist_ok=True)
+            if not os.access(dir_path, os.W_OK):
+                raise PermissionError(
+                    f"Directory '{dir_path}' is not writable. "
+                    f"Please fix permissions with: chmod -R u+w {dir_path}"
+                )
 
     @property
     def env_models(self) -> list[EnvModelConfig]:

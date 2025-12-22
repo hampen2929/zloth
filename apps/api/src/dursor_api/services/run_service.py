@@ -104,15 +104,17 @@ class RunService:
 
         runs = []
         for model_id in data.model_ids:
-            # Verify model exists
+            # Verify model exists and get model info
             model = await self.model_service.get(model_id)
             if not model:
                 raise ValueError(f"Model not found: {model_id}")
 
-            # Create run record
+            # Create run record with denormalized model info
             run = await self.run_dao.create(
                 task_id=task_id,
                 model_id=model_id,
+                model_name=model.model_name,
+                provider=model.provider,
                 instruction=data.instruction,
                 base_ref=data.base_ref or repo.default_branch,
             )
