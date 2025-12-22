@@ -20,37 +20,54 @@ class EnvModelConfig(BaseModel):
 def _parse_env_models() -> list[EnvModelConfig]:
     """Parse model configurations from environment variables.
 
-    Supports format:
-        DURSOR_MODEL_1_PROVIDER=openai
-        DURSOR_MODEL_1_MODEL_NAME=gpt-4o
-        DURSOR_MODEL_1_API_KEY=sk-xxx
-        DURSOR_MODEL_1_DISPLAY_NAME=GPT-4o (optional)
+    Supports provider-specific format:
+        OPENAI_API_KEY, OPENAI_MODEL
+        ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+        GEMINI_API_KEY, GEMINI_MODEL
 
     Returns:
         List of model configurations.
     """
     models: list[EnvModelConfig] = []
-    index = 1
 
-    while True:
-        prefix = f"DURSOR_MODEL_{index}_"
-        provider = os.environ.get(f"{prefix}PROVIDER")
-        model_name = os.environ.get(f"{prefix}MODEL_NAME")
-        api_key = os.environ.get(f"{prefix}API_KEY")
-
-        if not provider or not model_name or not api_key:
-            break
-
-        display_name = os.environ.get(f"{prefix}DISPLAY_NAME")
+    # OpenAI
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    openai_model = os.environ.get("OPENAI_MODEL")
+    if openai_api_key and openai_model:
         models.append(
             EnvModelConfig(
-                provider=provider.lower(),
-                model_name=model_name,
-                api_key=api_key,
-                display_name=display_name,
+                provider="openai",
+                model_name=openai_model,
+                api_key=openai_api_key,
+                display_name=f"OpenAI {openai_model}",
             )
         )
-        index += 1
+
+    # Anthropic
+    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+    anthropic_model = os.environ.get("ANTHROPIC_MODEL")
+    if anthropic_api_key and anthropic_model:
+        models.append(
+            EnvModelConfig(
+                provider="anthropic",
+                model_name=anthropic_model,
+                api_key=anthropic_api_key,
+                display_name=f"Anthropic {anthropic_model}",
+            )
+        )
+
+    # Google (Gemini)
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+    gemini_model = os.environ.get("GEMINI_MODEL")
+    if gemini_api_key and gemini_model:
+        models.append(
+            EnvModelConfig(
+                provider="google",
+                model_name=gemini_model,
+                api_key=gemini_api_key,
+                display_name=f"Gemini {gemini_model}",
+            )
+        )
 
     return models
 
