@@ -155,29 +155,43 @@ function ModelsTab() {
 
       {models && models.length > 0 && (
         <div className="space-y-2 mt-4">
-          {models.map((model) => (
-            <div
-              key={model.id}
-              className="flex items-center justify-between p-4 bg-gray-800/30 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
-            >
-              <div>
-                <div className="font-medium text-gray-100">
-                  {model.display_name || model.model_name}
-                </div>
-                <div className="text-sm text-gray-500">
-                  {model.provider} / {model.model_name}
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleDelete(model.id, model.display_name || model.model_name)}
-                className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+          {models.map((model) => {
+            const isEnvModel = model.id.startsWith('env-');
+            return (
+              <div
+                key={model.id}
+                className="flex items-center justify-between p-4 bg-gray-800/30 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
               >
-                <TrashIcon className="w-4 h-4" />
-              </Button>
-            </div>
-          ))}
+                <div>
+                  <div className="font-medium text-gray-100 flex items-center gap-2">
+                    {model.display_name || model.model_name}
+                    {isEnvModel && (
+                      <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded">
+                        .env
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {model.provider} / {model.model_name}
+                  </div>
+                </div>
+                {isEnvModel ? (
+                  <span className="text-xs text-gray-500">
+                    Configured via .env
+                  </span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(model.id, model.display_name || model.model_name)}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

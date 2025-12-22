@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.domain.models import ModelProfile, ModelProfileCreate
 from dursor_api.dependencies import get_model_service
+from dursor_api.domain.models import ModelProfile, ModelProfileCreate
 from dursor_api.services.model_service import ModelService
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -44,6 +44,9 @@ async def delete_model(
     model_service: ModelService = Depends(get_model_service),
 ) -> None:
     """Delete a model profile."""
-    deleted = await model_service.delete(model_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Model not found")
+    try:
+        deleted = await model_service.delete(model_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Model not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

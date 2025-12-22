@@ -32,6 +32,14 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+// Generate unique ID with fallback for non-HTTPS environments
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 const toastIcons: Record<ToastType, React.ReactNode> = {
   success: <CheckCircleIcon className="h-5 w-5 text-green-400" />,
   error: <ExclamationCircleIcon className="h-5 w-5 text-red-400" />,
@@ -103,7 +111,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
-    const id = crypto.randomUUID();
+    const id = generateId();
     const duration = toast.duration ?? 5000;
 
     setToasts((prev) => [...prev, { ...toast, id }]);

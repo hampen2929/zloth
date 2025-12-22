@@ -1,13 +1,82 @@
 """Configuration for dursor API."""
 
+import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Get project root directory (4 levels up from this file)
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+
+# Load .env file into os.environ
+load_dotenv(_PROJECT_ROOT / ".env")
+
+
+class EnvModelConfig(BaseModel):
+    """Model configuration loaded from environment variables."""
+
+    provider: str
+    model_name: str
+    api_key: str
+    display_name: str | None = None
+
+
+def _parse_env_models() -> list[EnvModelConfig]:
+    """Parse model configurations from environment variables.
+
+    Supports provider-specific format:
+        OPENAI_API_KEY, OPENAI_MODEL
+        ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+        GEMINI_API_KEY, GEMINI_MODEL
+
+    Returns:
+        List of model configurations.
+    """
+    models: list[EnvModelConfig] = []
+
+    # OpenAI
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    openai_model = os.environ.get("OPENAI_MODEL")
+    if openai_api_key and openai_model:
+        models.append(
+            EnvModelConfig(
+                provider="openai",
+                model_name=openai_model,
+                api_key=openai_api_key,
+                display_name=f"OpenAI {openai_model}",
+            )
+        )
+
+    # Anthropic
+    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+    anthropic_model = os.environ.get("ANTHROPIC_MODEL")
+    if anthropic_api_key and anthropic_model:
+        models.append(
+            EnvModelConfig(
+                provider="anthropic",
+                model_name=anthropic_model,
+                api_key=anthropic_api_key,
+                display_name=f"Anthropic {anthropic_model}",
+            )
+        )
+
+    # Google (Gemini)
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+    gemini_model = os.environ.get("GEMINI_MODEL")
+    if gemini_api_key and gemini_model:
+        models.append(
+            EnvModelConfig(
+                provider="google",
+                model_name=gemini_model,
+                api_key=gemini_api_key,
+                display_name=f"Gemini {gemini_model}",
+            )
+        )
+
+    return models
 
 
 class Settings(BaseSettings):
@@ -17,6 +86,7 @@ class Settings(BaseSettings):
         env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         env_prefix="DURSOR_",
+        extra="ignore",  # Ignore non-DURSOR_ env vars like OPENAI_API_KEY
     )
 
     # Server
@@ -53,6 +123,11 @@ class Settings(BaseSettings):
         # Ensure directories exist
         self.workspaces_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def env_models(self) -> list[EnvModelConfig]:
+        """Get model configurations from environment variables."""
+        return _parse_env_models()
 
 
 settings = Settings()
