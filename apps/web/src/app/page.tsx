@@ -4,11 +4,10 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { reposApi, tasksApi, modelsApi, githubApi } from '@/lib/api';
-import type { GitHubRepository, ModelProfile } from '@/types';
-import { Button } from '@/components/ui/Button';
+import type { GitHubRepository } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
-import { getShortcutText, isModifierPressed } from '@/lib/platform';
+import { useShortcutText, isModifierPressed } from '@/lib/platform';
 import {
   FolderIcon,
   BoltIcon,
@@ -24,6 +23,7 @@ export default function HomePage() {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { error: toastError } = useToast();
+  const submitShortcut = useShortcutText('Enter');
 
   const [instruction, setInstruction] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
@@ -271,7 +271,7 @@ export default function HomePage() {
                     ? 'bg-white text-gray-900 hover:bg-gray-100'
                     : 'bg-gray-700 text-gray-500 cursor-not-allowed'
                 )}
-                title={`Submit (${getShortcutText('Enter')})`}
+                title={`Submit (${submitShortcut})`}
                 aria-label="Submit task"
               >
                 {loading ? (
@@ -411,7 +411,7 @@ export default function HomePage() {
 
         {/* Keyboard hint */}
         <div className="mt-3 text-xs text-gray-600 text-center">
-          {getShortcutText('Enter')} to submit
+          {submitShortcut} to submit
         </div>
 
         {/* Error message */}

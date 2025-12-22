@@ -7,6 +7,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Get project root directory (4 levels up from this file)
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+
 
 class EnvModelConfig(BaseModel):
     """Model configuration loaded from environment variables."""
@@ -76,7 +79,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         env_prefix="DURSOR_",
     )

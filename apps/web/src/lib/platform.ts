@@ -1,9 +1,11 @@
+import { useState, useEffect } from 'react';
+
 /**
  * Platform detection utilities
  */
 
 /**
- * Detect if the user is on macOS
+ * Detect if the user is on macOS (client-side only)
  */
 export function isMac(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -24,6 +26,23 @@ export function getPlatformModifier(): string {
 export function getShortcutText(key: string, modifier: boolean = true): string {
   if (!modifier) return key;
   return `${getPlatformModifier()}+${key}`;
+}
+
+/**
+ * Hook to get platform-specific shortcut text without hydration mismatch
+ * Returns a consistent default during SSR, then updates after mount
+ */
+export function useShortcutText(key: string, modifier: boolean = true): string {
+  const [shortcutText, setShortcutText] = useState(() => {
+    if (!modifier) return key;
+    return `Ctrl+${key}`; // Default for SSR
+  });
+
+  useEffect(() => {
+    setShortcutText(getShortcutText(key, modifier));
+  }, [key, modifier]);
+
+  return shortcutText;
 }
 
 /**

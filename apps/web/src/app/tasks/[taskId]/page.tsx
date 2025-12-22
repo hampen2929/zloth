@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import useSWR, { mutate } from 'swr';
 import { tasksApi, runsApi, modelsApi } from '@/lib/api';
 import { ChatPanel } from '@/components/ChatPanel';
@@ -9,11 +9,11 @@ import { MessageSkeleton, RunListSkeleton } from '@/components/ui/Skeleton';
 import { ExclamationCircleIcon, InboxIcon } from '@heroicons/react/24/outline';
 
 interface PageProps {
-  params: { taskId: string };
+  params: Promise<{ taskId: string }>;
 }
 
 export default function TaskPage({ params }: PageProps) {
-  const { taskId } = params;
+  const { taskId } = use(params);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<'chat' | 'runs'>('chat');
 
