@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi } from '@/lib/api';
+import { reposApi, tasksApi, modelsApi, githubApi, runsApi } from '@/lib/api';
 import type { GitHubRepository } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
@@ -132,8 +132,14 @@ export default function HomePage() {
         content: instruction,
       });
 
-      // Navigate to the task page (runs will be created there)
-      router.push(`/tasks/${task.id}?models=${selectedModels.join(',')}`);
+      // Create initial runs for selected models
+      await runsApi.create(task.id, {
+        instruction: instruction,
+        model_ids: selectedModels,
+      });
+
+      // Navigate to the task page
+      router.push(`/tasks/${task.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start task';
       setError(message);
@@ -425,7 +431,7 @@ export default function HomePage() {
         {loading && (
           <div className="mt-4 flex items-center justify-center gap-2 text-gray-400">
             <div className="w-4 h-4 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
-            <span>Setting up workspace...</span>
+            <span>Setting up workspace and starting runs...</span>
           </div>
         )}
       </div>
