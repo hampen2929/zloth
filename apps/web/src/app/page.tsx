@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi } from '@/lib/api';
+import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi } from '@/lib/api';
 import type { GitHubRepository, ExecutorType } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
@@ -67,10 +67,26 @@ export default function HomePage() {
   // Data fetching
   const { data: models } = useSWR('models', modelsApi.list);
   const { data: repos } = useSWR('github-repos', githubApi.listRepos);
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
     selectedRepo ? `branches-${selectedRepo.owner}-${selectedRepo.name}` : null,
     () => selectedRepo ? githubApi.listBranches(selectedRepo.owner, selectedRepo.name) : null
   );
+
+  // Apply default preferences when repos are loaded
+  useEffect(() => {
+    if (repos && preferences && !selectedRepo) {
+      if (preferences.default_repo_owner && preferences.default_repo_name) {
+        const defaultRepo = repos.find(
+          (r) => r.owner === preferences.default_repo_owner && r.name === preferences.default_repo_name
+        );
+        if (defaultRepo) {
+          setSelectedRepo(defaultRepo);
+          setSelectedBranch(preferences.default_branch || defaultRepo.default_branch);
+        }
+      }
+    }
+  }, [repos, preferences, selectedRepo]);
 
   // Set default branch when repo changes
   const handleRepoSelect = useCallback((repo: GitHubRepository) => {

@@ -18,6 +18,7 @@ from dursor_api.storage.dao import (
     RepoDAO,
     RunDAO,
     TaskDAO,
+    UserPreferencesDAO,
 )
 
 
@@ -119,3 +120,9 @@ async def get_github_service() -> GitHubService:
     """Get the GitHub service."""
     db = await get_db()
     return GitHubService(db)
+
+
+async def get_user_preferences_dao() -> UserPreferencesDAO:
+    """Get UserPreferences DAO."""
+    db = await get_db()
+    return UserPreferencesDAO(db)

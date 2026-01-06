@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
-import { modelsApi, githubApi } from '@/lib/api';
-import type { Provider, ModelProfileCreate, GitHubAppConfig } from '@/types';
+import { modelsApi, githubApi, preferencesApi } from '@/lib/api';
+import type { Provider, ModelProfileCreate, GitHubAppConfig, GitHubRepository, UserPreferences } from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
@@ -17,6 +17,7 @@ import {
   ExclamationTriangleIcon,
   TrashIcon,
   PlusIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
 
 const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
@@ -42,11 +43,12 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type TabType = 'models' | 'github';
+type TabType = 'models' | 'github' | 'defaults';
 
 const tabConfig: { id: TabType; label: string; icon: React.ReactNode }[] = [
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
+  { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
@@ -85,6 +87,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <ModalBody className="max-h-[calc(85vh-180px)] overflow-y-auto">
         {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
+        {activeTab === 'defaults' && <DefaultsTab />}
       </ModalBody>
     </Modal>
   );
@@ -484,6 +487,222 @@ function GitHubAppTab() {
           <div>DURSOR_GITHUB_APP_ID=&lt;app_id&gt;</div>
           <div>DURSOR_GITHUB_APP_PRIVATE_KEY=&lt;base64_encoded_key&gt;</div>
           <div>DURSOR_GITHUB_APP_INSTALLATION_ID=&lt;installation_id&gt;</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DefaultsTab() {
+  const { data: preferences, isLoading: prefsLoading } = useSWR('preferences', preferencesApi.get);
+  const { data: githubConfig } = useSWR('github-config', githubApi.getConfig);
+  const { data: repos, isLoading: reposLoading } = useSWR(
+    githubConfig?.is_configured ? 'github-repos' : null,
+    githubApi.listRepos
+  );
+
+  const [selectedRepo, setSelectedRepo] = useState<string>('');
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [branches, setBranches] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const { success, error: toastError } = useToast();
+
+  // Initialize from saved preferences
+  useEffect(() => {
+    if (preferences && repos) {
+      if (preferences.default_repo_owner && preferences.default_repo_name) {
+        const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
+        setSelectedRepo(repoFullName);
+        // Load branches for the default repo
+        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch);
+      }
+    }
+  }, [preferences, repos]);
+
+  const loadBranches = async (owner: string, repo: string, defaultBranch?: string | null) => {
+    setBranchesLoading(true);
+    try {
+      const branchList = await githubApi.listBranches(owner, repo);
+      setBranches(branchList);
+      if (defaultBranch && branchList.includes(defaultBranch)) {
+        setSelectedBranch(defaultBranch);
+      } else if (branchList.length > 0) {
+        // Try to select 'main' or 'master' or the first branch
+        const mainBranch = branchList.find(b => b === 'main') || branchList.find(b => b === 'master') || branchList[0];
+        setSelectedBranch(mainBranch);
+      }
+    } catch (err) {
+      console.error('Failed to load branches:', err);
+      setBranches([]);
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const handleRepoChange = async (fullName: string) => {
+    setSelectedRepo(fullName);
+    setSelectedBranch('');
+    setBranches([]);
+
+    if (fullName) {
+      const [owner, repo] = fullName.split('/');
+      await loadBranches(owner, repo);
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const [owner, repo] = selectedRepo ? selectedRepo.split('/') : [null, null];
+      await preferencesApi.save({
+        default_repo_owner: owner,
+        default_repo_name: repo,
+        default_branch: selectedBranch || null,
+      });
+      mutate('preferences');
+      success('Default settings saved successfully');
+    } catch (err) {
+      toastError('Failed to save settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setLoading(true);
+    try {
+      await preferencesApi.save({
+        default_repo_owner: null,
+        default_repo_name: null,
+        default_branch: null,
+      });
+      setSelectedRepo('');
+      setSelectedBranch('');
+      setBranches([]);
+      mutate('preferences');
+      success('Default settings cleared');
+    } catch (err) {
+      toastError('Failed to clear settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!githubConfig?.is_configured) {
+    return (
+      <div>
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-gray-100">Default Repository & Branch</h3>
+          <p className="text-sm text-gray-400 mt-1">
+            Set default repository and branch to use when creating new tasks.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg text-yellow-400 text-sm">
+          <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
+          <span>Configure GitHub App first to select default repository.</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-100">Default Repository & Branch</h3>
+        <p className="text-sm text-gray-400 mt-1">
+          Set default repository and branch to use when creating new tasks.
+        </p>
+      </div>
+
+      {/* Current defaults display */}
+      {preferences?.default_repo_owner && preferences?.default_repo_name && (
+        <div className="mb-4 p-3 bg-green-900/20 border border-green-800/50 rounded-lg flex items-center gap-2 text-green-400">
+          <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
+          <span className="text-sm">
+            Default: <span className="font-medium">{preferences.default_repo_owner}/{preferences.default_repo_name}</span>
+            {preferences.default_branch && (
+              <span className="text-green-500"> ({preferences.default_branch})</span>
+            )}
+          </span>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {/* Repository selection */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Repository
+          </label>
+          <select
+            value={selectedRepo}
+            onChange={(e) => handleRepoChange(e.target.value)}
+            disabled={reposLoading}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors disabled:opacity-50'
+            )}
+          >
+            <option value="">Select a repository</option>
+            {repos?.map((repo) => (
+              <option key={repo.id} value={repo.full_name}>
+                {repo.full_name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500">
+            Select the repository that will be pre-selected when creating new tasks.
+          </p>
+        </div>
+
+        {/* Branch selection */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Branch
+          </label>
+          <select
+            value={selectedBranch}
+            onChange={(e) => setSelectedBranch(e.target.value)}
+            disabled={!selectedRepo || branchesLoading}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors disabled:opacity-50'
+            )}
+          >
+            <option value="">
+              {branchesLoading ? 'Loading branches...' : 'Select a branch'}
+            </option>
+            {branches.map((branch) => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500">
+            Select the branch that will be pre-selected when creating new tasks.
+          </p>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-2 pt-2">
+          <Button
+            onClick={handleSave}
+            disabled={!selectedRepo}
+            isLoading={loading}
+            className="flex-1"
+          >
+            Save Defaults
+          </Button>
+          <Button
+            onClick={handleClear}
+            variant="secondary"
+            disabled={!preferences?.default_repo_owner}
+            isLoading={loading}
+          >
+            Clear
+          </Button>
         </div>
       </div>
     </div>

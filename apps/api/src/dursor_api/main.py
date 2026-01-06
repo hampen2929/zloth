@@ -9,6 +9,7 @@ from dursor_api.config import settings
 from dursor_api.routes import (
     github_router,
     models_router,
+    preferences_router,
     repos_router,
     tasks_router,
     runs_router,
@@ -49,6 +50,7 @@ app.add_middleware(
 # Include routers
 app.include_router(github_router, prefix="/v1")
 app.include_router(models_router, prefix="/v1")
+app.include_router(preferences_router, prefix="/v1")
 app.include_router(repos_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")

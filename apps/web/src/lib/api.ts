@@ -24,6 +24,8 @@ import type {
   GitHubAppConfig,
   GitHubAppConfigSave,
   GitHubRepository,
+  UserPreferences,
+  UserPreferencesSave,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -168,6 +170,17 @@ export const prsApi = {
     fetchApi<PR>(`/tasks/${taskId}/prs/${prId}`),
 
   list: (taskId: string) => fetchApi<PR[]>(`/tasks/${taskId}/prs`),
+};
+
+// Preferences
+export const preferencesApi = {
+  get: () => fetchApi<UserPreferences>('/preferences'),
+
+  save: (data: UserPreferencesSave) =>
+    fetchApi<UserPreferences>('/preferences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 export { ApiError };
