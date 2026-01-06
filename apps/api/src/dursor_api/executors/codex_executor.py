@@ -55,11 +55,13 @@ class CodexExecutor:
         env.update(self.options.env_vars)
 
         # Build command
-        # Codex CLI uses similar pattern: codex -p for prompt
+        # Codex CLI: codex "prompt" --approval-mode full-auto --quiet
+        # See: https://github.com/openai/codex
         cmd = [
             self.options.codex_cli_path,
             instruction,
             "--approval-mode", "full-auto",
+            "--quiet",
         ]
 
         logs.append(f"Executing: {' '.join(cmd)}")

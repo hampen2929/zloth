@@ -55,11 +55,11 @@ class GeminiExecutor:
         env.update(self.options.env_vars)
 
         # Build command
-        # Gemini CLI uses -p for prompt in non-interactive mode
+        # Gemini CLI: gemini -p "prompt"
+        # See: https://github.com/google-gemini/gemini-cli
         cmd = [
             self.options.gemini_cli_path,
             "-p", instruction,
-            "--sandbox", "false",
         ]
 
         logs.append(f"Executing: {' '.join(cmd)}")
