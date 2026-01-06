@@ -34,3 +34,5 @@ class ExecutorType(str, Enum):
 
     PATCH_AGENT = "patch_agent"  # LLM-based patch generation
     CLAUDE_CODE = "claude_code"  # Claude Code CLI execution
+    CODEX_CLI = "codex_cli"  # OpenAI Codex CLI execution
+    GEMINI_CLI = "gemini_cli"  # Google Gemini CLI execution

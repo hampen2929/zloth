@@ -59,7 +59,8 @@ export function ChatPanel({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    if (currentExecutor === 'patch_agent' && selectedModels.length === 0) return;
+    const isCLIExecutor = currentExecutor === 'claude_code' || currentExecutor === 'codex_cli' || currentExecutor === 'gemini_cli';
+    if (!isCLIExecutor && selectedModels.length === 0) return;
 
     setLoading(true);
 
@@ -71,12 +72,18 @@ export function ChatPanel({
       });
 
       // Create runs based on executor type
-      if (currentExecutor === 'claude_code') {
+      const cliExecutorNames: Record<string, string> = {
+        'claude_code': 'Claude Code',
+        'codex_cli': 'Codex',
+        'gemini_cli': 'Gemini CLI',
+      };
+
+      if (isCLIExecutor) {
         await runsApi.create(taskId, {
           instruction: input.trim(),
-          executor_type: 'claude_code',
+          executor_type: currentExecutor,
         });
-        success('Started Claude Code run');
+        success(`Started ${cliExecutorNames[currentExecutor]} run`);
       } else {
         await runsApi.create(taskId, {
           instruction: input.trim(),
@@ -184,7 +191,33 @@ export function ChatPanel({
               )}
             >
               <CommandLineIcon className="w-3.5 h-3.5" />
-              <span>Claude Code</span>
+              <span>Claude</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentExecutor('codex_cli')}
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
+                currentExecutor === 'codex_cli'
+                  ? 'bg-gray-700 text-white'
+                  : 'text-gray-400 hover:text-white'
+              )}
+            >
+              <CommandLineIcon className="w-3.5 h-3.5" />
+              <span>Codex</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentExecutor('gemini_cli')}
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
+                currentExecutor === 'gemini_cli'
+                  ? 'bg-gray-700 text-white'
+                  : 'text-gray-400 hover:text-white'
+              )}
+            >
+              <CommandLineIcon className="w-3.5 h-3.5" />
+              <span>Gemini</span>
             </button>
           </div>
         </div>
@@ -236,12 +269,14 @@ export function ChatPanel({
           </div>
         )}
 
-        {/* Claude Code info */}
-        {currentExecutor === 'claude_code' && (
+        {/* CLI executor info */}
+        {(currentExecutor === 'claude_code' || currentExecutor === 'codex_cli' || currentExecutor === 'gemini_cli') && (
           <div className="flex items-center gap-2 p-2 bg-purple-900/20 rounded-lg border border-purple-800/30">
             <CommandLineIcon className="w-4 h-4 text-purple-400" />
             <span className="text-xs text-purple-300">
-              Claude Code will execute in an isolated worktree
+              {currentExecutor === 'claude_code' && 'Claude Code will execute in an isolated worktree'}
+              {currentExecutor === 'codex_cli' && 'Codex will execute in an isolated worktree'}
+              {currentExecutor === 'gemini_cli' && 'Gemini CLI will execute in an isolated worktree'}
             </span>
           </div>
         )}
@@ -291,6 +326,16 @@ export function ChatPanel({
           {currentExecutor === 'claude_code' && (
             <span className="text-xs text-purple-400">
               Claude Code CLI
+            </span>
+          )}
+          {currentExecutor === 'codex_cli' && (
+            <span className="text-xs text-purple-400">
+              Codex CLI
+            </span>
+          )}
+          {currentExecutor === 'gemini_cli' && (
+            <span className="text-xs text-purple-400">
+              Gemini CLI
             </span>
           )}
         </div>

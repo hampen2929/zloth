@@ -6,7 +6,7 @@
 export type Provider = 'openai' | 'anthropic' | 'google';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 export type MessageRole = 'user' | 'assistant' | 'system';
-export type ExecutorType = 'patch_agent' | 'claude_code';
+export type ExecutorType = 'patch_agent' | 'claude_code' | 'codex_cli' | 'gemini_cli';
 
 // Model Profile
 export interface ModelProfile {

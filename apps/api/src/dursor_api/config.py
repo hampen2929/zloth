@@ -111,6 +111,11 @@ class Settings(BaseSettings):
     github_app_private_key: str = Field(default="")  # Base64 encoded
     github_app_installation_id: str = Field(default="")
 
+    # CLI Executor Paths (optional, defaults to executable name in PATH)
+    claude_cli_path: str = Field(default="claude")
+    codex_cli_path: str = Field(default="codex")
+    gemini_cli_path: str = Field(default="gemini")
+
     def model_post_init(self, __context) -> None:
         """Set derived paths after initialization."""
         if self.workspaces_dir is None:
