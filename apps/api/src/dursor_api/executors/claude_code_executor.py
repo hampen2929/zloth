@@ -81,10 +81,11 @@ class ClaudeCodeExecutor:
             "--output-format", "json",
         ]
 
-        # Add --resume flag if we have a previous session ID
+        # Add --session-id flag if we have a previous session ID
+        # Note: Use --session-id (not --resume) to continue conversation in -p mode
         if resume_session_id:
-            cmd.extend(["--resume", resume_session_id])
-            logs.append(f"Resuming session: {resume_session_id}")
+            cmd.extend(["--session-id", resume_session_id])
+            logs.append(f"Continuing session: {resume_session_id}")
 
         logs.append(f"Executing: {' '.join(cmd)}")
         logs.append(f"Working directory: {worktree_path}")
