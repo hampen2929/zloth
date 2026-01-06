@@ -53,3 +53,18 @@ async def cancel_run(
     cancelled = await run_service.cancel(run_id)
     if not cancelled:
         raise HTTPException(status_code=400, detail="Run cannot be cancelled")
+
+
+@router.delete("/runs/{run_id}/worktree", status_code=204)
+async def cleanup_worktree(
+    run_id: str,
+    run_service: RunService = Depends(get_run_service),
+) -> None:
+    """Clean up the worktree for a Claude Code run.
+
+    This endpoint removes the worktree without creating a PR.
+    Use this when you want to discard the changes.
+    """
+    cleaned = await run_service.cleanup_worktree(run_id)
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Run has no worktree or not found")

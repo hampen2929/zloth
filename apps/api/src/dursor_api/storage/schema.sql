@@ -50,9 +50,12 @@ CREATE INDEX IF NOT EXISTS idx_messages_task ON messages(task_id);
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL REFERENCES tasks(id),
-    model_id TEXT NOT NULL,          -- can be env model ID (not in model_profiles)
-    model_name TEXT NOT NULL,        -- denormalized for env model support
-    provider TEXT NOT NULL,          -- denormalized for env model support
+    model_id TEXT,                   -- can be NULL for claude_code executor
+    model_name TEXT,                 -- denormalized for env model support
+    provider TEXT,                   -- denormalized for env model support
+    executor_type TEXT NOT NULL DEFAULT 'patch_agent',  -- patch_agent, claude_code
+    working_branch TEXT,             -- git branch for worktree (claude_code)
+    worktree_path TEXT,              -- filesystem path to worktree (claude_code)
     instruction TEXT NOT NULL,
     base_ref TEXT,
     status TEXT NOT NULL DEFAULT 'queued',  -- queued, running, succeeded, failed, canceled

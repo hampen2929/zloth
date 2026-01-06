@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from dursor_api.domain.enums import MessageRole, Provider, RunStatus
+from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
 
 
 # ============================================================
@@ -130,17 +130,23 @@ class RunCreate(BaseModel):
     """Request for creating Runs."""
 
     instruction: str = Field(..., description="Natural language instruction")
-    model_ids: list[str] = Field(..., description="List of model profile IDs to run")
+    model_ids: list[str] | None = Field(None, description="List of model profile IDs to run (required for patch_agent)")
     base_ref: str | None = Field(None, description="Base branch/commit")
+    executor_type: ExecutorType = Field(
+        default=ExecutorType.PATCH_AGENT,
+        description="Executor type: patch_agent (LLM) or claude_code (CLI)",
+    )
 
 
 class RunSummary(BaseModel):
     """Summary of a Run."""
 
     id: str
-    model_id: str
-    model_name: str
-    provider: Provider
+    model_id: str | None
+    model_name: str | None
+    provider: Provider | None
+    executor_type: ExecutorType
+    working_branch: str | None = None
     status: RunStatus
     created_at: datetime
 
@@ -160,9 +166,12 @@ class Run(BaseModel):
 
     id: str
     task_id: str
-    model_id: str
-    model_name: str
-    provider: Provider
+    model_id: str | None
+    model_name: str | None
+    provider: Provider | None
+    executor_type: ExecutorType = ExecutorType.PATCH_AGENT
+    working_branch: str | None = None
+    worktree_path: str | None = None
     instruction: str
     base_ref: str | None
     status: RunStatus

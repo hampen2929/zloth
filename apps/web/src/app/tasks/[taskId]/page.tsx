@@ -1,21 +1,27 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import useSWR, { mutate } from 'swr';
 import { tasksApi, runsApi, modelsApi } from '@/lib/api';
 import { ChatPanel } from '@/components/ChatPanel';
 import { RunDetailPanel } from '@/components/RunDetailPanel';
 import { MessageSkeleton, RunListSkeleton } from '@/components/ui/Skeleton';
 import { ExclamationCircleIcon, InboxIcon } from '@heroicons/react/24/outline';
+import type { ExecutorType } from '@/types';
 
 interface PageProps {
   params: Promise<{ taskId: string }>;
 }
 
-export default function TaskPage({ params }: PageProps) {
-  const { taskId } = use(params);
+function TaskPageContent({ taskId }: { taskId: string }) {
+  const searchParams = useSearchParams();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<'chat' | 'runs'>('chat');
+
+  // Parse query params for executor type and model IDs
+  const executorType = (searchParams.get('executor') || 'patch_agent') as ExecutorType;
+  const initialModelIds = searchParams.get('models')?.split(',').filter(Boolean);
 
   const { data: task, error: taskError, isLoading: taskLoading } = useSWR(
     `task-${taskId}`,
@@ -103,6 +109,8 @@ export default function TaskPage({ params }: PageProps) {
           taskId={taskId}
           messages={task.messages}
           models={models || []}
+          executorType={executorType}
+          initialModelIds={initialModelIds}
           onRunsCreated={() => {
             mutate(`runs-${taskId}`);
             setActivePanel('runs'); // Switch to runs panel on mobile after creating runs
@@ -135,5 +143,26 @@ export default function TaskPage({ params }: PageProps) {
         )}
       </div>
     </div>
+  );
+}
+
+export default function TaskPage({ params }: PageProps) {
+  const { taskId } = use(params);
+
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col lg:flex-row h-[calc(100vh-8rem)] gap-4">
+        <div className="w-full lg:w-1/2 flex flex-col bg-gray-900 rounded-lg border border-gray-800">
+          <MessageSkeleton />
+          <MessageSkeleton />
+          <MessageSkeleton />
+        </div>
+        <div className="w-full lg:w-1/2 flex flex-col bg-gray-900 rounded-lg border border-gray-800">
+          <RunListSkeleton count={3} />
+        </div>
+      </div>
+    }>
+      <TaskPageContent taskId={taskId} />
+    </Suspense>
   );
 }

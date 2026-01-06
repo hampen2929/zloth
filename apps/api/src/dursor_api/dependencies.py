@@ -9,6 +9,7 @@ from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
 from dursor_api.services.run_service import RunService
 from dursor_api.services.pr_service import PRService
+from dursor_api.services.worktree_service import WorktreeService
 from dursor_api.storage.db import Database, get_db
 from dursor_api.storage.dao import (
     MessageDAO,
@@ -23,6 +24,7 @@ from dursor_api.storage.dao import (
 # Singletons
 _crypto_service: CryptoService | None = None
 _run_service: RunService | None = None
+_worktree_service: WorktreeService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -82,6 +84,14 @@ async def get_repo_service() -> RepoService:
     return RepoService(dao)
 
 
+def get_worktree_service() -> WorktreeService:
+    """Get the worktree service singleton."""
+    global _worktree_service
+    if _worktree_service is None:
+        _worktree_service = WorktreeService()
+    return _worktree_service
+
+
 async def get_run_service() -> RunService:
     """Get the run service (singleton for queue management)."""
     global _run_service
@@ -90,7 +100,8 @@ async def get_run_service() -> RunService:
         task_dao = await get_task_dao()
         model_service = await get_model_service()
         repo_service = await get_repo_service()
-        _run_service = RunService(run_dao, task_dao, model_service, repo_service)
+        worktree_service = get_worktree_service()
+        _run_service = RunService(run_dao, task_dao, model_service, repo_service, worktree_service)
     return _run_service
 
 

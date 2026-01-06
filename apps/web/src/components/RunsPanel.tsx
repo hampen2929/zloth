@@ -11,6 +11,7 @@ import {
   ArrowPathIcon,
   XCircleIcon,
   InboxIcon,
+  CommandLineIcon,
 } from '@heroicons/react/24/outline';
 
 interface RunsPanelProps {
@@ -136,8 +137,15 @@ export function RunsPanel({
                       aria-selected={isSelected}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm text-gray-100">
-                          {run.model_name}
+                        <span className="font-medium text-sm text-gray-100 flex items-center gap-1.5">
+                          {run.executor_type === 'claude_code' ? (
+                            <>
+                              <CommandLineIcon className="w-4 h-4 text-purple-400" />
+                              <span>Claude Code</span>
+                            </>
+                          ) : (
+                            run.model_name
+                          )}
                         </span>
                         <span
                           className={cn('flex items-center', statusConfig.color)}
@@ -149,7 +157,15 @@ export function RunsPanel({
                         </span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {run.provider}
+                        {run.executor_type === 'claude_code' ? (
+                          run.working_branch ? (
+                            <span className="font-mono text-purple-400">{run.working_branch}</span>
+                          ) : (
+                            'CLI Executor'
+                          )
+                        ) : (
+                          run.provider
+                        )}
                       </div>
                       {run.status === 'succeeded' && run.summary && (
                         <div className="text-xs text-gray-400 mt-2 line-clamp-2">

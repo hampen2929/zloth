@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from dursor_api.domain.enums import MessageRole, Provider, RunStatus
+from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
 from dursor_api.domain.models import FileDiff, Message, ModelProfile, PR, Repo, Run, Task
 from dursor_api.storage.db import Database
 
@@ -293,21 +293,27 @@ class RunDAO:
     async def create(
         self,
         task_id: str,
-        model_id: str,
-        model_name: str,
-        provider: Provider,
         instruction: str,
+        executor_type: ExecutorType = ExecutorType.PATCH_AGENT,
+        model_id: str | None = None,
+        model_name: str | None = None,
+        provider: Provider | None = None,
         base_ref: str | None = None,
+        working_branch: str | None = None,
+        worktree_path: str | None = None,
     ) -> Run:
         """Create a new run.
 
         Args:
             task_id: Task ID.
-            model_id: Model profile ID (can be env model ID).
-            model_name: Model name (denormalized for env model support).
-            provider: Model provider (denormalized for env model support).
             instruction: Task instruction.
+            executor_type: Type of executor (patch_agent or claude_code).
+            model_id: Model profile ID (required for patch_agent).
+            model_name: Model name (required for patch_agent).
+            provider: Model provider (required for patch_agent).
             base_ref: Base git ref.
+            working_branch: Git branch for worktree (claude_code).
+            worktree_path: Filesystem path to worktree (claude_code).
 
         Returns:
             Created Run object.
@@ -317,10 +323,15 @@ class RunDAO:
 
         await self.db.connection.execute(
             """
-            INSERT INTO runs (id, task_id, model_id, model_name, provider, instruction, base_ref, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs (id, task_id, model_id, model_name, provider, executor_type, working_branch, worktree_path, instruction, base_ref, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (id, task_id, model_id, model_name, provider.value, instruction, base_ref, RunStatus.QUEUED.value, created_at),
+            (
+                id, task_id, model_id, model_name,
+                provider.value if provider else None,
+                executor_type.value, working_branch, worktree_path,
+                instruction, base_ref, RunStatus.QUEUED.value, created_at
+            ),
         )
         await self.db.connection.commit()
 
@@ -330,6 +341,9 @@ class RunDAO:
             model_id=model_id,
             model_name=model_name,
             provider=provider,
+            executor_type=executor_type,
+            working_branch=working_branch,
+            worktree_path=worktree_path,
             instruction=instruction,
             base_ref=base_ref,
             status=RunStatus.QUEUED,
@@ -405,6 +419,25 @@ class RunDAO:
         )
         await self.db.connection.commit()
 
+    async def update_worktree(
+        self,
+        id: str,
+        working_branch: str,
+        worktree_path: str,
+    ) -> None:
+        """Update run with worktree information.
+
+        Args:
+            id: Run ID.
+            working_branch: Git branch name.
+            worktree_path: Filesystem path to worktree.
+        """
+        await self.db.connection.execute(
+            "UPDATE runs SET working_branch = ?, worktree_path = ? WHERE id = ?",
+            (working_branch, worktree_path, id),
+        )
+        await self.db.connection.commit()
+
     def _row_to_model(self, row: Any) -> Run:
         files_changed = []
         if row["files_changed"]:
@@ -418,12 +451,21 @@ class RunDAO:
         if row["warnings"]:
             warnings = json.loads(row["warnings"])
 
+        # Handle nullable provider
+        provider = Provider(row["provider"]) if row["provider"] else None
+
+        # Handle executor_type with default for backward compatibility
+        executor_type = ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
+
         return Run(
             id=row["id"],
             task_id=row["task_id"],
             model_id=row["model_id"],
             model_name=row["model_name"],
-            provider=Provider(row["provider"]),
+            provider=provider,
+            executor_type=executor_type,
+            working_branch=row["working_branch"],
+            worktree_path=row["worktree_path"],
             instruction=row["instruction"],
             base_ref=row["base_ref"],
             status=RunStatus(row["status"]),

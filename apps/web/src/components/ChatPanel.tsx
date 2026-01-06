@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { tasksApi, runsApi } from '@/lib/api';
-import type { Message, ModelProfile } from '@/types';
+import type { Message, ModelProfile, ExecutorType } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -12,12 +12,15 @@ import {
   CpuChipIcon,
   ChatBubbleLeftIcon,
   CheckIcon,
+  CommandLineIcon,
 } from '@heroicons/react/24/outline';
 
 interface ChatPanelProps {
   taskId: string;
   messages: Message[];
   models: ModelProfile[];
+  executorType?: ExecutorType;
+  initialModelIds?: string[];
   onRunsCreated: () => void;
 }
 
@@ -25,10 +28,13 @@ export function ChatPanel({
   taskId,
   messages,
   models,
+  executorType = 'patch_agent',
+  initialModelIds,
   onRunsCreated,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
-  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
+  const [currentExecutor, setCurrentExecutor] = useState<ExecutorType>(executorType);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
@@ -38,16 +44,22 @@ export function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Select all models by default
+  // Select all models by default if none specified
   useEffect(() => {
-    if (models.length > 0 && selectedModels.length === 0) {
+    if (models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
       setSelectedModels(models.map((m) => m.id));
     }
-  }, [models, selectedModels.length]);
+  }, [models, selectedModels.length, initialModelIds]);
+
+  // Update executor type from props
+  useEffect(() => {
+    setCurrentExecutor(executorType);
+  }, [executorType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || selectedModels.length === 0) return;
+    if (!input.trim()) return;
+    if (currentExecutor === 'patch_agent' && selectedModels.length === 0) return;
 
     setLoading(true);
 
@@ -58,15 +70,24 @@ export function ChatPanel({
         content: input.trim(),
       });
 
-      // Create runs for selected models
-      await runsApi.create(taskId, {
-        instruction: input.trim(),
-        model_ids: selectedModels,
-      });
+      // Create runs based on executor type
+      if (currentExecutor === 'claude_code') {
+        await runsApi.create(taskId, {
+          instruction: input.trim(),
+          executor_type: 'claude_code',
+        });
+        success('Started Claude Code run');
+      } else {
+        await runsApi.create(taskId, {
+          instruction: input.trim(),
+          model_ids: selectedModels,
+          executor_type: 'patch_agent',
+        });
+        success(`Started ${selectedModels.length} run${selectedModels.length > 1 ? 's' : ''}`);
+      }
 
       setInput('');
       onRunsCreated();
-      success(`Started ${selectedModels.length} run${selectedModels.length > 1 ? 's' : ''}`);
     } catch (err) {
       console.error('Failed to create runs:', err);
       error('Failed to create runs. Please try again.');
@@ -133,49 +154,97 @@ export function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Model Selection */}
-      <div className="border-t border-gray-800 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-500">Select models to run:</span>
-          {models.length > 1 && (
+      {/* Executor Type & Model Selection */}
+      <div className="border-t border-gray-800 p-3 space-y-3">
+        {/* Executor Type Toggle */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Executor:</span>
+          <div className="flex items-center bg-gray-800 rounded-lg p-0.5">
             <button
               type="button"
-              onClick={selectAllModels}
-              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              onClick={() => setCurrentExecutor('patch_agent')}
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
+                currentExecutor === 'patch_agent'
+                  ? 'bg-gray-700 text-white'
+                  : 'text-gray-400 hover:text-white'
+              )}
             >
-              {selectedModels.length === models.length ? 'Deselect all' : 'Select all'}
+              <CpuChipIcon className="w-3.5 h-3.5" />
+              <span>Models</span>
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setCurrentExecutor('claude_code')}
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
+                currentExecutor === 'claude_code'
+                  ? 'bg-gray-700 text-white'
+                  : 'text-gray-400 hover:text-white'
+              )}
+            >
+              <CommandLineIcon className="w-3.5 h-3.5" />
+              <span>Claude Code</span>
+            </button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {models.length === 0 ? (
-            <p className="text-gray-600 text-xs">
-              No models configured. Add models in Settings.
-            </p>
-          ) : (
-            models.map((model) => {
-              const isSelected = selectedModels.includes(model.id);
-              return (
+
+        {/* Model Selection (only for patch_agent) */}
+        {currentExecutor === 'patch_agent' && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500">Select models to run:</span>
+              {models.length > 1 && (
                 <button
-                  key={model.id}
                   type="button"
-                  onClick={() => toggleModel(model.id)}
-                  className={cn(
-                    'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:ring-offset-gray-900',
-                    isSelected
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
-                  )}
-                  aria-pressed={isSelected}
+                  onClick={selectAllModels}
+                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                 >
-                  {isSelected && <CheckIcon className="w-3 h-3" />}
-                  {model.display_name || model.model_name}
+                  {selectedModels.length === models.length ? 'Deselect all' : 'Select all'}
                 </button>
-              );
-            })
-          )}
-        </div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {models.length === 0 ? (
+                <p className="text-gray-600 text-xs">
+                  No models configured. Add models in Settings.
+                </p>
+              ) : (
+                models.map((model) => {
+                  const isSelected = selectedModels.includes(model.id);
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() => toggleModel(model.id)}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all',
+                        'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:ring-offset-gray-900',
+                        isSelected
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
+                      )}
+                      aria-pressed={isSelected}
+                    >
+                      {isSelected && <CheckIcon className="w-3 h-3" />}
+                      {model.display_name || model.model_name}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Claude Code info */}
+        {currentExecutor === 'claude_code' && (
+          <div className="flex items-center gap-2 p-2 bg-purple-900/20 rounded-lg border border-purple-800/30">
+            <CommandLineIcon className="w-4 h-4 text-purple-400" />
+            <span className="text-xs text-purple-300">
+              Claude Code will execute in an isolated worktree
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Input */}
@@ -203,7 +272,7 @@ export function ChatPanel({
           />
           <Button
             type="submit"
-            disabled={loading || !input.trim() || selectedModels.length === 0}
+            disabled={loading || !input.trim() || (currentExecutor === 'patch_agent' && selectedModels.length === 0)}
             isLoading={loading}
             className="self-end"
           >
@@ -214,9 +283,14 @@ export function ChatPanel({
           <span className="text-xs text-gray-500">
             {getShortcutText('Enter')} to submit
           </span>
-          {selectedModels.length > 0 && (
+          {currentExecutor === 'patch_agent' && selectedModels.length > 0 && (
             <span className="text-xs text-gray-500">
               {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''} selected
+            </span>
+          )}
+          {currentExecutor === 'claude_code' && (
+            <span className="text-xs text-purple-400">
+              Claude Code CLI
             </span>
           )}
         </div>

@@ -18,6 +18,7 @@ import {
   ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
   DocumentDuplicateIcon,
+  ClipboardDocumentIcon,
 } from '@heroicons/react/24/outline';
 
 interface RunDetailPanelProps {
@@ -114,9 +115,48 @@ export function RunDetailPanel({
       <div className="p-4 border-b border-gray-800">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-semibold text-gray-100">{run.model_name}</h2>
+            <h2 className="font-semibold text-gray-100 flex items-center gap-2">
+              {run.executor_type === 'claude_code' ? (
+                <>
+                  <CommandLineIcon className="w-5 h-5 text-purple-400" />
+                  <span>Claude Code</span>
+                </>
+              ) : (
+                run.model_name
+              )}
+            </h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-gray-500">{run.provider}</span>
+              {run.executor_type === 'claude_code' ? (
+                run.working_branch && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        if (navigator.clipboard) {
+                          await navigator.clipboard.writeText(run.working_branch!);
+                        } else {
+                          // Fallback for non-secure contexts
+                          const textarea = document.createElement('textarea');
+                          textarea.value = run.working_branch!;
+                          document.body.appendChild(textarea);
+                          textarea.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(textarea);
+                        }
+                        success('Branch name copied!');
+                      } catch {
+                        error('Failed to copy to clipboard');
+                      }
+                    }}
+                    className="flex items-center gap-1 text-xs font-mono text-purple-400 hover:text-purple-300 transition-colors"
+                    title="Click to copy branch name"
+                  >
+                    <span>{run.working_branch}</span>
+                    <ClipboardDocumentIcon className="w-3 h-3" />
+                  </button>
+                )
+              ) : (
+                <span className="text-xs text-gray-500">{run.provider}</span>
+              )}
               {getStatusBadge()}
             </div>
           </div>

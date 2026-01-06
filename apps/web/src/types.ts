@@ -6,6 +6,7 @@
 export type Provider = 'openai' | 'anthropic' | 'google';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 export type MessageRole = 'user' | 'assistant' | 'system';
+export type ExecutorType = 'patch_agent' | 'claude_code';
 
 // Model Profile
 export interface ModelProfile {
@@ -75,9 +76,11 @@ export interface MessageCreate {
 // Run
 export interface RunSummary {
   id: string;
-  model_id: string;
-  model_name: string;
-  provider: Provider;
+  model_id: string | null;
+  model_name: string | null;
+  provider: Provider | null;
+  executor_type: ExecutorType;
+  working_branch: string | null;
   status: RunStatus;
   created_at: string;
 }
@@ -93,9 +96,12 @@ export interface FileDiff {
 export interface Run {
   id: string;
   task_id: string;
-  model_id: string;
-  model_name: string;
-  provider: Provider;
+  model_id: string | null;
+  model_name: string | null;
+  provider: Provider | null;
+  executor_type: ExecutorType;
+  working_branch: string | null;
+  worktree_path: string | null;
   instruction: string;
   base_ref: string | null;
   status: RunStatus;
@@ -112,8 +118,9 @@ export interface Run {
 
 export interface RunCreate {
   instruction: string;
-  model_ids: string[];
+  model_ids?: string[];
   base_ref?: string;
+  executor_type?: ExecutorType;
 }
 
 export interface RunsCreated {

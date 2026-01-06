@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { reposApi, tasksApi, modelsApi, githubApi } from '@/lib/api';
-import type { GitHubRepository } from '@/types';
+import type { GitHubRepository, ExecutorType } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
@@ -17,6 +17,7 @@ import {
   CheckIcon,
   CpuChipIcon,
   LockClosedIcon,
+  CommandLineIcon,
 } from '@heroicons/react/24/outline';
 
 export default function HomePage() {
@@ -29,6 +30,7 @@ export default function HomePage() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [executorType, setExecutorType] = useState<ExecutorType>('patch_agent');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,7 +107,11 @@ export default function HomePage() {
   };
 
   const handleSubmit = async () => {
-    if (!instruction.trim() || !selectedRepo || !selectedBranch || selectedModels.length === 0) {
+    // Validate based on executor type
+    if (!instruction.trim() || !selectedRepo || !selectedBranch) {
+      return;
+    }
+    if (executorType === 'patch_agent' && selectedModels.length === 0) {
       return;
     }
 
@@ -132,8 +138,13 @@ export default function HomePage() {
         content: instruction,
       });
 
-      // Navigate to the task page (runs will be created there)
-      router.push(`/tasks/${task.id}?models=${selectedModels.join(',')}`);
+      // Navigate to the task page with executor type
+      const params = new URLSearchParams();
+      params.set('executor', executorType);
+      if (executorType === 'patch_agent') {
+        params.set('models', selectedModels.join(','));
+      }
+      router.push(`/tasks/${task.id}?${params.toString()}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start task';
       setError(message);
@@ -160,7 +171,8 @@ export default function HomePage() {
     }
   };
 
-  const canSubmit = instruction.trim() && selectedRepo && selectedBranch && selectedModels.length > 0 && !loading;
+  const canSubmit = instruction.trim() && selectedRepo && selectedBranch && !loading &&
+    (executorType === 'claude_code' || selectedModels.length > 0);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
@@ -188,63 +200,96 @@ export default function HomePage() {
 
           {/* Bottom Bar */}
           <div className="px-4 pb-4 flex items-center justify-between">
-            {/* Model Selector */}
-            <div className="relative" ref={modelDropdownRef}>
-              <button
-                onClick={() => setShowModelDropdown(!showModelDropdown)}
-                className={cn(
-                  'flex items-center gap-2 text-sm transition-colors',
-                  'text-gray-400 hover:text-white',
-                  'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 -ml-2'
-                )}
-              >
-                <CpuChipIcon className="w-4 h-4" />
-                <span>{getSelectedModelNames()}</span>
-                <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showModelDropdown && 'rotate-180')} />
-              </button>
+            <div className="flex items-center gap-4">
+              {/* Executor Type Toggle */}
+              <div className="flex items-center bg-gray-800 rounded-lg p-0.5">
+                <button
+                  onClick={() => setExecutorType('patch_agent')}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors',
+                    executorType === 'patch_agent'
+                      ? 'bg-gray-700 text-white'
+                      : 'text-gray-400 hover:text-white'
+                  )}
+                  title="Use LLM models to generate patches"
+                >
+                  <CpuChipIcon className="w-4 h-4" />
+                  <span>Models</span>
+                </button>
+                <button
+                  onClick={() => setExecutorType('claude_code')}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors',
+                    executorType === 'claude_code'
+                      ? 'bg-gray-700 text-white'
+                      : 'text-gray-400 hover:text-white'
+                  )}
+                  title="Use Claude Code CLI for execution"
+                >
+                  <CommandLineIcon className="w-4 h-4" />
+                  <span>Claude Code</span>
+                </button>
+              </div>
 
-              {showModelDropdown && models && (
-                <div className="absolute bottom-full left-0 mb-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                  <div className="p-3 border-b border-gray-700">
-                    <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Select Models</span>
-                  </div>
-                  <div className="max-h-60 overflow-y-auto">
-                    {models.length === 0 ? (
-                      <div className="p-4 text-center">
-                        <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                        <p className="text-gray-500 text-sm">No models configured</p>
-                        <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
-                      </div>
-                    ) : (
-                      models.map((model) => {
-                        const isSelected = selectedModels.includes(model.id);
-                        return (
-                          <button
-                            key={model.id}
-                            onClick={() => toggleModel(model.id)}
-                            className={cn(
-                              'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                              'hover:bg-gray-700 transition-colors',
-                              'focus:outline-none focus:bg-gray-700'
-                            )}
-                          >
-                            <div className={cn(
-                              'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
-                              isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
-                            )}>
-                              {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-gray-100 text-sm font-medium truncate">
-                                {model.display_name || model.model_name}
-                              </div>
-                              <div className="text-gray-500 text-xs">{model.provider}</div>
-                            </div>
-                          </button>
-                        );
-                      })
+              {/* Model Selector (only for patch_agent) */}
+              {executorType === 'patch_agent' && (
+                <div className="relative" ref={modelDropdownRef}>
+                  <button
+                    onClick={() => setShowModelDropdown(!showModelDropdown)}
+                    className={cn(
+                      'flex items-center gap-2 text-sm transition-colors',
+                      'text-gray-400 hover:text-white',
+                      'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
                     )}
-                  </div>
+                  >
+                    <span>{getSelectedModelNames()}</span>
+                    <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showModelDropdown && 'rotate-180')} />
+                  </button>
+
+                  {showModelDropdown && models && (
+                    <div className="absolute bottom-full left-0 mb-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                      <div className="p-3 border-b border-gray-700">
+                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Select Models</span>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto">
+                        {models.length === 0 ? (
+                          <div className="p-4 text-center">
+                            <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                            <p className="text-gray-500 text-sm">No models configured</p>
+                            <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
+                          </div>
+                        ) : (
+                          models.map((model) => {
+                            const isSelected = selectedModels.includes(model.id);
+                            return (
+                              <button
+                                key={model.id}
+                                onClick={() => toggleModel(model.id)}
+                                className={cn(
+                                  'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                                  'hover:bg-gray-700 transition-colors',
+                                  'focus:outline-none focus:bg-gray-700'
+                                )}
+                              >
+                                <div className={cn(
+                                  'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                                  isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                                )}>
+                                  {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-gray-100 text-sm font-medium truncate">
+                                    {model.display_name || model.model_name}
+                                  </div>
+                                  <div className="text-gray-500 text-xs">{model.provider}</div>
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

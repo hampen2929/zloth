@@ -59,6 +59,8 @@ async def get_task(
             model_id=r.model_id,
             model_name=r.model_name,
             provider=r.provider,
+            executor_type=r.executor_type,
+            working_branch=r.working_branch,
             status=r.status,
             created_at=r.created_at,
         )
