@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi } from '@/lib/api';
+import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
 import type { GitHubRepository, ExecutorType } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
@@ -153,6 +153,20 @@ export default function HomePage() {
         role: 'user',
         content: instruction,
       });
+
+      // Create runs immediately based on executor type
+      if (executorType === 'claude_code') {
+        await runsApi.create(task.id, {
+          instruction: instruction.trim(),
+          executor_type: 'claude_code',
+        });
+      } else {
+        await runsApi.create(task.id, {
+          instruction: instruction.trim(),
+          model_ids: selectedModels,
+          executor_type: 'patch_agent',
+        });
+      }
 
       // Navigate to the task page with executor type
       const params = new URLSearchParams();
