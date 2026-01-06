@@ -47,7 +47,7 @@ install-codex-cli:
 # Google Gemini CLI
 # https://github.com/google-gemini/gemini-cli
 install-gemini-cli:
-	npm install -g @anthropic-ai/gemini-cli || npm install -g gemini-cli
+	npm install -g @google/gemini-cli
 
 # Install all CLI agents
 install-cli: install-claude-cli install-codex-cli install-gemini-cli
