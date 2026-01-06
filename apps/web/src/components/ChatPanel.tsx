@@ -37,6 +37,7 @@ export function ChatPanel({
   const [currentExecutor, setCurrentExecutor] = useState<ExecutorType>(executorType);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const { success, error } = useToast();
 
   // Auto-scroll to bottom
@@ -248,7 +249,7 @@ export function ChatPanel({
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="border-t border-gray-800 p-3">
+      <form ref={formRef} onSubmit={handleSubmit} className="border-t border-gray-800 p-3">
         <div className="flex gap-2">
           <textarea
             value={input}
@@ -265,11 +266,12 @@ export function ChatPanel({
             disabled={loading}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && isModifierPressed(e)) {
-                handleSubmit(e);
+                e.preventDefault();
+                formRef.current?.requestSubmit();
               }
               if (e.key === 'ArrowUp' && input.trim()) {
                 e.preventDefault();
-                handleSubmit(e);
+                formRef.current?.requestSubmit();
               }
             }}
             aria-label="Instructions input"
