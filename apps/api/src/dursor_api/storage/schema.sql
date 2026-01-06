@@ -100,3 +100,13 @@ CREATE TABLE IF NOT EXISTS github_app_config (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- User preferences (singleton table for default settings)
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Singleton constraint
+    default_repo_owner TEXT,                -- Default repository owner (e.g., "anthropics")
+    default_repo_name TEXT,                 -- Default repository name (e.g., "claude-code")
+    default_branch TEXT,                    -- Default branch (e.g., "main")
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

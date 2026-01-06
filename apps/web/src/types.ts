@@ -205,3 +205,16 @@ export interface RepoSelectRequest {
   repo: string;
   branch?: string;
 }
+
+// User Preferences
+export interface UserPreferences {
+  default_repo_owner: string | null;
+  default_repo_name: string | null;
+  default_branch: string | null;
+}
+
+export interface UserPreferencesSave {
+  default_repo_owner?: string | null;
+  default_repo_name?: string | null;
+  default_branch?: string | null;
+}
