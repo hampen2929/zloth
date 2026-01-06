@@ -267,6 +267,10 @@ export function ChatPanel({
               if (e.key === 'Enter' && isModifierPressed(e)) {
                 handleSubmit(e);
               }
+              if (e.key === 'ArrowUp' && input.trim()) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
             }}
             aria-label="Instructions input"
           />
@@ -281,7 +285,7 @@ export function ChatPanel({
         </div>
         <div className="flex items-center justify-between mt-2">
           <span className="text-xs text-gray-500">
-            {getShortcutText('Enter')} to submit
+            {getShortcutText('Enter')} or ↑ to run
           </span>
           {currentExecutor === 'patch_agent' && selectedModels.length > 0 && (
             <span className="text-xs text-gray-500">
