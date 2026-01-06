@@ -56,8 +56,8 @@ export function ChatPanel({
     setCurrentExecutor(executorType);
   }, [executorType]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    e?.preventDefault();
     if (!input.trim()) return;
     if (currentExecutor === 'patch_agent' && selectedModels.length === 0) return;
 
