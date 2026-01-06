@@ -59,38 +59,53 @@ export function ChatPanel({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
-    if (currentExecutor === 'patch_agent' && selectedModels.length === 0) return;
+    console.log('[handleSubmit] called, input:', input, 'executor:', currentExecutor);
+    if (!input.trim()) {
+      console.log('[handleSubmit] early return: input is empty');
+      return;
+    }
+    if (currentExecutor === 'patch_agent' && selectedModels.length === 0) {
+      console.log('[handleSubmit] early return: no models selected');
+      return;
+    }
 
     setLoading(true);
 
     try {
       // Add user message
+      console.log('[handleSubmit] adding message...');
       await tasksApi.addMessage(taskId, {
         role: 'user',
         content: input.trim(),
       });
+      console.log('[handleSubmit] message added successfully');
 
       // Create runs based on executor type
       if (currentExecutor === 'claude_code') {
+        console.log('[handleSubmit] creating claude_code run...');
         await runsApi.create(taskId, {
           instruction: input.trim(),
           executor_type: 'claude_code',
         });
+        console.log('[handleSubmit] claude_code run created successfully');
         success('Started Claude Code run');
       } else {
+        console.log('[handleSubmit] creating patch_agent runs...');
         await runsApi.create(taskId, {
           instruction: input.trim(),
           model_ids: selectedModels,
           executor_type: 'patch_agent',
         });
+        console.log('[handleSubmit] patch_agent runs created successfully');
         success(`Started ${selectedModels.length} run${selectedModels.length > 1 ? 's' : ''}`);
       }
 
       setInput('');
+      console.log('[handleSubmit] calling onRunsCreated...');
       onRunsCreated();
+      console.log('[handleSubmit] done');
     } catch (err) {
-      console.error('Failed to create runs:', err);
+      console.error('[handleSubmit] Failed to create runs:', err);
       error('Failed to create runs. Please try again.');
     } finally {
       setLoading(false);
@@ -265,11 +280,14 @@ export function ChatPanel({
             )}
             disabled={loading}
             onKeyDown={(e) => {
+              console.log('[onKeyDown] key:', e.key, 'input:', input);
               if (e.key === 'Enter' && isModifierPressed(e)) {
+                console.log('[onKeyDown] Ctrl/Cmd+Enter detected, calling requestSubmit');
                 e.preventDefault();
                 formRef.current?.requestSubmit();
               }
               if (e.key === 'ArrowUp' && input.trim()) {
+                console.log('[onKeyDown] ArrowUp detected with input, calling requestSubmit');
                 e.preventDefault();
                 formRef.current?.requestSubmit();
               }
