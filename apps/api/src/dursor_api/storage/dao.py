@@ -8,7 +8,16 @@ from datetime import datetime
 from typing import Any
 
 from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
-from dursor_api.domain.models import FileDiff, Message, ModelProfile, PR, Repo, Run, Task
+from dursor_api.domain.models import (
+    FileDiff,
+    Message,
+    ModelProfile,
+    PR,
+    Repo,
+    Run,
+    Task,
+    UserPreferences,
+)
 from dursor_api.storage.db import Database
 
 
@@ -564,4 +573,72 @@ class PRDAO:
             status=row["status"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class UserPreferencesDAO:
+    """DAO for UserPreferences (singleton)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def get(self) -> UserPreferences | None:
+        """Get user preferences."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM user_preferences WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def save(
+        self,
+        default_repo_owner: str | None = None,
+        default_repo_name: str | None = None,
+        default_branch: str | None = None,
+    ) -> UserPreferences:
+        """Save user preferences (upsert)."""
+        now = now_iso()
+
+        # Try to update first
+        cursor = await self.db.connection.execute(
+            "SELECT id FROM user_preferences WHERE id = 1"
+        )
+        exists = await cursor.fetchone()
+
+        if exists:
+            await self.db.connection.execute(
+                """
+                UPDATE user_preferences
+                SET default_repo_owner = ?,
+                    default_repo_name = ?,
+                    default_branch = ?,
+                    updated_at = ?
+                WHERE id = 1
+                """,
+                (default_repo_owner, default_repo_name, default_branch, now),
+            )
+        else:
+            await self.db.connection.execute(
+                """
+                INSERT INTO user_preferences (id, default_repo_owner, default_repo_name, default_branch, created_at, updated_at)
+                VALUES (1, ?, ?, ?, ?, ?)
+                """,
+                (default_repo_owner, default_repo_name, default_branch, now, now),
+            )
+
+        await self.db.connection.commit()
+
+        return UserPreferences(
+            default_repo_owner=default_repo_owner,
+            default_repo_name=default_repo_name,
+            default_branch=default_branch,
+        )
+
+    def _row_to_model(self, row: Any) -> UserPreferences:
+        return UserPreferences(
+            default_repo_owner=row["default_repo_owner"],
+            default_repo_name=row["default_repo_name"],
+            default_branch=row["default_branch"],
         )

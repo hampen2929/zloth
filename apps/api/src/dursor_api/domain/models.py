@@ -342,3 +342,24 @@ class RepoSelectRequest(BaseModel):
     owner: str
     repo: str
     branch: str | None = None
+
+
+# ============================================================
+# User Preferences
+# ============================================================
+
+
+class UserPreferences(BaseModel):
+    """User preferences for default settings."""
+
+    default_repo_owner: str | None = None
+    default_repo_name: str | None = None
+    default_branch: str | None = None
+
+
+class UserPreferencesSave(BaseModel):
+    """Request for saving user preferences."""
+
+    default_repo_owner: str | None = None
+    default_repo_name: str | None = None
+    default_branch: str | None = None

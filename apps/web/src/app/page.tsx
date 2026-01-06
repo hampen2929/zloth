@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi } from '@/lib/api';
+import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi } from '@/lib/api';
 import type { GitHubRepository, ExecutorType } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
@@ -30,7 +30,7 @@ export default function HomePage() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [executorType, setExecutorType] = useState<ExecutorType>('patch_agent');
+  const [executorType, setExecutorType] = useState<ExecutorType>('claude_code');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,10 +67,26 @@ export default function HomePage() {
   // Data fetching
   const { data: models } = useSWR('models', modelsApi.list);
   const { data: repos } = useSWR('github-repos', githubApi.listRepos);
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
     selectedRepo ? `branches-${selectedRepo.owner}-${selectedRepo.name}` : null,
     () => selectedRepo ? githubApi.listBranches(selectedRepo.owner, selectedRepo.name) : null
   );
+
+  // Apply default preferences when repos are loaded
+  useEffect(() => {
+    if (repos && preferences && !selectedRepo) {
+      if (preferences.default_repo_owner && preferences.default_repo_name) {
+        const defaultRepo = repos.find(
+          (r) => r.owner === preferences.default_repo_owner && r.name === preferences.default_repo_name
+        );
+        if (defaultRepo) {
+          setSelectedRepo(defaultRepo);
+          setSelectedBranch(preferences.default_branch || defaultRepo.default_branch);
+        }
+      }
+    }
+  }, [repos, preferences, selectedRepo]);
 
   // Set default branch when repo changes
   const handleRepoSelect = useCallback((repo: GitHubRepository) => {
@@ -201,97 +217,109 @@ export default function HomePage() {
           {/* Bottom Bar */}
           <div className="px-4 pb-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              {/* Executor Type Toggle */}
-              <div className="flex items-center bg-gray-800 rounded-lg p-0.5">
+              {/* Executor Selector Dropdown */}
+              <div className="relative" ref={modelDropdownRef}>
                 <button
-                  onClick={() => setExecutorType('patch_agent')}
+                  onClick={() => setShowModelDropdown(!showModelDropdown)}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors',
-                    executorType === 'patch_agent'
-                      ? 'bg-gray-700 text-white'
-                      : 'text-gray-400 hover:text-white'
+                    'flex items-center gap-2 text-sm transition-colors',
+                    'text-gray-400 hover:text-white',
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
                   )}
-                  title="Use LLM models to generate patches"
                 >
-                  <CpuChipIcon className="w-4 h-4" />
-                  <span>Models</span>
-                </button>
-                <button
-                  onClick={() => setExecutorType('claude_code')}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors',
-                    executorType === 'claude_code'
-                      ? 'bg-gray-700 text-white'
-                      : 'text-gray-400 hover:text-white'
+                  {executorType === 'claude_code' ? (
+                    <>
+                      <CommandLineIcon className="w-4 h-4" />
+                      <span>Claude Code</span>
+                    </>
+                  ) : (
+                    <>
+                      <CpuChipIcon className="w-4 h-4" />
+                      <span>{getSelectedModelNames()}</span>
+                    </>
                   )}
-                  title="Use Claude Code CLI for execution"
-                >
-                  <CommandLineIcon className="w-4 h-4" />
-                  <span>Claude Code</span>
+                  <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showModelDropdown && 'rotate-180')} />
                 </button>
-              </div>
 
-              {/* Model Selector (only for patch_agent) */}
-              {executorType === 'patch_agent' && (
-                <div className="relative" ref={modelDropdownRef}>
-                  <button
-                    onClick={() => setShowModelDropdown(!showModelDropdown)}
-                    className={cn(
-                      'flex items-center gap-2 text-sm transition-colors',
-                      'text-gray-400 hover:text-white',
-                      'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
-                    )}
-                  >
-                    <span>{getSelectedModelNames()}</span>
-                    <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showModelDropdown && 'rotate-180')} />
-                  </button>
-
-                  {showModelDropdown && models && (
-                    <div className="absolute bottom-full left-0 mb-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                      <div className="p-3 border-b border-gray-700">
-                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Select Models</span>
+                {showModelDropdown && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col max-h-80">
+                    {/* Models Section (scrollable) */}
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                      <div className="p-3 border-b border-gray-700 sticky top-0 bg-gray-800">
+                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Models</span>
                       </div>
-                      <div className="max-h-60 overflow-y-auto">
-                        {models.length === 0 ? (
-                          <div className="p-4 text-center">
-                            <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                            <p className="text-gray-500 text-sm">No models configured</p>
-                            <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
-                          </div>
-                        ) : (
-                          models.map((model) => {
-                            const isSelected = selectedModels.includes(model.id);
-                            return (
-                              <button
-                                key={model.id}
-                                onClick={() => toggleModel(model.id)}
-                                className={cn(
-                                  'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                                  'hover:bg-gray-700 transition-colors',
-                                  'focus:outline-none focus:bg-gray-700'
-                                )}
-                              >
-                                <div className={cn(
-                                  'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
-                                  isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
-                                )}>
-                                  {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
+                      {!models || models.length === 0 ? (
+                        <div className="p-4 text-center">
+                          <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                          <p className="text-gray-500 text-sm">No models configured</p>
+                          <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
+                        </div>
+                      ) : (
+                        models.map((model) => {
+                          const isSelected = selectedModels.includes(model.id);
+                          return (
+                            <button
+                              key={model.id}
+                              onClick={() => {
+                                setExecutorType('patch_agent');
+                                toggleModel(model.id);
+                              }}
+                              className={cn(
+                                'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                                'hover:bg-gray-700 transition-colors',
+                                'focus:outline-none focus:bg-gray-700'
+                              )}
+                            >
+                              <div className={cn(
+                                'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                              )}>
+                                {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-gray-100 text-sm font-medium truncate">
+                                  {model.display_name || model.model_name}
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-gray-100 text-sm font-medium truncate">
-                                    {model.display_name || model.model_name}
-                                  </div>
-                                  <div className="text-gray-500 text-xs">{model.provider}</div>
-                                </div>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
+                                <div className="text-gray-500 text-xs">{model.provider}</div>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {/* Claude Code Option (fixed at bottom) */}
+                    <div className="border-t border-gray-700 flex-shrink-0">
+                      <button
+                        onClick={() => {
+                          setExecutorType('claude_code');
+                          setSelectedModels([]);
+                          setShowModelDropdown(false);
+                        }}
+                        className={cn(
+                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                          'hover:bg-gray-700 transition-colors',
+                          'focus:outline-none focus:bg-gray-700'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
+                          executorType === 'claude_code' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        )}>
+                          {executorType === 'claude_code' && <CheckIcon className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <div className="text-gray-100 text-sm font-medium">Claude Code</div>
+                            <div className="text-gray-500 text-xs">Use Claude Code CLI</div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Right side buttons */}
