@@ -154,15 +154,15 @@ export default function HomePage() {
         content: instruction,
       });
 
-      // Create runs immediately based on executor type
-      if (executorType === 'claude_code') {
+      // Create runs based on executor type
+      if (isCLIExecutor) {
         await runsApi.create(task.id, {
-          instruction: instruction.trim(),
-          executor_type: 'claude_code',
+          instruction: instruction,
+          executor_type: executorType,
         });
-      } else {
+      } else if (selectedModels.length > 0) {
         await runsApi.create(task.id, {
-          instruction: instruction.trim(),
+          instruction: instruction,
           model_ids: selectedModels,
           executor_type: 'patch_agent',
         });
@@ -201,8 +201,9 @@ export default function HomePage() {
     }
   };
 
+  const isCLIExecutor = executorType === 'claude_code' || executorType === 'codex_cli' || executorType === 'gemini_cli';
   const canSubmit = instruction.trim() && selectedRepo && selectedBranch && !loading &&
-    (executorType === 'claude_code' || selectedModels.length > 0);
+    (isCLIExecutor || selectedModels.length > 0);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
@@ -245,6 +246,16 @@ export default function HomePage() {
                     <>
                       <CommandLineIcon className="w-4 h-4" />
                       <span>Claude Code</span>
+                    </>
+                  ) : executorType === 'codex_cli' ? (
+                    <>
+                      <CommandLineIcon className="w-4 h-4" />
+                      <span>Codex</span>
+                    </>
+                  ) : executorType === 'gemini_cli' ? (
+                    <>
+                      <CommandLineIcon className="w-4 h-4" />
+                      <span>Gemini CLI</span>
                     </>
                   ) : (
                     <>
@@ -302,8 +313,12 @@ export default function HomePage() {
                       )}
                     </div>
 
-                    {/* Claude Code Option (fixed at bottom) */}
+                    {/* CLI Options (fixed at bottom) */}
                     <div className="border-t border-gray-700 flex-shrink-0">
+                      <div className="p-3 border-b border-gray-700">
+                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">CLI Agents</span>
+                      </div>
+                      {/* Claude Code Option */}
                       <button
                         onClick={() => {
                           setExecutorType('claude_code');
@@ -327,6 +342,60 @@ export default function HomePage() {
                           <div>
                             <div className="text-gray-100 text-sm font-medium">Claude Code</div>
                             <div className="text-gray-500 text-xs">Use Claude Code CLI</div>
+                          </div>
+                        </div>
+                      </button>
+                      {/* Codex Option */}
+                      <button
+                        onClick={() => {
+                          setExecutorType('codex_cli');
+                          setSelectedModels([]);
+                          setShowModelDropdown(false);
+                        }}
+                        className={cn(
+                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                          'hover:bg-gray-700 transition-colors',
+                          'focus:outline-none focus:bg-gray-700'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
+                          executorType === 'codex_cli' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        )}>
+                          {executorType === 'codex_cli' && <CheckIcon className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <div className="text-gray-100 text-sm font-medium">Codex</div>
+                            <div className="text-gray-500 text-xs">Use OpenAI Codex CLI</div>
+                          </div>
+                        </div>
+                      </button>
+                      {/* Gemini CLI Option */}
+                      <button
+                        onClick={() => {
+                          setExecutorType('gemini_cli');
+                          setSelectedModels([]);
+                          setShowModelDropdown(false);
+                        }}
+                        className={cn(
+                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                          'hover:bg-gray-700 transition-colors',
+                          'focus:outline-none focus:bg-gray-700'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
+                          executorType === 'gemini_cli' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        )}>
+                          {executorType === 'gemini_cli' && <CheckIcon className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <div className="text-gray-100 text-sm font-medium">Gemini CLI</div>
+                            <div className="text-gray-500 text-xs">Use Google Gemini CLI</div>
                           </div>
                         </div>
                       </button>

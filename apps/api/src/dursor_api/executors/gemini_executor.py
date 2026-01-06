@@ -1,4 +1,4 @@
-"""Claude Code CLI executor for running Claude Code in worktrees."""
+"""Gemini CLI executor for running Google Gemini CLI in worktrees."""
 
 import asyncio
 import os
@@ -7,41 +7,29 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dursor_api.domain.models import FileDiff
+from dursor_api.executors.claude_code_executor import ExecutorResult
 
 
 @dataclass
-class ClaudeCodeOptions:
-    """Options for Claude Code execution."""
+class GeminiOptions:
+    """Options for Gemini CLI execution."""
 
     timeout_seconds: int = 3600  # 1 hour default
     max_output_lines: int = 10000
-    claude_cli_path: str = "claude"
+    gemini_cli_path: str = "gemini"
     env_vars: dict[str, str] = field(default_factory=dict)
 
 
-@dataclass
-class ExecutorResult:
-    """Result from Claude Code execution."""
+class GeminiExecutor:
+    """Executes Gemini CLI in a worktree."""
 
-    success: bool
-    summary: str
-    patch: str
-    files_changed: list[FileDiff]
-    logs: list[str]
-    warnings: list[str] = field(default_factory=list)
-    error: str | None = None
-
-
-class ClaudeCodeExecutor:
-    """Executes Claude Code CLI in a worktree."""
-
-    def __init__(self, options: ClaudeCodeOptions | None = None):
+    def __init__(self, options: GeminiOptions | None = None):
         """Initialize executor with options.
 
         Args:
             options: Execution options. Uses defaults if not provided.
         """
-        self.options = options or ClaudeCodeOptions()
+        self.options = options or GeminiOptions()
 
     async def execute(
         self,
@@ -49,11 +37,11 @@ class ClaudeCodeExecutor:
         instruction: str,
         on_output: Callable[[str], Awaitable[None]] | None = None,
     ) -> ExecutorResult:
-        """Execute claude CLI with the given instruction.
+        """Execute gemini CLI with the given instruction.
 
         Args:
             worktree_path: Path to the git worktree.
-            instruction: Natural language instruction for Claude Code.
+            instruction: Natural language instruction for Gemini.
             on_output: Optional callback for streaming output.
 
         Returns:
@@ -65,15 +53,16 @@ class ClaudeCodeExecutor:
         # Prepare environment
         env = os.environ.copy()
         env.update(self.options.env_vars)
-        # Note: Don't change HOME as Claude CLI needs access to ~/.claude for auth
 
         # Build command
-        # Use --print to get output in a machine-readable format
-        # Use -p for non-interactive mode with instruction
+        # Gemini CLI: gemini "prompt" --yolo
+        # --yolo = auto-approve all actions
+        # Note: -p flag is deprecated, use positional prompt instead
+        # See: https://github.com/google-gemini/gemini-cli
         cmd = [
-            self.options.claude_cli_path,
-            "-p", instruction,
-            "--output-format", "text",
+            self.options.gemini_cli_path,
+            instruction,
+            "--yolo",
         ]
 
         logs.append(f"Executing: {' '.join(cmd)}")
@@ -128,7 +117,7 @@ class ClaudeCodeExecutor:
                     patch="",
                     files_changed=[],
                     logs=logs,
-                    error=f"Claude Code exited with code {process.returncode}",
+                    error=f"Gemini CLI exited with code {process.returncode}",
                 )
 
             # Generate diff from git changes
@@ -152,7 +141,7 @@ class ClaudeCodeExecutor:
                 patch="",
                 files_changed=[],
                 logs=logs,
-                error=f"Claude CLI not found at: {self.options.claude_cli_path}",
+                error=f"Gemini CLI not found at: {self.options.gemini_cli_path}",
             )
         except Exception as e:
             return ExecutorResult(
@@ -264,7 +253,7 @@ class ClaudeCodeExecutor:
 
         Args:
             files_changed: List of changed files.
-            output_lines: Output from Claude Code execution.
+            output_lines: Output from Gemini execution.
 
         Returns:
             Summary string.
@@ -290,7 +279,7 @@ class ClaudeCodeExecutor:
         return ". ".join(summary_parts) + "."
 
     async def cancel(self, process: asyncio.subprocess.Process) -> None:
-        """Cancel a running Claude Code process.
+        """Cancel a running Gemini process.
 
         Args:
             process: The subprocess to cancel.

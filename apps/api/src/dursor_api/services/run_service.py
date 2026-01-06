@@ -7,9 +7,12 @@ from typing import Any
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.agents.patch_agent import PatchAgent
+from dursor_api.config import settings
 from dursor_api.domain.enums import ExecutorType, RunStatus
 from dursor_api.domain.models import AgentConstraints, AgentRequest, Run, RunCreate
-from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor
+from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
+from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
+from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
 from dursor_api.services.worktree_service import WorktreeService
@@ -85,7 +88,15 @@ class RunService:
         self.worktree_service = worktree_service or WorktreeService()
         self.queue = QueueAdapter()
         self.llm_router = LLMRouter()
-        self.claude_executor = ClaudeCodeExecutor()
+        self.claude_executor = ClaudeCodeExecutor(
+            ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
+        )
+        self.codex_executor = CodexExecutor(
+            CodexOptions(codex_cli_path=settings.codex_cli_path)
+        )
+        self.gemini_executor = GeminiExecutor(
+            GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
+        )
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
         """Create runs for multiple models or Claude Code.
@@ -111,11 +122,32 @@ class RunService:
 
         if data.executor_type == ExecutorType.CLAUDE_CODE:
             # Create a single Claude Code run
-            run = await self._create_claude_code_run(
+            run = await self._create_cli_run(
                 task_id=task_id,
                 repo=repo,
                 instruction=data.instruction,
                 base_ref=data.base_ref or repo.default_branch,
+                executor_type=ExecutorType.CLAUDE_CODE,
+            )
+            runs.append(run)
+        elif data.executor_type == ExecutorType.CODEX_CLI:
+            # Create a single Codex CLI run
+            run = await self._create_cli_run(
+                task_id=task_id,
+                repo=repo,
+                instruction=data.instruction,
+                base_ref=data.base_ref or repo.default_branch,
+                executor_type=ExecutorType.CODEX_CLI,
+            )
+            runs.append(run)
+        elif data.executor_type == ExecutorType.GEMINI_CLI:
+            # Create a single Gemini CLI run
+            run = await self._create_cli_run(
+                task_id=task_id,
+                repo=repo,
+                instruction=data.instruction,
+                base_ref=data.base_ref or repo.default_branch,
+                executor_type=ExecutorType.GEMINI_CLI,
             )
             runs.append(run)
         else:
@@ -149,20 +181,22 @@ class RunService:
 
         return runs
 
-    async def _create_claude_code_run(
+    async def _create_cli_run(
         self,
         task_id: str,
         repo: Any,
         instruction: str,
         base_ref: str,
+        executor_type: ExecutorType,
     ) -> Run:
-        """Create and start a Claude Code run.
+        """Create and start a CLI-based run (Claude Code, Codex, or Gemini).
 
         Args:
             task_id: Task ID.
             repo: Repository object.
             instruction: Natural language instruction.
             base_ref: Base branch to work from.
+            executor_type: Type of CLI executor to use.
 
         Returns:
             Created Run object.
@@ -171,7 +205,7 @@ class RunService:
         run = await self.run_dao.create(
             task_id=task_id,
             instruction=instruction,
-            executor_type=ExecutorType.CLAUDE_CODE,
+            executor_type=executor_type,
             base_ref=base_ref,
         )
 
@@ -192,10 +226,12 @@ class RunService:
         # Update the run object with new info
         run = await self.run_dao.get(run.id)
 
-        # Enqueue for execution
+        # Enqueue for execution based on executor type
         self.queue.enqueue(
             run.id,
-            lambda r=run, wt=worktree_info: self._execute_claude_code_run(r, wt),
+            lambda r=run, wt=worktree_info, et=executor_type: self._execute_cli_run(
+                r, wt, et
+            ),
         )
 
         return run
@@ -237,8 +273,13 @@ class RunService:
         if cancelled:
             await self.run_dao.update_status(run_id, RunStatus.CANCELED)
 
-            # Cleanup worktree if it's a Claude Code run
-            if run and run.executor_type == ExecutorType.CLAUDE_CODE and run.worktree_path:
+            # Cleanup worktree if it's a CLI executor run
+            cli_executors = {
+                ExecutorType.CLAUDE_CODE,
+                ExecutorType.CODEX_CLI,
+                ExecutorType.GEMINI_CLI,
+            }
+            if run and run.executor_type in cli_executors and run.worktree_path:
                 await self.worktree_service.cleanup_worktree(
                     Path(run.worktree_path),
                     delete_branch=True,
@@ -328,24 +369,36 @@ class RunService:
                 logs=[f"Execution failed: {str(e)}"],
             )
 
-    async def _execute_claude_code_run(self, run: Run, worktree_info: Any) -> None:
-        """Execute a Claude Code run.
+    async def _execute_cli_run(
+        self, run: Run, worktree_info: Any, executor_type: ExecutorType
+    ) -> None:
+        """Execute a CLI-based run (Claude Code, Codex, or Gemini).
 
         Args:
             run: Run object.
             worktree_info: WorktreeInfo object with path and branch info.
+            executor_type: Type of CLI executor to use.
         """
         logs: list[str] = []
+
+        # Map executor types to their executors and names
+        executor_map = {
+            ExecutorType.CLAUDE_CODE: (self.claude_executor, "Claude Code"),
+            ExecutorType.CODEX_CLI: (self.codex_executor, "Codex"),
+            ExecutorType.GEMINI_CLI: (self.gemini_executor, "Gemini"),
+        }
+
+        executor, executor_name = executor_map[executor_type]
 
         try:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
 
-            logs.append(f"Starting Claude Code execution in {worktree_info.path}")
+            logs.append(f"Starting {executor_name} execution in {worktree_info.path}")
             logs.append(f"Working branch: {worktree_info.branch_name}")
 
-            # Execute Claude Code
-            result = await self.claude_executor.execute(
+            # Execute the CLI
+            result = await executor.execute(
                 worktree_path=worktree_info.path,
                 instruction=run.instruction,
                 on_output=lambda line: self._log_output(run.id, line),
