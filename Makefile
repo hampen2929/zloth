@@ -20,18 +20,27 @@ install-web:
 install: install-api install-web
 
 # Local development - run servers
+API_HOST ?= 0.0.0.0
+
 dev-api:
-	cd apps/api && PYTHONPATH=src uvicorn dursor_api.main:app --host 0.0.0.0 --port 8000 --reload
+	@API_PORT=$${API_PORT:-$$(python3 -c 'exec("import socket\nfor port in range(8000, 8011):\n    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    try:\n        s.bind((\"0.0.0.0\", port))\n    except OSError:\n        continue\n    else:\n        s.close()\n        print(port)\n        break\nelse:\n    print(8000)\n")')}; \
+	echo "API will run on: http://localhost:$$API_PORT"; \
+	cd apps/api && PYTHONPATH=src uvicorn dursor_api.main:app --host $(API_HOST) --port $$API_PORT --reload
 
 dev-web:
-	cd apps/web && npm run dev
+	@API_PORT=$${API_PORT:-8000}; \
+	API_URL=$${API_URL:-http://localhost:$$API_PORT}; \
+	cd apps/web && API_URL=$$API_URL npm run dev
 
 # Run both API and Web servers in parallel
 dev:
 	@echo "Starting API and Web servers..."
-	@trap 'kill 0' EXIT; \
-	(cd apps/api && PYTHONPATH=src uvicorn dursor_api.main:app --host 0.0.0.0 --port 8000 --reload) & \
-	(cd apps/web && npm run dev)
+	@API_PORT=$${API_PORT:-$$(python3 -c 'exec("import socket\nfor port in range(8000, 8011):\n    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    try:\n        s.bind((\"0.0.0.0\", port))\n    except OSError:\n        continue\n    else:\n        s.close()\n        print(port)\n        break\nelse:\n    print(8000)\n")')}; \
+	API_URL=$${API_URL:-http://localhost:$$API_PORT}; \
+	echo "API will run on: $$API_URL"; \
+	trap 'kill 0' EXIT; \
+	(cd apps/api && PYTHONPATH=src uvicorn dursor_api.main:app --host $(API_HOST) --port $$API_PORT --reload) & \
+	(cd apps/web && API_URL=$$API_URL npm run dev)
 
 # CLI Agents Installation
 # Claude Code CLI (Anthropic)
