@@ -178,10 +178,17 @@ flowchart TD
     H --> I[結果表示]
     I --> J{追加指示あり?}
     J -->|Yes| C
-    J -->|No| K{PR作成する?}
-    K -->|Yes| L[PR作成]
-    K -->|No| M[完了: ブランチのみ]
-    L --> N[完了: PR作成済み]
+    J -->|No| K{PR作成/更新?}
+    K -->|作成| L[PR作成]
+    K -->|不要| M[完了: ブランチのみ]
+    L --> N[PR作成済み]
+    N --> O{追加指示あり?}
+    O -->|Yes| C
+    O -->|No| P{Description更新?}
+    P -->|Yes| Q[Diffから Description生成]
+    Q --> R[PR Description更新]
+    R --> O
+    P -->|No| S[完了]
     
     subgraph "Agent実行（制約付き）"
         C
@@ -193,12 +200,16 @@ flowchart TD
         G
         H
         L
+        Q
+        R
     end
     
     subgraph "ユーザー操作"
         A
         J
         K
+        O
+        P
     end
 ```
 
@@ -561,9 +572,9 @@ class RunService:
         return first_line
 ```
 
-### 5. PRService の簡素化
+### 5. PRService の実装
 
-Run 実行時に既に commit/push されているため、PRService は PR 作成のみを担当します。
+Run 実行時に既に commit/push されているため、PRService は PR 作成・更新を担当します。
 
 ```python
 # apps/api/src/dursor_api/services/pr_service.py
@@ -574,9 +585,14 @@ class PRService:
         pr_dao: PRDAO,
         task_dao: TaskDAO,
         run_dao: RunDAO,
+        repo_service: RepoService,
+        git_service: GitService,
         github_service: GitHubService,
+        llm_router: LLMRouter,
     ):
         self.github_service = github_service
+        self.git_service = git_service
+        self.llm_router = llm_router
 
     async def create_from_run(
         self,
@@ -616,6 +632,141 @@ class PRService:
             body=pr_data.body,
             latest_commit=run.commit_sha,
         )
+
+    async def regenerate_description(
+        self,
+        task_id: str,
+        pr_id: str,
+    ) -> PR:
+        """現在のDiffからDescriptionを再生成してPRを更新"""
+        pr = await self.pr_dao.get(pr_id)
+        if not pr or pr.task_id != task_id:
+            raise ValueError(f"PR not found: {pr_id}")
+
+        task = await self.task_dao.get(task_id)
+        repo = await self.repo_service.get(task.repo_id)
+        owner, repo_name = self._parse_github_url(repo.repo_url)
+
+        # 累積Diffを取得
+        run = await self._get_latest_run_for_pr(pr)
+        worktree_path = Path(run.worktree_path)
+        
+        cumulative_diff = await self.git_service.get_diff_from_base(
+            worktree_path=worktree_path,
+            base_ref=run.base_ref,
+        )
+
+        # pull_request_templateを読み込み
+        template = await self._load_pr_template(repo)
+
+        # LLMでDescription生成
+        new_description = await self._generate_description(
+            diff=cumulative_diff,
+            template=template,
+            task=task,
+            pr=pr,
+        )
+
+        # GitHub APIでPR更新
+        await self.github_service.update_pull_request(
+            owner=owner,
+            repo=repo_name,
+            pr_number=pr.number,
+            body=new_description,
+        )
+
+        # DB更新
+        await self.pr_dao.update_body(pr_id, new_description)
+
+        return await self.pr_dao.get(pr_id)
+
+    async def _load_pr_template(self, repo: Repo) -> str | None:
+        """リポジトリのpull_request_templateを読み込み"""
+        workspace_path = Path(repo.workspace_path)
+        
+        # テンプレートの候補パス（優先順）
+        template_paths = [
+            workspace_path / ".github" / "pull_request_template.md",
+            workspace_path / ".github" / "PULL_REQUEST_TEMPLATE.md",
+            workspace_path / "pull_request_template.md",
+            workspace_path / "PULL_REQUEST_TEMPLATE.md",
+            workspace_path / ".github" / "PULL_REQUEST_TEMPLATE" / "default.md",
+        ]
+
+        for path in template_paths:
+            if path.exists():
+                return path.read_text()
+
+        return None
+
+    async def _generate_description(
+        self,
+        diff: str,
+        template: str | None,
+        task: Task,
+        pr: PR,
+    ) -> str:
+        """LLMを使ってPR Descriptionを生成"""
+        
+        prompt = self._build_description_prompt(diff, template, task, pr)
+        
+        # LLMで生成（システムで設定されたモデルを使用）
+        response = await self.llm_router.generate(
+            prompt=prompt,
+            system_prompt="You are a helpful assistant that generates clear and concise PR descriptions.",
+        )
+
+        return response
+
+    def _build_description_prompt(
+        self,
+        diff: str,
+        template: str | None,
+        task: Task,
+        pr: PR,
+    ) -> str:
+        """Description生成用のプロンプトを構築"""
+        
+        prompt_parts = [
+            "以下の情報を基に、Pull Request の Description を生成してください。",
+            "",
+            "## タスクの説明",
+            task.description or "(なし)",
+            "",
+            "## PR タイトル",
+            pr.title,
+            "",
+            "## 変更差分",
+            "```diff",
+            diff[:10000] if len(diff) > 10000 else diff,  # 長すぎる場合は切り詰め
+            "```",
+        ]
+
+        if template:
+            prompt_parts.extend([
+                "",
+                "## テンプレート",
+                "以下のテンプレートの形式に従って Description を作成してください:",
+                "",
+                template,
+            ])
+        else:
+            prompt_parts.extend([
+                "",
+                "## 出力形式",
+                "以下の形式で Description を作成してください:",
+                "",
+                "## Summary",
+                "(変更内容の概要を1-3文で)",
+                "",
+                "## Changes",
+                "(主な変更点を箇条書きで)",
+                "",
+                "## Test Plan",
+                "(テスト方法や確認事項)",
+            ])
+
+        return "\n".join(prompt_parts)
 ```
 
 ---
@@ -629,7 +780,7 @@ sequenceDiagram
     participant U as User
     participant D as dursor
     participant A as AI Agent
-    participant G as Git
+    participant G as Git/GitHub
 
     Note over U,G: 初回実行
     U->>D: 指示1を送信
@@ -656,6 +807,24 @@ sequenceDiagram
     U->>D: PR作成リクエスト
     D->>G: GitHub API: Create PR
     D->>U: PR URL
+
+    Note over U,G: PR作成後の追加指示
+    U->>D: 指示3を送信
+    D->>A: 指示3（session_id: abc123）
+    A->>G: 追加のファイル編集
+    A->>D: 完了
+    D->>G: git add -A
+    D->>G: git commit
+    D->>G: git push
+    D->>U: 結果表示（PRに自動反映）
+
+    Note over U,G: Description更新（UIボタン）
+    U->>D: Description更新リクエスト
+    D->>G: git diff（累積差分取得）
+    D->>D: pull_request_template読み込み
+    D->>D: LLMでDescription生成
+    D->>G: GitHub API: Update PR
+    D->>U: 更新完了
 ```
 
 ### 実装例
@@ -742,6 +911,124 @@ class RunService:
 
         return await self.run_dao.get(existing_run.id)
 ```
+
+---
+
+## PR Description 自動生成機能
+
+### 概要
+
+PR 作成後、UIの「Description 更新」ボタンから現在の累積 Diff を基に Description を自動生成・更新できます。
+
+### フロー
+
+```mermaid
+flowchart TD
+    A[UIでDescription更新ボタンをクリック] --> B[累積Diffを取得]
+    B --> C{pull_request_template.md あり?}
+    C -->|Yes| D[テンプレートを読み込み]
+    C -->|No| E[デフォルトフォーマット使用]
+    D --> F[LLMでDescription生成]
+    E --> F
+    F --> G[GitHub API: PR更新]
+    G --> H[UI更新]
+```
+
+### API エンドポイント
+
+```
+POST /v1/tasks/{task_id}/prs/{pr_id}/regenerate-description
+```
+
+**Response:**
+```json
+{
+  "id": "pr_xxx",
+  "number": 123,
+  "url": "https://github.com/owner/repo/pull/123",
+  "title": "Add new feature",
+  "body": "(generated description)",
+  "branch": "dursor/abc12345",
+  "latest_commit": "abc123..."
+}
+```
+
+### UI コンポーネント
+
+```tsx
+// apps/web/src/components/PRDetailPanel.tsx
+
+interface PRDetailPanelProps {
+  taskId: string;
+  pr: PR;
+  onUpdate: (pr: PR) => void;
+}
+
+export function PRDetailPanel({ taskId, pr, onUpdate }: PRDetailPanelProps) {
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const handleRegenerateDescription = async () => {
+    setIsRegenerating(true);
+    try {
+      const updatedPR = await api.regeneratePRDescription(taskId, pr.id);
+      onUpdate(updatedPR);
+      toast.success('Description を更新しました');
+    } catch (error) {
+      toast.error('Description の更新に失敗しました');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  return (
+    <div className="pr-detail-panel">
+      <div className="pr-header">
+        <h2>{pr.title}</h2>
+        <a href={pr.url} target="_blank" rel="noopener noreferrer">
+          #{pr.number}
+        </a>
+      </div>
+
+      <div className="pr-actions">
+        <Button
+          onClick={handleRegenerateDescription}
+          disabled={isRegenerating}
+          variant="secondary"
+        >
+          {isRegenerating ? (
+            <>
+              <Spinner size="sm" />
+              生成中...
+            </>
+          ) : (
+            <>
+              <RefreshIcon />
+              Description 更新
+            </>
+          )}
+        </Button>
+      </div>
+
+      <div className="pr-description">
+        <h3>Description</h3>
+        <div className="markdown-body">
+          <ReactMarkdown>{pr.body}</ReactMarkdown>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### pull_request_template の検索パス
+
+以下の順序でテンプレートを検索します:
+
+1. `.github/pull_request_template.md`
+2. `.github/PULL_REQUEST_TEMPLATE.md`
+3. `pull_request_template.md`
+4. `PULL_REQUEST_TEMPLATE.md`
+5. `.github/PULL_REQUEST_TEMPLATE/default.md`
 
 ---
 
@@ -832,8 +1119,9 @@ class RunService:
 1. **責任の分離**: AI Agent はファイル編集のみ、git 操作は dursor が統一管理
 2. **自動化されたワークフロー**: Agent 実行後に自動で commit/push、迅速なフィードバック
 3. **一貫性**: どの Agent を使っても同じ git ワークフロー
-4. **会話継続**: 同じブランチ上で複数回の指示を重ねて PR を育てる
-5. **デバッグ容易性**: 「ファイル編集」と「git操作」を分離して問題調査可能
+4. **会話継続**: 同じブランチ上で複数回の指示を重ねて PR を育てる（PR 作成後も継続可能）
+5. **Description 自動生成**: pull_request_template に沿った Description を LLM で生成
+6. **デバッグ容易性**: 「ファイル編集」と「git操作」を分離して問題調査可能
 
 ### ワークフローのポイント
 
@@ -842,8 +1130,32 @@ class RunService:
 | 準備 | git worktree add | dursor |
 | 実行 | ファイル編集 | AI Agent |
 | 保存 | git add, commit, push | dursor（自動） |
-| PR作成 | GitHub API | dursor（ユーザー指示時） |
+| PR作成 | GitHub API: Create PR | dursor（ユーザー指示時） |
+| PR更新 | 追加指示 → commit/push（自動反映） | dursor |
+| Description更新 | Diff + template → LLM生成 → GitHub API | dursor（UIボタン） |
 | 破棄 | ブランチ削除 | dursor（ユーザー指示時） |
+
+### PR ライフサイクル
+
+```mermaid
+stateDiagram-v2
+    [*] --> BranchCreated: タスク作成
+    BranchCreated --> HasChanges: Agent実行
+    HasChanges --> HasChanges: 追加指示
+    HasChanges --> PRCreated: PR作成
+    PRCreated --> PRUpdated: 追加指示（自動反映）
+    PRUpdated --> PRUpdated: 追加指示
+    PRUpdated --> PRUpdated: Description更新
+    PRCreated --> PRUpdated: Description更新
+    PRUpdated --> Merged: マージ
+    PRCreated --> Merged: マージ
+    HasChanges --> Discarded: 破棄
+    PRCreated --> Closed: クローズ
+    PRUpdated --> Closed: クローズ
+    Merged --> [*]
+    Closed --> [*]
+    Discarded --> [*]
+```
 
 ### 今後の拡張
 
@@ -852,3 +1164,4 @@ class RunService:
 - コンフリクト解決支援
 - ブランチ戦略のカスタマイズ（squash, rebase 等）
 - コミットメッセージのカスタマイズオプション
+- Description テンプレートのカスタマイズ
