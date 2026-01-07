@@ -120,6 +120,16 @@ class RunService:
 
         runs = []
 
+        # Lock executor after the first run in the task.
+        # Users expect "resume" style conversations to keep using the initially chosen executor.
+        existing_runs = await self.run_dao.list(task_id)
+        locked_executor: ExecutorType | None = None
+        if existing_runs:
+            # DAO returns newest-first; the earliest run is last.
+            locked_executor = existing_runs[-1].executor_type
+            if data.executor_type != locked_executor:
+                data = data.model_copy(update={"executor_type": locked_executor})
+
         if data.executor_type == ExecutorType.CLAUDE_CODE:
             # Create a single Claude Code run
             run = await self._create_cli_run(
@@ -152,10 +162,25 @@ class RunService:
             runs.append(run)
         else:
             # Create runs for each model (PatchAgent)
-            if not data.model_ids:
-                raise ValueError("model_ids required for patch_agent executor")
+            model_ids = data.model_ids
+            if not model_ids:
+                # If the task is already locked to patch_agent, reuse the most recent
+                # model set (grouped by latest patch_agent instruction).
+                patch_runs = [r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT]
+                if patch_runs:
+                    latest_instruction = patch_runs[0].instruction  # newest-first
+                    model_ids = []
+                    seen: set[str] = set()
+                    for r in patch_runs:
+                        if r.instruction != latest_instruction:
+                            continue
+                        if r.model_id and r.model_id not in seen:
+                            seen.add(r.model_id)
+                            model_ids.append(r.model_id)
+                if not model_ids:
+                    raise ValueError("model_ids required for patch_agent executor")
 
-            for model_id in data.model_ids:
+            for model_id in model_ids:
                 # Verify model exists and get model info
                 model = await self.model_service.get(model_id)
                 if not model:

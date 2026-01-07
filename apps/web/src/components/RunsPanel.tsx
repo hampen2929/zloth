@@ -122,6 +122,18 @@ export function RunsPanel({
                 {group.runs.map((run) => {
                   const statusConfig = STATUS_CONFIG[run.status];
                   const isSelected = selectedRunId === run.id;
+                  const isCLI =
+                    run.executor_type === 'claude_code' ||
+                    run.executor_type === 'codex_cli' ||
+                    run.executor_type === 'gemini_cli';
+                  const cliName =
+                    run.executor_type === 'claude_code'
+                      ? 'Claude Code'
+                      : run.executor_type === 'codex_cli'
+                        ? 'Codex'
+                        : run.executor_type === 'gemini_cli'
+                          ? 'Gemini CLI'
+                          : 'CLI';
 
                   return (
                     <button
@@ -138,10 +150,10 @@ export function RunsPanel({
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-sm text-gray-100 flex items-center gap-1.5">
-                          {run.executor_type === 'claude_code' ? (
+                          {isCLI ? (
                             <>
                               <CommandLineIcon className="w-4 h-4 text-purple-400" />
-                              <span>Claude Code</span>
+                              <span>{cliName}</span>
                             </>
                           ) : (
                             run.model_name
@@ -157,7 +169,7 @@ export function RunsPanel({
                         </span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {run.executor_type === 'claude_code' ? (
+                        {isCLI ? (
                           run.working_branch ? (
                             <span className="font-mono text-purple-400">{run.working_branch}</span>
                           ) : (

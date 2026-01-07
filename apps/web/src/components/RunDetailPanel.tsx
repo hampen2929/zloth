@@ -109,6 +109,19 @@ export function RunDetailPanel({
     }
   };
 
+  const isCLI =
+    run.executor_type === 'claude_code' ||
+    run.executor_type === 'codex_cli' ||
+    run.executor_type === 'gemini_cli';
+  const cliName =
+    run.executor_type === 'claude_code'
+      ? 'Claude Code'
+      : run.executor_type === 'codex_cli'
+        ? 'Codex'
+        : run.executor_type === 'gemini_cli'
+          ? 'Gemini CLI'
+          : 'CLI';
+
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
       {/* Header */}
@@ -116,17 +129,17 @@ export function RunDetailPanel({
         <div className="flex items-start justify-between">
           <div>
             <h2 className="font-semibold text-gray-100 flex items-center gap-2">
-              {run.executor_type === 'claude_code' ? (
+              {isCLI ? (
                 <>
                   <CommandLineIcon className="w-5 h-5 text-purple-400" />
-                  <span>Claude Code</span>
+                  <span>{cliName}</span>
                 </>
               ) : (
                 run.model_name
               )}
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              {run.executor_type === 'claude_code' ? (
+              {isCLI ? (
                 run.working_branch && (
                   <button
                     onClick={async () => {
