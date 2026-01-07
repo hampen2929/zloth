@@ -236,6 +236,10 @@ class RunService:
     ) -> Run:
         """Create and start a CLI-based run (Claude Code, Codex, or Gemini).
 
+        This method reuses an existing worktree/branch for the same task and
+        executor type to enable conversation continuation in the same working
+        directory. Only creates a new worktree if none exists.
+
         Args:
             task_id: Task ID.
             repo: Repository object.
@@ -246,6 +250,8 @@ class RunService:
         Returns:
             Created Run object.
         """
+        from dursor_api.services.git_service import WorktreeInfo
+
         # Get the latest session ID for this task and executor type
         # This enables conversation persistence across multiple runs
         previous_session_id = await self.run_dao.get_latest_session_id(
@@ -253,7 +259,27 @@ class RunService:
             executor_type=executor_type,
         )
 
-        # Create the run record first (without worktree info)
+        # Check for existing worktree to reuse
+        existing_run = await self.run_dao.get_latest_worktree_run(
+            task_id=task_id,
+            executor_type=executor_type,
+        )
+
+        worktree_info = None
+
+        if existing_run and existing_run.worktree_path:
+            # Verify worktree still exists
+            worktree_path = Path(existing_run.worktree_path)
+            if worktree_path.exists():
+                # Reuse existing worktree
+                worktree_info = WorktreeInfo(
+                    path=worktree_path,
+                    branch_name=existing_run.working_branch,
+                    base_branch=existing_run.base_ref or base_ref,
+                    created_at=existing_run.created_at,
+                )
+
+        # Create the run record
         run = await self.run_dao.create(
             task_id=task_id,
             instruction=instruction,
@@ -261,12 +287,13 @@ class RunService:
             base_ref=base_ref,
         )
 
-        # Create worktree for this run using GitService
-        worktree_info = await self.git_service.create_worktree(
-            repo=repo,
-            base_branch=base_ref,
-            run_id=run.id,
-        )
+        if not worktree_info:
+            # Create new worktree for this run
+            worktree_info = await self.git_service.create_worktree(
+                repo=repo,
+                base_branch=base_ref,
+                run_id=run.id,
+            )
 
         # Update run with worktree info
         await self.run_dao.update_worktree(

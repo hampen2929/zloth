@@ -497,6 +497,39 @@ class RunDAO:
         row = await cursor.fetchone()
         return row["session_id"] if row else None
 
+    async def get_latest_worktree_run(
+        self,
+        task_id: str,
+        executor_type: ExecutorType,
+    ) -> Run | None:
+        """Get the latest run with a valid worktree for a task and executor type.
+
+        This is used to reuse an existing worktree for subsequent runs in the
+        same task, enabling conversation continuation in the same working directory.
+
+        Args:
+            task_id: Task ID.
+            executor_type: Type of executor.
+
+        Returns:
+            Run with worktree if found, None otherwise.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM runs
+            WHERE task_id = ? AND executor_type = ?
+                AND worktree_path IS NOT NULL
+                AND status IN ('succeeded', 'failed', 'running', 'queued')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (task_id, executor_type.value),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
     def _row_to_model(self, row: Any) -> Run:
         files_changed = []
         if row["files_changed"]:
