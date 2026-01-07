@@ -118,9 +118,18 @@ class RunService:
         if not repo:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
+        # Determine the executor type to use
+        # If executor_type is PATCH_AGENT but no model_ids provided,
+        # check if there was a previous CLI executor for this task and continue using it
+        effective_executor_type = data.executor_type
+        if data.executor_type == ExecutorType.PATCH_AGENT and not data.model_ids:
+            previous_cli_executor = await self.run_dao.get_latest_cli_executor_type(task_id)
+            if previous_cli_executor:
+                effective_executor_type = previous_cli_executor
+
         runs = []
 
-        if data.executor_type == ExecutorType.CLAUDE_CODE:
+        if effective_executor_type == ExecutorType.CLAUDE_CODE:
             # Create a single Claude Code run
             run = await self._create_cli_run(
                 task_id=task_id,
@@ -130,7 +139,7 @@ class RunService:
                 executor_type=ExecutorType.CLAUDE_CODE,
             )
             runs.append(run)
-        elif data.executor_type == ExecutorType.CODEX_CLI:
+        elif effective_executor_type == ExecutorType.CODEX_CLI:
             # Create a single Codex CLI run
             run = await self._create_cli_run(
                 task_id=task_id,
@@ -140,7 +149,7 @@ class RunService:
                 executor_type=ExecutorType.CODEX_CLI,
             )
             runs.append(run)
-        elif data.executor_type == ExecutorType.GEMINI_CLI:
+        elif effective_executor_type == ExecutorType.GEMINI_CLI:
             # Create a single Gemini CLI run
             run = await self._create_cli_run(
                 task_id=task_id,

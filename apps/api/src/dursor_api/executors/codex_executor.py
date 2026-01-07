@@ -1,7 +1,9 @@
 """Codex CLI executor for running OpenAI Codex in worktrees."""
 
 import asyncio
+import json
 import os
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,13 +46,11 @@ class CodexExecutor:
             worktree_path: Path to the git worktree.
             instruction: Natural language instruction for Codex.
             on_output: Optional callback for streaming output.
-            resume_session_id: Optional session ID (not yet supported by Codex CLI).
+            resume_session_id: Optional session ID to resume a previous conversation.
 
         Returns:
             ExecutorResult with success status, patch, and logs.
         """
-        # Note: Codex CLI does not currently support session persistence
-        # The resume_session_id parameter is included for interface compatibility
         logs: list[str] = []
         output_lines: list[str] = []
 
@@ -59,16 +59,33 @@ class CodexExecutor:
         env.update(self.options.env_vars)
 
         # Build command
-        # Codex CLI: codex exec "prompt" --full-auto
+        # Codex CLI: codex exec "prompt" --full-auto --json
         # exec = Run Codex non-interactively
         # --full-auto = -a on-request + --sandbox workspace-write
+        # --json = Output events as JSONL for session ID extraction
+        # Resume: codex exec resume <SESSION_ID> "prompt" --full-auto --json
         # See: https://github.com/openai/codex
-        cmd = [
-            self.options.codex_cli_path,
-            "exec",
-            instruction,
-            "--full-auto",
-        ]
+        if resume_session_id:
+            # Resume a previous session with the given instruction
+            cmd = [
+                self.options.codex_cli_path,
+                "exec",
+                "resume",
+                resume_session_id,
+                instruction,
+                "--full-auto",
+                "--json",
+            ]
+            logs.append(f"Resuming session: {resume_session_id}")
+        else:
+            # Start a new session
+            cmd = [
+                self.options.codex_cli_path,
+                "exec",
+                instruction,
+                "--full-auto",
+                "--json",
+            ]
 
         logs.append(f"Executing: {' '.join(cmd)}")
         logs.append(f"Working directory: {worktree_path}")
@@ -125,6 +142,9 @@ class CodexExecutor:
                     error=f"Codex CLI exited with code {process.returncode}",
                 )
 
+            # Extract session ID from JSONL output
+            session_id = self._extract_session_id(output_lines)
+
             # Generate diff from git changes
             patch, files_changed = await self._generate_diff(worktree_path)
 
@@ -137,6 +157,7 @@ class CodexExecutor:
                 patch=patch,
                 files_changed=files_changed,
                 logs=logs,
+                session_id=session_id,
             )
 
         except FileNotFoundError:
@@ -157,6 +178,54 @@ class CodexExecutor:
                 logs=logs,
                 error=str(e),
             )
+
+    def _extract_session_id(self, output_lines: list[str]) -> str | None:
+        """Extract session ID from Codex CLI JSONL output.
+
+        Codex CLI with --json outputs JSONL events. We look for:
+        1. thread.started event with thread_id
+        2. session_configured event with session_id
+
+        Args:
+            output_lines: Output lines from Codex CLI execution.
+
+        Returns:
+            Session ID (thread_id) if found, None otherwise.
+        """
+        for line in output_lines:
+            try:
+                data = json.loads(line)
+                if isinstance(data, dict):
+                    # Check for thread.started event (preferred)
+                    # Format: {"type": "thread.started", "thread_id": "..."}
+                    if data.get("type") == "thread.started":
+                        thread_id = data.get("thread_id")
+                        if thread_id:
+                            return thread_id
+
+                    # Check for session_configured event (fallback)
+                    # Format: {"msg": {"type": "session_configured", "session_id": "..."}}
+                    msg = data.get("msg")
+                    if isinstance(msg, dict) and msg.get("type") == "session_configured":
+                        session_id = msg.get("session_id")
+                        if session_id:
+                            return session_id
+            except json.JSONDecodeError:
+                continue
+
+        # Fallback: try to find UUID pattern in combined output
+        combined = "\n".join(output_lines)
+        # Look for thread_id or session_id with UUID pattern
+        patterns = [
+            r'"thread_id":\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"',
+            r'"session_id":\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, combined, re.IGNORECASE)
+            if match:
+                return match.group(1)
+
+        return None
 
     async def _generate_diff(self, worktree_path: Path) -> tuple[str, list[FileDiff]]:
         """Generate diff from git changes in worktree.

@@ -489,6 +489,40 @@ class RunDAO:
         row = await cursor.fetchone()
         return row["session_id"] if row else None
 
+    async def get_latest_cli_executor_type(
+        self,
+        task_id: str,
+    ) -> ExecutorType | None:
+        """Get the latest CLI executor type used for a task.
+
+        This is used to maintain executor type continuity across runs.
+        Only returns CLI-based executor types (claude_code, codex_cli, gemini_cli).
+
+        Args:
+            task_id: Task ID.
+
+        Returns:
+            ExecutorType if found, None otherwise.
+        """
+        cli_executor_types = [
+            ExecutorType.CLAUDE_CODE.value,
+            ExecutorType.CODEX_CLI.value,
+            ExecutorType.GEMINI_CLI.value,
+        ]
+        placeholders = ",".join("?" * len(cli_executor_types))
+
+        cursor = await self.db.connection.execute(
+            f"""
+            SELECT executor_type FROM runs
+            WHERE task_id = ? AND executor_type IN ({placeholders})
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (task_id, *cli_executor_types),
+        )
+        row = await cursor.fetchone()
+        return ExecutorType(row["executor_type"]) if row else None
+
     def _row_to_model(self, row: Any) -> Run:
         files_changed = []
         if row["files_changed"]:
