@@ -61,12 +61,14 @@ class CodexExecutor:
         #
         # Codex CLI (Rust): `codex exec <PROMPT> --full-auto`
         # Resume an existing session in non-interactive mode:
-        #   `codex exec resume <SESSION_ID> <PROMPT> --full-auto`
+        #   `codex exec <PROMPT> resume <SESSION_ID> --full-auto`
         #
         # See: https://github.com/openai/codex
         cmd: list[str] = [self.options.codex_cli_path, "exec"]
         if resume_session_id:
-            cmd.extend(["resume", resume_session_id, instruction])
+            # IMPORTANT: Codex `exec` expects the PROMPT positional argument before the subcommand.
+            # This matches upstream tests and avoids clap parse errors (exit code 2).
+            cmd.extend([instruction, "resume", resume_session_id])
             logs.append(f"Continuing session: {resume_session_id}")
         else:
             cmd.append(instruction)
