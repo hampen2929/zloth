@@ -59,27 +59,33 @@ class GeminiExecutor:
         env.update(self.options.env_vars)
 
         # Build command
-        # Gemini CLI: gemini "prompt" --yolo
+        # Gemini CLI: gemini --yolo (reads prompt from stdin)
         # --yolo = auto-approve all actions
-        # Note: -p flag is deprecated, use positional prompt instead
         # See: https://github.com/google-gemini/gemini-cli
         cmd = [
             self.options.gemini_cli_path,
-            instruction,
             "--yolo",
         ]
 
         logs.append(f"Executing: {' '.join(cmd)}")
         logs.append(f"Working directory: {worktree_path}")
+        logs.append(f"Instruction length: {len(instruction)} chars")
 
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(worktree_path),
                 env=env,
             )
+
+            # Write instruction to stdin
+            process.stdin.write(instruction.encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
+            await process.stdin.wait_closed()
 
             # Stream output
             async def read_output():

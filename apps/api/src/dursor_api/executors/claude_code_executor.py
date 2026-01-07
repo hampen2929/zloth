@@ -73,11 +73,12 @@ class ClaudeCodeExecutor:
         # Note: Don't change HOME as Claude CLI needs access to ~/.claude for auth
 
         # Build command
-        # Use --print (-p) for non-interactive mode with instruction
+        # Use --print (-p) for non-interactive mode
+        # Pass instruction via stdin to avoid shell argument length limits
         # Use --output-format json to get session ID in response
         cmd = [
             self.options.claude_cli_path,
-            "-p", instruction,
+            "-p", "-",  # Read from stdin
             "--output-format", "json",
         ]
 
@@ -89,15 +90,23 @@ class ClaudeCodeExecutor:
 
         logs.append(f"Executing: {' '.join(cmd)}")
         logs.append(f"Working directory: {worktree_path}")
+        logs.append(f"Instruction length: {len(instruction)} chars")
 
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(worktree_path),
                 env=env,
             )
+
+            # Write instruction to stdin
+            process.stdin.write(instruction.encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
+            await process.stdin.wait_closed()
 
             # Stream output
             async def read_output():
