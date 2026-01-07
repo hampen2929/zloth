@@ -58,29 +58,31 @@ export function ChatCodeView({
 }: ChatCodeViewProps) {
   const [input, setInput] = useState('');
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
-  const [currentExecutor, setCurrentExecutor] = useState<ExecutorType>(executorType);
   const [loading, setLoading] = useState(false);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const [runTabs, setRunTabs] = useState<Record<string, RunTab>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
 
+  // Determine the locked executor:
+  // - If we already have runs, lock to the earliest run's executor_type.
+  // - Otherwise, use the executorType provided via URL param (initial choice).
+  const sortedRuns = [...runs].reverse(); // API returns newest-first
+  const lockedExecutor: ExecutorType = (sortedRuns[0]?.executor_type || executorType) as ExecutorType;
+  const isCLIExecutor =
+    lockedExecutor === 'claude_code' || lockedExecutor === 'codex_cli' || lockedExecutor === 'gemini_cli';
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, runs]);
 
-  // Select all models by default if none specified
+  // Select all models by default if none specified (patch_agent only)
   useEffect(() => {
-    if (models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
+    if (!isCLIExecutor && models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
       setSelectedModels(models.map((m) => m.id));
     }
-  }, [models, selectedModels.length, initialModelIds]);
-
-  // Update executor type from props
-  useEffect(() => {
-    setCurrentExecutor(executorType);
-  }, [executorType]);
+  }, [models, selectedModels.length, initialModelIds, isCLIExecutor]);
 
   // Auto-expand new runs
   useEffect(() => {
@@ -102,7 +104,7 @@ export function ChatCodeView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    if (currentExecutor === 'patch_agent' && selectedModels.length === 0) return;
+    if (!isCLIExecutor && selectedModels.length === 0) return;
 
     setLoading(true);
 
@@ -114,12 +116,17 @@ export function ChatCodeView({
       });
 
       // Create runs based on executor type
-      if (currentExecutor === 'claude_code') {
+      if (isCLIExecutor) {
         await runsApi.create(taskId, {
           instruction: input.trim(),
-          executor_type: 'claude_code',
+          executor_type: lockedExecutor,
         });
-        success('Started Claude Code run');
+        const cliExecutorNames: Record<string, string> = {
+          claude_code: 'Claude Code',
+          codex_cli: 'Codex',
+          gemini_cli: 'Gemini CLI',
+        };
+        success(`Started ${cliExecutorNames[lockedExecutor] ?? 'CLI'} run`);
       } else {
         await runsApi.create(taskId, {
           instruction: input.trim(),
@@ -176,10 +183,6 @@ export function ChatCodeView({
   const userMessageIndices = messages
     .map((msg, idx) => (msg.role === 'user' ? idx : -1))
     .filter((idx) => idx !== -1);
-
-  // Reverse runs to match chronological order of messages
-  // (API returns runs newest-first, but messages are oldest-first)
-  const sortedRuns = [...runs].reverse();
 
   // Get runs for a specific user message (by user message order, 0-indexed)
   const getRunsForUserMessage = (msgIndex: number): Run[] => {
@@ -258,43 +261,9 @@ export function ChatCodeView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Executor Type & Model Selection */}
-      <div className="border-t border-gray-800 p-3 space-y-3">
-        {/* Executor Type Toggle */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Executor:</span>
-          <div className="flex items-center bg-gray-800 rounded-lg p-0.5">
-            <button
-              type="button"
-              onClick={() => setCurrentExecutor('patch_agent')}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'patch_agent'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
-              )}
-            >
-              <CpuChipIcon className="w-3.5 h-3.5" />
-              <span>Models</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentExecutor('claude_code')}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'claude_code'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
-              )}
-            >
-              <CommandLineIcon className="w-3.5 h-3.5" />
-              <span>Claude Code</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Model Selection (only for patch_agent) */}
-        {currentExecutor === 'patch_agent' && (
+      {/* Model Selection (patch_agent only; executor is locked and not shown) */}
+      {!isCLIExecutor && (
+        <div className="border-t border-gray-800 p-3 space-y-3">
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-500">Select models to run:</span>
@@ -338,18 +307,8 @@ export function ChatCodeView({
               )}
             </div>
           </div>
-        )}
-
-        {/* Claude Code info */}
-        {currentExecutor === 'claude_code' && (
-          <div className="flex items-center gap-2 p-2 bg-purple-900/20 rounded-lg border border-purple-800/30">
-            <CommandLineIcon className="w-4 h-4 text-purple-400" />
-            <span className="text-xs text-purple-300">
-              Claude Code will execute in an isolated worktree
-            </span>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="border-t border-gray-800 p-3">
@@ -376,7 +335,7 @@ export function ChatCodeView({
           />
           <Button
             type="submit"
-            disabled={loading || !input.trim() || (currentExecutor === 'patch_agent' && selectedModels.length === 0)}
+            disabled={loading || !input.trim() || (!isCLIExecutor && selectedModels.length === 0)}
             isLoading={loading}
             className="self-end"
           >
@@ -387,14 +346,9 @@ export function ChatCodeView({
           <span className="text-xs text-gray-500">
             {getShortcutText('Enter')} to submit
           </span>
-          {currentExecutor === 'patch_agent' && selectedModels.length > 0 && (
+          {!isCLIExecutor && selectedModels.length > 0 && (
             <span className="text-xs text-gray-500">
               {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''} selected
-            </span>
-          )}
-          {currentExecutor === 'claude_code' && (
-            <span className="text-xs text-purple-400">
-              Claude Code CLI
             </span>
           )}
         </div>
@@ -492,7 +446,7 @@ function RunResultCard({
   };
 
   const getBorderColor = () => {
-    if (run.executor_type === 'claude_code') {
+    if (run.executor_type === 'claude_code' || run.executor_type === 'codex_cli' || run.executor_type === 'gemini_cli') {
       return 'border-purple-800/50';
     }
     switch (run.status) {
@@ -512,7 +466,9 @@ function RunResultCard({
       className={cn(
         'rounded-lg border animate-in fade-in slide-in-from-top-2 duration-300',
         getBorderColor(),
-        run.executor_type === 'claude_code' ? 'bg-purple-900/10' : 'bg-gray-800/50'
+        (run.executor_type === 'claude_code' || run.executor_type === 'codex_cli' || run.executor_type === 'gemini_cli')
+          ? 'bg-purple-900/10'
+          : 'bg-gray-800/50'
       )}
     >
       {/* Header - Always visible */}
@@ -521,19 +477,25 @@ function RunResultCard({
         className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-800/30 transition-colors rounded-t-lg"
       >
         <div className="flex items-center gap-3">
-          {run.executor_type === 'claude_code' ? (
+          {run.executor_type === 'claude_code' || run.executor_type === 'codex_cli' || run.executor_type === 'gemini_cli' ? (
             <CommandLineIcon className="w-5 h-5 text-purple-400" />
           ) : (
             <CpuChipIcon className="w-5 h-5 text-blue-400" />
           )}
           <div className="text-left">
             <div className="font-medium text-gray-200 text-sm">
-              {run.executor_type === 'claude_code' ? 'Claude Code' : run.model_name}
+              {run.executor_type === 'claude_code'
+                ? 'Claude Code'
+                : run.executor_type === 'codex_cli'
+                  ? 'Codex'
+                  : run.executor_type === 'gemini_cli'
+                    ? 'Gemini CLI'
+                    : run.model_name}
             </div>
-            {run.executor_type === 'claude_code' && run.working_branch && (
+            {(run.executor_type === 'claude_code' || run.executor_type === 'codex_cli' || run.executor_type === 'gemini_cli') && run.working_branch && (
               <div className="text-xs font-mono text-purple-400">{run.working_branch}</div>
             )}
-            {run.executor_type !== 'claude_code' && run.provider && (
+            {(run.executor_type !== 'claude_code' && run.executor_type !== 'codex_cli' && run.executor_type !== 'gemini_cli') && run.provider && (
               <div className="text-xs text-gray-500">{run.provider}</div>
             )}
           </div>

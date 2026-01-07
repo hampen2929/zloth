@@ -169,16 +169,25 @@ class CodexExecutor:
 
         Codex often prints a line like:
             "To continue this session, run codex resume <UUID>"
+        Some versions also print:
+            "session id: <UUID>"
         We capture that UUID so the next run can resume via `codex exec resume <UUID> ...`.
         """
+        uuid_re = r"(?P<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+
         # Prefer scanning line-by-line for the common hint.
         hint_re = re.compile(
             r"To continue this session,\s*run\s*codex\s+resume\s+"
-            r"(?P<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+            + uuid_re,
             re.IGNORECASE,
         )
+        session_line_re = re.compile(r"\bsession id:\s*" + uuid_re + r"\b", re.IGNORECASE)
+
         for line in reversed(output_lines):
             m = hint_re.search(line)
+            if m:
+                return m.group("id")
+            m = session_line_re.search(line)
             if m:
                 return m.group("id")
 
@@ -187,6 +196,9 @@ class CodexExecutor:
         m2 = hint_re.search(combined)
         if m2:
             return m2.group("id")
+        m3 = session_line_re.search(combined)
+        if m3:
+            return m3.group("id")
 
         return None
 
