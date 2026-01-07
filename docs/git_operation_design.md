@@ -89,21 +89,16 @@ sequenceDiagram
     A->>G: ファイル編集のみ
     A->>D: 完了通知
     D->>G: git add -A
-    D->>G: git diff（パッチ取得）
-    D->>U: 差分表示
-    U->>D: レビュー & PR作成承認
     D->>G: git commit
     D->>G: git push
-    D->>U: PR URL
+    D->>U: 結果表示（差分 & ブランチ情報）
 ```
 
 **メリット:**
 - 統一された git 操作フロー
-- 明示的なユーザー承認が可能
 - 各フェーズが明確に分離されデバッグしやすい
-- コミット前なら簡単にリセット可能
 - 統一形式でマルチモデル比較が容易
-- push 前にレビュー可能
+- 自動化されたワークフローで迅速なフィードバック
 
 **デメリット:**
 - ワークフローに制約がある
@@ -116,11 +111,10 @@ sequenceDiagram
 | 観点 | A: Agent任せ | B: Orchestrator管理 |
 |------|-------------|---------------------|
 | **一貫性** | ❌ Agent毎に挙動が異なる可能性 | ✅ 統一されたgit操作フロー |
-| **制御性** | ❌ 予期しないcommit/pushリスク | ✅ 明示的なユーザー承認が可能 |
+| **制御性** | ❌ 予期しないタイミングでcommit/push | ✅ 決まったタイミングでcommit/push |
 | **デバッグ** | ❌ 問題発生時の切り分けが困難 | ✅ 各フェーズが明確に分離 |
-| **復元性** | ❌ Agentがコミットすると戻しづらい | ✅ コミット前なら簡単にリセット |
 | **マルチモデル対応** | ❌ 各モデルの差分比較が複雑 | ✅ 統一形式で比較しやすい |
-| **セキュリティ** | ❌ 意図しないpushのリスク | ✅ push前にレビュー可能 |
+| **自動化** | △ Agent依存で挙動が不安定 | ✅ 安定した自動ワークフロー |
 | **柔軟性** | ✅ Agentの自律性を活かせる | △ ワークフローに制約がある |
 
 ---
@@ -179,33 +173,32 @@ flowchart TD
     C --> D{ファイル変更あり?}
     D -->|Yes| E[変更をステージング]
     D -->|No| F[完了: 変更なし]
-    E --> G[パッチ取得]
-    G --> H[ユーザーレビュー]
-    H --> I{承認?}
-    I -->|Yes| J[コミット]
-    I -->|No| K[変更を破棄]
-    J --> L[プッシュ]
-    L --> M[PR作成]
-    M --> N[完了: PR作成済み]
-    K --> O[完了: キャンセル]
+    E --> G[コミット]
+    G --> H[プッシュ]
+    H --> I[結果表示]
+    I --> J{追加指示あり?}
+    J -->|Yes| C
+    J -->|No| K{PR作成する?}
+    K -->|Yes| L[PR作成]
+    K -->|No| M[完了: ブランチのみ]
+    L --> N[完了: PR作成済み]
     
     subgraph "Agent実行（制約付き）"
         C
     end
     
-    subgraph "dursor管理"
+    subgraph "dursor管理（自動実行）"
         B
         E
         G
-        J
+        H
         L
-        M
     end
     
     subgraph "ユーザー操作"
         A
-        H
-        I
+        J
+        K
     end
 ```
 
@@ -316,6 +309,24 @@ class GitService:
         self, repo_path: Path, remote: str = "origin"
     ) -> None:
         """リモートからフェッチ"""
+        pass
+
+    async def delete_remote_branch(
+        self,
+        repo_path: Path,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> None:
+        """リモートブランチを削除"""
+        pass
+
+    # === リセット操作 ===
+    async def reset_to_previous(
+        self,
+        repo_path: Path,
+        soft: bool = False,
+    ) -> None:
+        """直前のコミットに戻す（soft: 変更は保持）"""
         pass
 ```
 
@@ -433,9 +444,11 @@ class RunService:
         run_dao: RunDAO,
         task_dao: TaskDAO,
         git_service: GitService,
+        github_service: GitHubService,
         # ...
     ):
         self.git_service = git_service
+        self.github_service = github_service
 
     async def _execute_cli_run(
         self,
@@ -444,7 +457,7 @@ class RunService:
         executor_type: ExecutorType,
         resume_session_id: str | None = None,
     ) -> None:
-        """CLI実行ワークフロー"""
+        """CLI実行ワークフロー（実行後に自動commit/push）"""
         logs: list[str] = []
 
         try:
@@ -473,7 +486,7 @@ class RunService:
                 )
                 return
 
-            # 3. 変更をステージング（dursor側で統一）
+            # 3. 変更をステージング
             await self.git_service.stage_all(worktree_info.path)
 
             # 4. パッチを取得
@@ -481,7 +494,42 @@ class RunService:
                 worktree_info.path, staged=True
             )
 
-            # 5. 結果を保存（コミットはまだしない）
+            # 変更がない場合はスキップ
+            if not patch.strip():
+                logs.append("No changes detected, skipping commit/push")
+                await self.run_dao.update_status(
+                    run.id,
+                    RunStatus.SUCCEEDED,
+                    summary="No changes made",
+                    patch="",
+                    files_changed=[],
+                    logs=logs + result.logs,
+                    session_id=result.session_id,
+                )
+                return
+
+            # 5. コミット（自動）
+            commit_message = self._generate_commit_message(run.instruction, result.summary)
+            commit_sha = await self.git_service.commit(
+                worktree_info.path,
+                message=commit_message,
+            )
+            logs.append(f"Committed: {commit_sha}")
+
+            # 6. プッシュ（自動）
+            task = await self.task_dao.get(run.task_id)
+            repo = await self.repo_service.get(task.repo_id)
+            owner, repo_name = self._parse_github_url(repo.repo_url)
+            auth_url = await self.github_service.get_auth_url(owner, repo_name)
+            
+            await self.git_service.push(
+                worktree_info.path,
+                branch=worktree_info.branch_name,
+                auth_url=auth_url,
+            )
+            logs.append(f"Pushed to branch: {worktree_info.branch_name}")
+
+            # 7. 結果を保存
             files_changed = self._parse_diff(patch)
             await self.run_dao.update_status(
                 run.id,
@@ -491,6 +539,7 @@ class RunService:
                 files_changed=files_changed,
                 logs=logs + result.logs,
                 session_id=result.session_id,
+                commit_sha=commit_sha,
             )
 
         except Exception as e:
@@ -500,9 +549,21 @@ class RunService:
                 error=str(e),
                 logs=logs + [f"Execution failed: {e}"],
             )
+
+    def _generate_commit_message(
+        self, instruction: str, summary: str
+    ) -> str:
+        """コミットメッセージを生成"""
+        # 指示の最初の行を使用（長すぎる場合は切り詰め）
+        first_line = instruction.split('\n')[0][:72]
+        if summary:
+            return f"{first_line}\n\n{summary}"
+        return first_line
 ```
 
 ### 5. PRService の簡素化
+
+Run 実行時に既に commit/push されているため、PRService は PR 作成のみを担当します。
 
 ```python
 # apps/api/src/dursor_api/services/pr_service.py
@@ -513,10 +574,8 @@ class PRService:
         pr_dao: PRDAO,
         task_dao: TaskDAO,
         run_dao: RunDAO,
-        git_service: GitService,
         github_service: GitHubService,
     ):
-        self.git_service = git_service
         self.github_service = github_service
 
     async def create_from_run(
@@ -525,32 +584,19 @@ class PRService:
         run_id: str,
         pr_data: PRCreate,
     ) -> PR:
-        """Runの変更からPRを作成"""
+        """Runのブランチから PR を作成（既にpush済み）"""
         run = await self.run_dao.get(run_id)
-        if not run or not run.worktree_path:
-            raise ValueError(f"Run not found or no worktree: {run_id}")
+        if not run or not run.working_branch:
+            raise ValueError(f"Run not found or no branch: {run_id}")
+
+        if not run.commit_sha:
+            raise ValueError(f"Run has no commits: {run_id}")
 
         task = await self.task_dao.get(task_id)
         repo = await self.repo_service.get(task.repo_id)
         owner, repo_name = self._parse_github_url(repo.repo_url)
 
-        worktree_path = Path(run.worktree_path)
-
-        # 1. コミット（ここで初めてコミット）
-        commit_sha = await self.git_service.commit(
-            worktree_path,
-            message=pr_data.title,
-        )
-
-        # 2. プッシュ
-        auth_url = await self.github_service.get_auth_url(owner, repo_name)
-        await self.git_service.push(
-            worktree_path,
-            branch=run.working_branch,
-            auth_url=auth_url,
-        )
-
-        # 3. PR作成
+        # PR作成（ブランチは既にpush済み）
         pr_response = await self.github_service.create_pull_request(
             owner=owner,
             repo=repo_name,
@@ -560,7 +606,7 @@ class PRService:
             body=pr_data.body or f"Generated by dursor\n\n{run.summary}",
         )
 
-        # 4. DB保存
+        # DB保存
         return await self.pr_dao.create(
             task_id=task_id,
             number=pr_response["number"],
@@ -568,7 +614,7 @@ class PRService:
             branch=run.working_branch,
             title=pr_data.title,
             body=pr_data.body,
-            latest_commit=commit_sha,
+            latest_commit=run.commit_sha,
         )
 ```
 
@@ -591,21 +637,24 @@ sequenceDiagram
     D->>A: 指示1（session_id なし）
     A->>G: ファイル編集
     A->>D: 完了（session_id: abc123）
-    D->>G: git add -A, git diff
-    D->>U: 差分表示
+    D->>G: git add -A
+    D->>G: git commit
+    D->>G: git push
+    D->>U: 結果表示（差分 & コミット情報）
 
     Note over U,G: 追加指示
     U->>D: 指示2を送信
     D->>A: 指示2（session_id: abc123）
     A->>G: 追加のファイル編集
     A->>D: 完了
-    D->>G: git add -A, git diff（累積）
-    D->>U: 累積差分表示
-
-    Note over U,G: PR作成
-    U->>D: PR作成承認
+    D->>G: git add -A
     D->>G: git commit
     D->>G: git push
+    D->>U: 結果表示（累積差分）
+
+    Note over U,G: PR作成（任意のタイミング）
+    U->>D: PR作成リクエスト
+    D->>G: GitHub API: Create PR
     D->>U: PR URL
 ```
 
@@ -618,13 +667,14 @@ class RunService:
         run_id: str,
         additional_instruction: str,
     ) -> Run:
-        """既存Runに追加の指示を送信"""
+        """既存Runに追加の指示を送信（自動commit/push）"""
         existing_run = await self.run_dao.get(run_id)
         if not existing_run:
             raise ValueError(f"Run not found: {run_id}")
 
-        # 同じworktreeを再利用（前回の変更がステージングされている状態）
+        # 同じworktreeを再利用
         worktree_path = Path(existing_run.worktree_path)
+        logs: list[str] = []
 
         # 追加の指示でCLI実行
         executor = self._get_executor(existing_run.executor_type)
@@ -635,11 +685,47 @@ class RunService:
             resume_session_id=existing_run.session_id,
         )
 
+        if not result.success:
+            await self.run_dao.update_status(
+                existing_run.id,
+                RunStatus.FAILED,
+                error=result.error,
+                logs=logs + result.logs,
+            )
+            return await self.run_dao.get(existing_run.id)
+
         # 変更をステージング
         await self.git_service.stage_all(worktree_path)
 
+        # 差分を取得
+        patch = await self.git_service.get_diff(worktree_path, staged=True)
+
+        if patch.strip():
+            # コミット
+            commit_message = self._generate_commit_message(
+                additional_instruction, result.summary
+            )
+            commit_sha = await self.git_service.commit(
+                worktree_path,
+                message=commit_message,
+            )
+            logs.append(f"Committed: {commit_sha}")
+
+            # プッシュ
+            task = await self.task_dao.get(existing_run.task_id)
+            repo = await self.repo_service.get(task.repo_id)
+            owner, repo_name = self._parse_github_url(repo.repo_url)
+            auth_url = await self.github_service.get_auth_url(owner, repo_name)
+
+            await self.git_service.push(
+                worktree_path,
+                branch=existing_run.working_branch,
+                auth_url=auth_url,
+            )
+            logs.append(f"Pushed to branch: {existing_run.working_branch}")
+
         # 累積の変更を取得（ベースブランチからの差分）
-        patch = await self.git_service.get_diff_from_base(
+        cumulative_patch = await self.git_service.get_diff_from_base(
             worktree_path=worktree_path,
             base_ref=existing_run.base_ref,
         )
@@ -648,9 +734,10 @@ class RunService:
         await self.run_dao.update_status(
             existing_run.id,
             RunStatus.SUCCEEDED,
-            patch=patch,
-            logs=result.logs,
+            patch=cumulative_patch,
+            logs=logs + result.logs,
             session_id=result.session_id or existing_run.session_id,
+            commit_sha=commit_sha if patch.strip() else existing_run.commit_sha,
         )
 
         return await self.run_dao.get(existing_run.id)
@@ -658,59 +745,48 @@ class RunService:
 
 ---
 
-## 変更のリセット機能
+## Run の破棄機能
 
-ユーザーが変更を破棄したい場合のフロー:
+実行済みの Run を破棄する場合のフロー（既に commit/push 済みのため、ブランチごと削除）:
 
 ```mermaid
 flowchart TD
-    A[ユーザーが変更を確認] --> B{承認する?}
-    B -->|Yes| C[PR作成フローへ]
-    B -->|No| D{完全に破棄?}
-    D -->|Yes| E[git reset --hard]
-    D -->|No| F[特定ファイルのみ復元]
-    E --> G[Worktree削除]
-    F --> H[再度レビュー]
+    A[Runの結果を確認] --> B{破棄する?}
+    B -->|No| C[PR作成 or 追加指示]
+    B -->|Yes| D[リモートブランチ削除]
+    D --> E[Worktree削除]
+    E --> F[Run をキャンセル状態に]
+    F --> G[完了]
 ```
 
 ### 実装例
 
 ```python
 class RunService:
-    async def reset_run_changes(
-        self,
-        run_id: str,
-        hard: bool = False,
-    ) -> None:
-        """Runの変更をリセット"""
-        run = await self.run_dao.get(run_id)
-        if not run or not run.worktree_path:
-            return
-
-        worktree_path = Path(run.worktree_path)
-
-        if hard:
-            # 全変更を破棄
-            await self.git_service.reset_changes(worktree_path, hard=True)
-        else:
-            # ステージングのみ解除
-            await self.git_service.unstage_all(worktree_path)
-
-        # パッチをクリア
-        await self.run_dao.update_status(
-            run.id,
-            RunStatus.SUCCEEDED,
-            patch="",
-            files_changed=[],
-        )
-
     async def discard_run(self, run_id: str) -> None:
-        """Runを完全に破棄"""
+        """Runを完全に破棄（ブランチも削除）"""
         run = await self.run_dao.get(run_id)
         if not run:
             return
 
-        # Worktreeを削除（ブランチも削除）
+        # リモートブランチを削除（push済みの場合）
+        if run.working_branch and run.commit_sha:
+            try:
+                task = await self.task_dao.get(run.task_id)
+                repo = await self.repo_service.get(task.repo_id)
+                owner, repo_name = self._parse_github_url(repo.repo_url)
+                auth_url = await self.github_service.get_auth_url(owner, repo_name)
+
+                await self.git_service.delete_remote_branch(
+                    repo_path=Path(repo.workspace_path),
+                    branch=run.working_branch,
+                    auth_url=auth_url,
+                )
+            except Exception as e:
+                # リモート削除に失敗しても続行
+                pass
+
+        # Worktreeを削除（ローカルブランチも削除）
         if run.worktree_path:
             await self.git_service.cleanup_worktree(
                 Path(run.worktree_path),
@@ -719,6 +795,32 @@ class RunService:
 
         # ステータスを更新
         await self.run_dao.update_status(run.id, RunStatus.CANCELED)
+
+    async def revert_last_commit(self, run_id: str) -> Run:
+        """直前のコミットを取り消して再実行可能な状態に戻す"""
+        run = await self.run_dao.get(run_id)
+        if not run or not run.worktree_path:
+            raise ValueError(f"Run not found: {run_id}")
+
+        worktree_path = Path(run.worktree_path)
+
+        # git reset --soft HEAD~1 で直前のコミットを取り消し
+        await self.git_service.reset_to_previous(worktree_path, soft=True)
+
+        # force push でリモートも更新
+        task = await self.task_dao.get(run.task_id)
+        repo = await self.repo_service.get(task.repo_id)
+        owner, repo_name = self._parse_github_url(repo.repo_url)
+        auth_url = await self.github_service.get_auth_url(owner, repo_name)
+
+        await self.git_service.push(
+            worktree_path,
+            branch=run.working_branch,
+            auth_url=auth_url,
+            force=True,
+        )
+
+        return await self.run_dao.get(run_id)
 ```
 
 ---
@@ -728,10 +830,20 @@ class RunService:
 ### 推奨設計の要点
 
 1. **責任の分離**: AI Agent はファイル編集のみ、git 操作は dursor が統一管理
-2. **明示的な承認**: コミット・プッシュ前にユーザーレビューを挟む
+2. **自動化されたワークフロー**: Agent 実行後に自動で commit/push、迅速なフィードバック
 3. **一貫性**: どの Agent を使っても同じ git ワークフロー
-4. **安全性**: 意図しない push を防止、いつでもリセット可能
+4. **会話継続**: 同じブランチ上で複数回の指示を重ねて PR を育てる
 5. **デバッグ容易性**: 「ファイル編集」と「git操作」を分離して問題調査可能
+
+### ワークフローのポイント
+
+| フェーズ | 操作 | 実行者 |
+|---------|------|--------|
+| 準備 | git worktree add | dursor |
+| 実行 | ファイル編集 | AI Agent |
+| 保存 | git add, commit, push | dursor（自動） |
+| PR作成 | GitHub API | dursor（ユーザー指示時） |
+| 破棄 | ブランチ削除 | dursor（ユーザー指示時） |
 
 ### 今後の拡張
 
@@ -739,3 +851,4 @@ class RunService:
 - 複数 Run のマージ機能
 - コンフリクト解決支援
 - ブランチ戦略のカスタマイズ（squash, rebase 等）
+- コミットメッセージのカスタマイズオプション
