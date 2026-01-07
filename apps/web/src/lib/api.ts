@@ -170,6 +170,11 @@ export const prsApi = {
     fetchApi<PR>(`/tasks/${taskId}/prs/${prId}`),
 
   list: (taskId: string) => fetchApi<PR[]>(`/tasks/${taskId}/prs`),
+
+  regenerateDescription: (taskId: string, prId: string) =>
+    fetchApi<PR>(`/tasks/${taskId}/prs/${prId}/regenerate-description`, {
+      method: 'POST',
+    }),
 };
 
 // Preferences

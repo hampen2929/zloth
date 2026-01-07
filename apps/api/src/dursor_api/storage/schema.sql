@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS runs (
     session_id TEXT,                 -- CLI session ID for conversation persistence
     instruction TEXT NOT NULL,
     base_ref TEXT,
+    commit_sha TEXT,                 -- latest commit SHA for the run
     status TEXT NOT NULL DEFAULT 'queued',  -- queued, running, succeeded, failed, canceled
     summary TEXT,
     patch TEXT,

@@ -104,6 +104,7 @@ export interface Run {
   worktree_path: string | null;
   instruction: string;
   base_ref: string | null;
+  commit_sha: string | null;
   status: RunStatus;
   summary: string | null;
   patch: string | null;

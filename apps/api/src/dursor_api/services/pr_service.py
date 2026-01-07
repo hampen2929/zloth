@@ -1,16 +1,21 @@
-"""Pull Request management service."""
+"""Pull Request management service.
+
+This service manages PR creation and updates following the orchestrator
+management pattern. PRs are created from branches that have already been
+pushed by RunService, so this service only handles GitHub API operations.
+"""
 
 from __future__ import annotations
 
-import subprocess
-import uuid
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import git
-
-from dursor_api.domain.models import PR, PRCreate, PRUpdate
+from dursor_api.agents.llm_router import LLMConfig, LLMRouter
+from dursor_api.domain.enums import Provider
+from dursor_api.domain.models import PR, PRCreate, PRUpdate, Repo
+from dursor_api.services.git_service import GitService
 from dursor_api.services.repo_service import RepoService
 from dursor_api.storage.dao import PRDAO, RunDAO, TaskDAO
 
@@ -25,7 +30,13 @@ class GitHubPermissionError(Exception):
 
 
 class PRService:
-    """Service for managing Pull Requests."""
+    """Service for managing Pull Requests.
+
+    Following the orchestrator management pattern, this service:
+    - Creates PRs from pre-pushed branches (no commit/push operations)
+    - Updates PR descriptions via GitHub API
+    - Generates descriptions from diffs using LLM
+    """
 
     def __init__(
         self,
@@ -34,12 +45,16 @@ class PRService:
         run_dao: RunDAO,
         repo_service: RepoService,
         github_service: GitHubService,
+        git_service: GitService | None = None,
+        llm_router: LLMRouter | None = None,
     ):
         self.pr_dao = pr_dao
         self.task_dao = task_dao
         self.run_dao = run_dao
         self.repo_service = repo_service
         self.github_service = github_service
+        self.git_service = git_service or GitService()
+        self.llm_router = llm_router or LLMRouter()
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
         """Parse owner and repo from GitHub URL.
@@ -64,7 +79,11 @@ class PRService:
         return parts[0], parts[1]
 
     async def create(self, task_id: str, data: PRCreate) -> PR:
-        """Create a new Pull Request.
+        """Create a Pull Request from an already-pushed branch.
+
+        Following the orchestrator pattern, this method expects the branch
+        to already be pushed by RunService. It only creates the PR via
+        GitHub API.
 
         Args:
             task_id: Task ID.
@@ -86,89 +105,62 @@ class PRService:
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
             raise ValueError(f"Run not found: {data.selected_run_id}")
-        if not run.patch:
-            raise ValueError("Run has no patch to apply")
+
+        # Verify run has a branch and commit
+        if not run.working_branch:
+            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+        if not run.commit_sha:
+            raise ValueError(f"Run has no commits: {data.selected_run_id}")
 
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
 
-        # Create branch name
-        branch_name = f"dursor/{uuid.uuid4().hex[:8]}"
+        # If branch hasn't been pushed yet, push it now
+        if run.worktree_path:
+            try:
+                auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                await self.git_service.push(
+                    Path(run.worktree_path),
+                    branch=run.working_branch,
+                    auth_url=auth_url,
+                )
+            except Exception as e:
+                if "403" in str(e) or "Write access" in str(e):
+                    raise GitHubPermissionError(
+                        f"GitHub App lacks write access to {owner}/{repo_name}. "
+                        "Please ensure the GitHub App has 'Contents' permission set to 'Read and write' "
+                        "and is installed on this repository."
+                    ) from e
+                raise
 
-        # Apply patch and create branch
-        workspace_path = Path(repo_obj.workspace_path)
-        repo = git.Repo(workspace_path)
-
-        # Create and checkout new branch
-        new_branch = repo.create_head(branch_name)
-        new_branch.checkout()
-
-        # Apply patch
-        patch_file = workspace_path / ".dursor_patch.diff"
-        try:
-            patch_file.write_text(run.patch)
-            result = subprocess.run(
-                ["git", "apply", "--whitespace=fix", str(patch_file)],
-                cwd=workspace_path,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                # Clean up: switch back to default branch and delete the created branch
-                repo.heads[repo_obj.default_branch].checkout()
-                repo.delete_head(branch_name, force=True)
-                error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-                raise ValueError(f"Failed to apply patch: {error_msg}")
-        finally:
-            patch_file.unlink(missing_ok=True)
-
-        # Commit changes
-        repo.git.add(".")
-        repo.index.commit(data.title)
-
-        # Push branch using GitHub App authentication
-        auth_url = await self.github_service.get_auth_url(owner, repo_name)
-        try:
-            repo.git.push(auth_url, branch_name)
-        except git.exc.GitCommandError as e:
-            # Clean up: switch back to default branch and delete the created branch
-            repo.heads[repo_obj.default_branch].checkout()
-            repo.delete_head(branch_name, force=True)
-
-            if "403" in str(e) or "Write access" in str(e):
-                raise GitHubPermissionError(
-                    f"GitHub App lacks write access to {owner}/{repo_name}. "
-                    "Please ensure the GitHub App has 'Contents' permission set to 'Read and write' "
-                    "and is installed on this repository."
-                ) from e
-            raise
-
-        # Create PR via GitHub API using GitHub App
+        # Create PR via GitHub API (branch is already pushed)
+        pr_body = data.body or f"Generated by dursor\n\n{run.summary or ''}"
         pr_data = await self.github_service.create_pull_request(
             owner=owner,
             repo=repo_name,
             title=data.title,
-            head=branch_name,
+            head=run.working_branch,
             base=repo_obj.default_branch,
-            body=data.body or f"Generated by dursor\n\n{run.summary}",
+            body=pr_body,
         )
-
-        # Switch back to default branch
-        repo.heads[repo_obj.default_branch].checkout()
 
         # Save to database
         return await self.pr_dao.create(
             task_id=task_id,
             number=pr_data["number"],
             url=pr_data["html_url"],
-            branch=branch_name,
+            branch=run.working_branch,
             title=data.title,
             body=data.body,
-            latest_commit=repo.head.commit.hexsha,
+            latest_commit=run.commit_sha,
         )
 
     async def update(self, task_id: str, pr_id: str, data: PRUpdate) -> PR:
-        """Update an existing Pull Request.
+        """Update an existing Pull Request with a new run.
+
+        This method applies the patch from the selected run to the PR branch.
+        Note: This method still applies patches for backward compatibility,
+        but new runs with CLI executors should already have committed/pushed.
 
         Args:
             task_id: Task ID.
@@ -196,20 +188,30 @@ class PRService:
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
             raise ValueError(f"Run not found: {data.selected_run_id}")
+
+        # For CLI executor runs, the commit should already be on the branch
+        # The branch should be the same as the PR branch
+        if run.commit_sha and run.working_branch == pr.branch:
+            # Commit is already on the PR branch, just update the database
+            await self.pr_dao.update(pr_id, run.commit_sha)
+            return await self.pr_dao.get(pr_id)
+
+        # For PatchAgent runs or different branches, we need to apply the patch
+        # This is backward compatibility code
         if not run.patch:
             raise ValueError("Run has no patch to apply")
 
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
 
-        # Apply patch to existing branch
+        # Apply patch to PR branch using GitService
         workspace_path = Path(repo_obj.workspace_path)
-        repo = git.Repo(workspace_path)
 
-        # Checkout PR branch
-        repo.git.checkout(pr.branch)
+        # Checkout PR branch, apply patch, commit, and push
+        await self.git_service.checkout(workspace_path, pr.branch)
 
-        # Apply patch
+        # Apply patch manually
+        import subprocess
         patch_file = workspace_path / ".dursor_patch.diff"
         try:
             patch_file.write_text(run.patch)
@@ -220,23 +222,22 @@ class PRService:
                 text=True,
             )
             if result.returncode != 0:
-                # Switch back to default branch
-                repo.heads[repo_obj.default_branch].checkout()
+                await self.git_service.checkout(workspace_path, repo_obj.default_branch)
                 error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
                 raise ValueError(f"Failed to apply patch: {error_msg}")
         finally:
             patch_file.unlink(missing_ok=True)
 
-        # Commit changes
-        repo.git.add(".")
+        # Stage and commit
+        await self.git_service.stage_all(workspace_path)
         commit_message = data.message or f"Update: {run.summary}"
-        repo.index.commit(commit_message)
+        commit_sha = await self.git_service.commit(workspace_path, commit_message)
 
-        # Push using GitHub App authentication
+        # Push
         auth_url = await self.github_service.get_auth_url(owner, repo_name)
         try:
-            repo.git.push(auth_url, pr.branch)
-        except git.exc.GitCommandError as e:
+            await self.git_service.push(workspace_path, pr.branch, auth_url)
+        except Exception as e:
             if "403" in str(e) or "Write access" in str(e):
                 raise GitHubPermissionError(
                     f"GitHub App lacks write access to {owner}/{repo_name}. "
@@ -245,15 +246,251 @@ class PRService:
                 ) from e
             raise
 
-        latest_commit = repo.head.commit.hexsha
-
         # Switch back to default branch
-        repo.heads[repo_obj.default_branch].checkout()
+        await self.git_service.checkout(workspace_path, repo_obj.default_branch)
 
         # Update database
-        await self.pr_dao.update(pr_id, latest_commit)
+        await self.pr_dao.update(pr_id, commit_sha)
 
         return await self.pr_dao.get(pr_id)
+
+    async def regenerate_description(self, task_id: str, pr_id: str) -> PR:
+        """Regenerate PR description from current diff.
+
+        This method:
+        1. Gets cumulative diff from base branch
+        2. Loads pull_request_template if available
+        3. Generates description using LLM
+        4. Updates PR via GitHub API
+
+        Args:
+            task_id: Task ID.
+            pr_id: PR ID.
+
+        Returns:
+            Updated PR object.
+        """
+        # Get PR
+        pr = await self.pr_dao.get(pr_id)
+        if not pr or pr.task_id != task_id:
+            raise ValueError(f"PR not found: {pr_id}")
+
+        # Get task and repo
+        task = await self.task_dao.get(task_id)
+        if not task:
+            raise ValueError(f"Task not found: {task_id}")
+
+        repo_obj = await self.repo_service.get(task.repo_id)
+        if not repo_obj:
+            raise ValueError(f"Repo not found: {task.repo_id}")
+
+        # Parse GitHub info
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+
+        # Get cumulative diff from the worktree or repo
+        # Find the latest run associated with this PR
+        runs = await self.run_dao.list(task_id)
+        latest_run = next(
+            (r for r in runs if r.working_branch == pr.branch and r.worktree_path),
+            None,
+        )
+
+        cumulative_diff = ""
+        if latest_run and latest_run.worktree_path:
+            worktree_path = Path(latest_run.worktree_path)
+            if worktree_path.exists():
+                cumulative_diff = await self.git_service.get_diff_from_base(
+                    worktree_path,
+                    base_ref=latest_run.base_ref or repo_obj.default_branch,
+                )
+
+        # Fallback to using patch from latest run
+        if not cumulative_diff and latest_run and latest_run.patch:
+            cumulative_diff = latest_run.patch
+
+        if not cumulative_diff:
+            raise ValueError("Could not get diff for PR description generation")
+
+        # Load pull_request_template
+        template = await self._load_pr_template(repo_obj)
+
+        # Generate description with LLM
+        new_description = await self._generate_description(
+            diff=cumulative_diff,
+            template=template,
+            task=task,
+            pr=pr,
+        )
+
+        # Update PR via GitHub API
+        await self.github_service.update_pull_request(
+            owner=owner,
+            repo=repo_name,
+            pr_number=pr.number,
+            body=new_description,
+        )
+
+        # Update database
+        await self.pr_dao.update_body(pr_id, new_description)
+
+        return await self.pr_dao.get(pr_id)
+
+    async def _load_pr_template(self, repo: Repo) -> str | None:
+        """Load repository's pull_request_template.
+
+        Args:
+            repo: Repository object.
+
+        Returns:
+            Template content or None if not found.
+        """
+        workspace_path = Path(repo.workspace_path)
+
+        # Template candidate paths (in priority order)
+        template_paths = [
+            workspace_path / ".github" / "pull_request_template.md",
+            workspace_path / ".github" / "PULL_REQUEST_TEMPLATE.md",
+            workspace_path / "pull_request_template.md",
+            workspace_path / "PULL_REQUEST_TEMPLATE.md",
+            workspace_path / ".github" / "PULL_REQUEST_TEMPLATE" / "default.md",
+        ]
+
+        for path in template_paths:
+            if path.exists():
+                return path.read_text()
+
+        return None
+
+    async def _generate_description(
+        self,
+        diff: str,
+        template: str | None,
+        task,
+        pr: PR,
+    ) -> str:
+        """Generate PR description using LLM.
+
+        Args:
+            diff: Unified diff string.
+            template: Optional PR template.
+            task: Task object.
+            pr: PR object.
+
+        Returns:
+            Generated description string.
+        """
+        prompt = self._build_description_prompt(diff, template, task, pr)
+
+        # Generate with LLM using a default model
+        # In production, this could be configurable
+        try:
+            config = LLMConfig(
+                provider=Provider.ANTHROPIC,
+                model_name="claude-3-haiku-20240307",
+                api_key="",  # Will be loaded from environment
+            )
+            llm_client = self.llm_router.get_client(config)
+            response = await llm_client.generate(
+                prompt=prompt,
+                system_prompt="You are a helpful assistant that generates clear and concise PR descriptions.",
+            )
+            return response
+        except Exception:
+            # Fallback to a simple description if LLM fails
+            return self._generate_fallback_description(diff, pr)
+
+    def _build_description_prompt(
+        self,
+        diff: str,
+        template: str | None,
+        task,
+        pr: PR,
+    ) -> str:
+        """Build prompt for description generation.
+
+        Args:
+            diff: Unified diff string.
+            template: Optional PR template.
+            task: Task object.
+            pr: PR object.
+
+        Returns:
+            Prompt string.
+        """
+        # Truncate diff if too long
+        truncated_diff = diff[:10000] if len(diff) > 10000 else diff
+
+        prompt_parts = [
+            "Generate a Pull Request Description based on the following information.",
+            "",
+            "## Task Description",
+            task.title or "(None)",
+            "",
+            "## PR Title",
+            pr.title,
+            "",
+            "## Diff",
+            "```diff",
+            truncated_diff,
+            "```",
+        ]
+
+        if template:
+            prompt_parts.extend([
+                "",
+                "## Template",
+                "Create the Description following this template format:",
+                "",
+                template,
+            ])
+        else:
+            prompt_parts.extend([
+                "",
+                "## Output Format",
+                "Create the Description in the following format:",
+                "",
+                "## Summary",
+                "(Overview of changes in 1-3 sentences)",
+                "",
+                "## Changes",
+                "(Main changes as bullet points)",
+                "",
+                "## Test Plan",
+                "(Testing methods and verification items)",
+            ])
+
+        return "\n".join(prompt_parts)
+
+    def _generate_fallback_description(self, diff: str, pr: PR) -> str:
+        """Generate a simple fallback description.
+
+        Args:
+            diff: Unified diff string.
+            pr: PR object.
+
+        Returns:
+            Simple description string.
+        """
+        # Count changes
+        added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
+        removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
+        files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
+
+        return f"""## Summary
+{pr.title}
+
+## Changes
+- Modified {len(files)} file(s)
+- +{added_lines} -{removed_lines} lines
+
+### Files Changed
+{chr(10).join(f'- {f}' for f in sorted(files)[:10])}
+{'...' if len(files) > 10 else ''}
+
+## Test Plan
+- [ ] Manual testing
+- [ ] Unit tests
+"""
 
     async def get(self, task_id: str, pr_id: str) -> PR | None:
         """Get a PR by ID.

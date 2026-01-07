@@ -70,3 +70,25 @@ async def list_prs(
 ) -> list[PR]:
     """List Pull Requests for a task."""
     return await pr_service.list(task_id)
+
+
+@router.post("/tasks/{task_id}/prs/{pr_id}/regenerate-description", response_model=PR)
+async def regenerate_pr_description(
+    task_id: str,
+    pr_id: str,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PR:
+    """Regenerate PR description from current diff.
+
+    This endpoint:
+    1. Gets cumulative diff from base branch
+    2. Loads pull_request_template if available
+    3. Generates description using LLM
+    4. Updates PR via GitHub API
+    """
+    try:
+        return await pr_service.regenerate_description(task_id, pr_id)
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

@@ -1,22 +1,31 @@
-"""Run execution service."""
+"""Run execution service.
+
+This service manages the execution of AI Agent runs following the
+orchestrator management pattern where dursor centrally manages git
+operations while AI Agents only edit files.
+"""
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.agents.patch_agent import PatchAgent
 from dursor_api.config import settings
 from dursor_api.domain.enums import ExecutorType, RunStatus
-from dursor_api.domain.models import AgentConstraints, AgentRequest, Run, RunCreate
+from dursor_api.domain.models import AgentConstraints, AgentRequest, FileDiff, Run, RunCreate
 from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from dursor_api.services.git_service import GitService
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
-from dursor_api.services.worktree_service import WorktreeService
 from dursor_api.storage.dao import RunDAO, TaskDAO
+
+if TYPE_CHECKING:
+    from dursor_api.services.github_service import GitHubService
 
 
 class QueueAdapter:
@@ -71,7 +80,14 @@ class QueueAdapter:
 
 
 class RunService:
-    """Service for managing and executing runs."""
+    """Service for managing and executing runs.
+
+    Following the orchestrator management pattern, this service:
+    - Creates worktrees for isolated execution
+    - Runs AI Agent CLIs (file editing only)
+    - Automatically stages, commits, and pushes changes
+    - Tracks commit SHAs for PR creation
+    """
 
     def __init__(
         self,
@@ -79,13 +95,15 @@ class RunService:
         task_dao: TaskDAO,
         model_service: ModelService,
         repo_service: RepoService,
-        worktree_service: WorktreeService | None = None,
+        git_service: GitService | None = None,
+        github_service: "GitHubService | None" = None,
     ):
         self.run_dao = run_dao
         self.task_dao = task_dao
         self.model_service = model_service
         self.repo_service = repo_service
-        self.worktree_service = worktree_service or WorktreeService()
+        self.git_service = git_service or GitService()
+        self.github_service = github_service
         self.queue = QueueAdapter()
         self.llm_router = LLMRouter()
         self.claude_executor = ClaudeCodeExecutor(
@@ -241,8 +259,8 @@ class RunService:
             base_ref=base_ref,
         )
 
-        # Create worktree for this run
-        worktree_info = await self.worktree_service.create_worktree(
+        # Create worktree for this run using GitService
+        worktree_info = await self.git_service.create_worktree(
             repo=repo,
             base_branch=base_ref,
             run_id=run.id,
@@ -261,8 +279,8 @@ class RunService:
         # Enqueue for execution based on executor type
         self.queue.enqueue(
             run.id,
-            lambda r=run, wt=worktree_info, et=executor_type, ps=previous_session_id: self._execute_cli_run(
-                r, wt, et, ps
+            lambda r=run, wt=worktree_info, et=executor_type, ps=previous_session_id, rp=repo: self._execute_cli_run(
+                r, wt, et, ps, rp
             ),
         )
 
@@ -312,7 +330,7 @@ class RunService:
                 ExecutorType.GEMINI_CLI,
             }
             if run and run.executor_type in cli_executors and run.worktree_path:
-                await self.worktree_service.cleanup_worktree(
+                await self.git_service.cleanup_worktree(
                     Path(run.worktree_path),
                     delete_branch=True,
                 )
@@ -332,7 +350,7 @@ class RunService:
         if not run or not run.worktree_path:
             return False
 
-        await self.worktree_service.cleanup_worktree(
+        await self.git_service.cleanup_worktree(
             Path(run.worktree_path),
             delete_branch=False,  # Keep branch for PR
         )
@@ -407,16 +425,27 @@ class RunService:
         worktree_info: Any,
         executor_type: ExecutorType,
         resume_session_id: str | None = None,
+        repo: Any = None,
     ) -> None:
-        """Execute a CLI-based run (Claude Code, Codex, or Gemini).
+        """Execute a CLI-based run with automatic commit/push.
+
+        Following the orchestrator management pattern:
+        1. Execute CLI (file editing only)
+        2. Stage all changes
+        3. Get patch
+        4. Commit (automatic)
+        5. Push (automatic)
+        6. Save results
 
         Args:
             run: Run object.
             worktree_info: WorktreeInfo object with path and branch info.
             executor_type: Type of CLI executor to use.
             resume_session_id: Optional session ID to resume a previous conversation.
+            repo: Repository object for push operations.
         """
         logs: list[str] = []
+        commit_sha: str | None = None
 
         # Map executor types to their executors and names
         executor_map = {
@@ -431,44 +460,96 @@ class RunService:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
 
+            # 1. Record pre-execution status
+            pre_status = await self.git_service.get_status(worktree_info.path)
+            logs.append(f"Pre-execution status: {pre_status.has_changes} changes")
+
             logs.append(f"Starting {executor_name} execution in {worktree_info.path}")
             logs.append(f"Working branch: {worktree_info.branch_name}")
             if resume_session_id:
                 logs.append(f"Resuming session: {resume_session_id}")
 
-            # Execute the CLI with session persistence
+            # 2. Build instruction with constraints
+            constraints = AgentConstraints()
+            instruction_with_constraints = f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
+
+            # 3. Execute the CLI (file editing only)
             result = await executor.execute(
                 worktree_path=worktree_info.path,
-                instruction=run.instruction,
+                instruction=instruction_with_constraints,
                 on_output=lambda line: self._log_output(run.id, line),
                 resume_session_id=resume_session_id,
             )
 
-            # Save the session ID from the result for future runs
-            if result.session_id:
-                await self.run_dao.update_session_id(run.id, result.session_id)
-
-            if result.success:
-                # Update run with results
-                await self.run_dao.update_status(
-                    run.id,
-                    RunStatus.SUCCEEDED,
-                    summary=result.summary,
-                    patch=result.patch,
-                    files_changed=result.files_changed,
-                    logs=logs + result.logs,
-                    warnings=result.warnings,
-                )
-            else:
+            if not result.success:
                 await self.run_dao.update_status(
                     run.id,
                     RunStatus.FAILED,
                     error=result.error,
                     logs=logs + result.logs,
+                    session_id=result.session_id,
                 )
+                return
 
-            # Note: We don't cleanup the worktree here
-            # It stays for PR creation or manual cleanup
+            # 4. Stage all changes
+            await self.git_service.stage_all(worktree_info.path)
+
+            # 5. Get patch
+            patch = await self.git_service.get_diff(worktree_info.path, staged=True)
+
+            # Skip commit/push if no changes
+            if not patch.strip():
+                logs.append("No changes detected, skipping commit/push")
+                await self.run_dao.update_status(
+                    run.id,
+                    RunStatus.SUCCEEDED,
+                    summary="No changes made",
+                    patch="",
+                    files_changed=[],
+                    logs=logs + result.logs,
+                    session_id=result.session_id,
+                )
+                return
+
+            # Parse diff to get file changes
+            files_changed = self._parse_diff(patch)
+            logs.append(f"Detected {len(files_changed)} changed file(s)")
+
+            # 6. Commit (automatic)
+            commit_message = self._generate_commit_message(run.instruction, result.summary)
+            commit_sha = await self.git_service.commit(
+                worktree_info.path,
+                message=commit_message,
+            )
+            logs.append(f"Committed: {commit_sha[:8]}")
+
+            # 7. Push (automatic) - only if we have GitHub service configured
+            if self.github_service and repo:
+                try:
+                    owner, repo_name = self._parse_github_url(repo.repo_url)
+                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                    await self.git_service.push(
+                        worktree_info.path,
+                        branch=worktree_info.branch_name,
+                        auth_url=auth_url,
+                    )
+                    logs.append(f"Pushed to branch: {worktree_info.branch_name}")
+                except Exception as push_error:
+                    logs.append(f"Push failed (will retry on PR creation): {push_error}")
+                    # Continue without failing - push can be retried during PR creation
+
+            # 8. Save results
+            await self.run_dao.update_status(
+                run.id,
+                RunStatus.SUCCEEDED,
+                summary=result.summary or self._generate_summary(files_changed),
+                patch=patch,
+                files_changed=files_changed,
+                logs=logs + result.logs,
+                warnings=result.warnings,
+                session_id=result.session_id,
+                commit_sha=commit_sha,
+            )
 
         except Exception as e:
             # Update status to failed
@@ -477,10 +558,11 @@ class RunService:
                 RunStatus.FAILED,
                 error=str(e),
                 logs=logs + [f"Execution failed: {str(e)}"],
+                commit_sha=commit_sha,
             )
 
     async def _log_output(self, run_id: str, line: str) -> None:
-        """Log output from Claude Code execution.
+        """Log output from CLI execution.
 
         This is a placeholder for streaming support.
         In the future, this could emit SSE events.
@@ -492,3 +574,132 @@ class RunService:
         # For now, just log to console
         # TODO: Implement SSE streaming for real-time output
         pass
+
+    def _generate_commit_message(self, instruction: str, summary: str | None) -> str:
+        """Generate a commit message from instruction and summary.
+
+        Args:
+            instruction: Original user instruction.
+            summary: Optional summary from executor.
+
+        Returns:
+            Commit message string.
+        """
+        # Use first line of instruction (truncate if too long)
+        first_line = instruction.split("\n")[0][:72]
+        if summary:
+            return f"{first_line}\n\n{summary}"
+        return first_line
+
+    def _parse_diff(self, diff: str) -> list[FileDiff]:
+        """Parse unified diff to extract file change information.
+
+        Args:
+            diff: Unified diff string.
+
+        Returns:
+            List of FileDiff objects.
+        """
+        files: list[FileDiff] = []
+        current_file: str | None = None
+        current_patch_lines: list[str] = []
+        added_lines = 0
+        removed_lines = 0
+
+        for line in diff.split("\n"):
+            if line.startswith("--- a/"):
+                # Save previous file if exists
+                if current_file:
+                    files.append(FileDiff(
+                        path=current_file,
+                        added_lines=added_lines,
+                        removed_lines=removed_lines,
+                        patch="\n".join(current_patch_lines),
+                    ))
+                # Reset for new file
+                current_patch_lines = [line]
+                added_lines = 0
+                removed_lines = 0
+            elif line.startswith("+++ b/"):
+                current_file = line[6:]
+                current_patch_lines.append(line)
+            elif line.startswith("--- /dev/null"):
+                # New file
+                current_patch_lines = [line]
+                added_lines = 0
+                removed_lines = 0
+            elif line.startswith("+++ b/") and current_file is None:
+                # New file path
+                current_file = line[6:]
+                current_patch_lines.append(line)
+            elif current_file:
+                current_patch_lines.append(line)
+                if line.startswith("+") and not line.startswith("+++"):
+                    added_lines += 1
+                elif line.startswith("-") and not line.startswith("---"):
+                    removed_lines += 1
+
+        # Save last file
+        if current_file:
+            files.append(FileDiff(
+                path=current_file,
+                added_lines=added_lines,
+                removed_lines=removed_lines,
+                patch="\n".join(current_patch_lines),
+            ))
+
+        return files
+
+    def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
+        """Parse GitHub URL to extract owner and repo name.
+
+        Args:
+            repo_url: GitHub repository URL.
+
+        Returns:
+            Tuple of (owner, repo_name).
+
+        Raises:
+            ValueError: If URL cannot be parsed.
+        """
+        # Handle various URL formats:
+        # - https://github.com/owner/repo.git
+        # - https://github.com/owner/repo
+        # - git@github.com:owner/repo.git
+        patterns = [
+            r"github\.com[:/]([^/]+)/([^/.]+)(?:\.git)?$",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, repo_url)
+            if match:
+                return match.group(1), match.group(2)
+        raise ValueError(f"Could not parse GitHub URL: {repo_url}")
+
+    def _generate_summary(self, files_changed: list[FileDiff]) -> str:
+        """Generate a human-readable summary of changes.
+
+        Args:
+            files_changed: List of changed files.
+
+        Returns:
+            Summary string.
+        """
+        if not files_changed:
+            return "No files were modified."
+
+        total_added = sum(f.added_lines for f in files_changed)
+        total_removed = sum(f.removed_lines for f in files_changed)
+
+        summary_parts = [
+            f"Modified {len(files_changed)} file(s)",
+            f"+{total_added} -{total_removed} lines",
+        ]
+
+        # List files
+        file_list = ", ".join(f.path for f in files_changed[:5])
+        if len(files_changed) > 5:
+            file_list += f" and {len(files_changed) - 5} more"
+
+        summary_parts.append(f"Files: {file_list}")
+
+        return ". ".join(summary_parts) + "."

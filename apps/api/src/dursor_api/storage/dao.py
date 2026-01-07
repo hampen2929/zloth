@@ -392,6 +392,8 @@ class RunDAO:
         logs: list[str] | None = None,
         warnings: list[str] | None = None,
         error: str | None = None,
+        commit_sha: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Update run status and results."""
         updates = ["status = ?"]
@@ -422,6 +424,12 @@ class RunDAO:
         if error is not None:
             updates.append("error = ?")
             params.append(error)
+        if commit_sha is not None:
+            updates.append("commit_sha = ?")
+            params.append(commit_sha)
+        if session_id is not None:
+            updates.append("session_id = ?")
+            params.append(session_id)
 
         params.append(id)
 
@@ -520,6 +528,7 @@ class RunDAO:
             session_id=row["session_id"],
             instruction=row["instruction"],
             base_ref=row["base_ref"],
+            commit_sha=row["commit_sha"] if "commit_sha" in row.keys() else None,
             status=RunStatus(row["status"]),
             summary=row["summary"],
             patch=row["patch"],
@@ -600,6 +609,14 @@ class PRDAO:
         await self.db.connection.execute(
             "UPDATE prs SET latest_commit = ?, updated_at = ? WHERE id = ?",
             (latest_commit, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_body(self, id: str, body: str) -> None:
+        """Update PR's body/description."""
+        await self.db.connection.execute(
+            "UPDATE prs SET body = ?, updated_at = ? WHERE id = ?",
+            (body, now_iso(), id),
         )
         await self.db.connection.commit()
 
