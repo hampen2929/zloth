@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,13 +45,11 @@ class CodexExecutor:
             worktree_path: Path to the git worktree.
             instruction: Natural language instruction for Codex.
             on_output: Optional callback for streaming output.
-            resume_session_id: Optional session ID (not yet supported by Codex CLI).
+            resume_session_id: Optional session ID to resume a previous conversation.
 
         Returns:
             ExecutorResult with success status, patch, and logs.
         """
-        # Note: Codex CLI does not currently support session persistence
-        # The resume_session_id parameter is included for interface compatibility
         logs: list[str] = []
         output_lines: list[str] = []
 
@@ -59,16 +58,19 @@ class CodexExecutor:
         env.update(self.options.env_vars)
 
         # Build command
-        # Codex CLI: codex exec "prompt" --full-auto
-        # exec = Run Codex non-interactively
-        # --full-auto = -a on-request + --sandbox workspace-write
+        #
+        # Codex CLI (Rust): `codex exec <PROMPT> --full-auto`
+        # Resume an existing session in non-interactive mode:
+        #   `codex exec resume <SESSION_ID> <PROMPT> --full-auto`
+        #
         # See: https://github.com/openai/codex
-        cmd = [
-            self.options.codex_cli_path,
-            "exec",
-            instruction,
-            "--full-auto",
-        ]
+        cmd: list[str] = [self.options.codex_cli_path, "exec"]
+        if resume_session_id:
+            cmd.extend(["resume", resume_session_id, instruction])
+            logs.append(f"Continuing session: {resume_session_id}")
+        else:
+            cmd.append(instruction)
+        cmd.append("--full-auto")
 
         logs.append(f"Executing: {' '.join(cmd)}")
         logs.append(f"Working directory: {worktree_path}")
@@ -125,6 +127,9 @@ class CodexExecutor:
                     error=f"Codex CLI exited with code {process.returncode}",
                 )
 
+            # Extract session ID (UUID) from Codex output if present
+            session_id = self._extract_session_id(output_lines)
+
             # Generate diff from git changes
             patch, files_changed = await self._generate_diff(worktree_path)
 
@@ -137,6 +142,7 @@ class CodexExecutor:
                 patch=patch,
                 files_changed=files_changed,
                 logs=logs,
+                session_id=session_id,
             )
 
         except FileNotFoundError:
@@ -157,6 +163,32 @@ class CodexExecutor:
                 logs=logs,
                 error=str(e),
             )
+
+    def _extract_session_id(self, output_lines: list[str]) -> str | None:
+        """Extract Codex session/conversation UUID from CLI output.
+
+        Codex often prints a line like:
+            "To continue this session, run codex resume <UUID>"
+        We capture that UUID so the next run can resume via `codex exec resume <UUID> ...`.
+        """
+        # Prefer scanning line-by-line for the common hint.
+        hint_re = re.compile(
+            r"To continue this session,\s*run\s*codex\s+resume\s+"
+            r"(?P<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+            re.IGNORECASE,
+        )
+        for line in reversed(output_lines):
+            m = hint_re.search(line)
+            if m:
+                return m.group("id")
+
+        # Fallback: search combined output for any UUID that appears near "codex resume".
+        combined = "\n".join(output_lines[-2000:])  # avoid massive joins
+        m2 = hint_re.search(combined)
+        if m2:
+            return m2.group("id")
+
+        return None
 
     async def _generate_diff(self, worktree_path: Path) -> tuple[str, list[FileDiff]]:
         """Generate diff from git changes in worktree.
