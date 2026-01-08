@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 import { modelsApi, githubApi, preferencesApi } from '@/lib/api';
-import type { Provider, ModelProfileCreate, GitHubAppConfig, GitHubRepository, UserPreferences } from '@/types';
+import type { Provider, ModelProfileCreate, GitHubAppConfig, GitHubRepository, UserPreferences, PRCreationMode } from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
@@ -505,6 +505,7 @@ function DefaultsTab() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [branchPrefix, setBranchPrefix] = useState<string>('');
+  const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('auto');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -521,10 +522,11 @@ function DefaultsTab() {
     }
   }, [preferences, repos]);
 
-  // Initialize branch prefix from preferences
+  // Initialize branch prefix and PR creation mode from preferences
   useEffect(() => {
     if (preferences) {
       setBranchPrefix(preferences.default_branch_prefix || '');
+      setPrCreationMode(preferences.pr_creation_mode || 'auto');
     }
   }, [preferences]);
 
@@ -595,6 +597,7 @@ function DefaultsTab() {
         default_repo_name: repo,
         default_branch: selectedBranch || null,
         default_branch_prefix: branchPrefix.trim() ? branchPrefix.trim() : null,
+        pr_creation_mode: prCreationMode,
       });
       mutate('preferences');
       success('Default settings saved successfully');
@@ -613,11 +616,13 @@ function DefaultsTab() {
         default_repo_name: null,
         default_branch: null,
         default_branch_prefix: null,
+        pr_creation_mode: 'auto',
       });
       setSelectedRepo('');
       setSelectedBranch('');
       setBranches([]);
       setBranchPrefix('');
+      setPrCreationMode('auto');
       mutate('preferences');
       success('Default settings cleared');
     } catch (err) {
@@ -731,6 +736,50 @@ function DefaultsTab() {
           placeholder="dursor"
           hint="Prefix used for new work branches (e.g., dursor/abcd1234). Leave blank to use the default."
         />
+
+        {/* PR Creation Mode */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            PR Creation Mode
+          </label>
+          <div className="space-y-2">
+            <label className="flex items-start gap-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors">
+              <input
+                type="radio"
+                name="prCreationMode"
+                value="auto"
+                checked={prCreationMode === 'auto'}
+                onChange={() => setPrCreationMode('auto')}
+                className="mt-0.5 w-4 h-4 text-blue-500 bg-gray-700 border-gray-600 focus:ring-blue-500 focus:ring-2"
+              />
+              <div>
+                <div className="font-medium text-gray-200">Automatic</div>
+                <div className="text-xs text-gray-500">
+                  Create PR automatically via API with AI-generated title and description
+                </div>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors">
+              <input
+                type="radio"
+                name="prCreationMode"
+                value="manual"
+                checked={prCreationMode === 'manual'}
+                onChange={() => setPrCreationMode('manual')}
+                className="mt-0.5 w-4 h-4 text-blue-500 bg-gray-700 border-gray-600 focus:ring-blue-500 focus:ring-2"
+              />
+              <div>
+                <div className="font-medium text-gray-200">Manual (Open GitHub)</div>
+                <div className="text-xs text-gray-500">
+                  Open GitHub&apos;s PR creation page to create PR manually
+                </div>
+              </div>
+            </label>
+          </div>
+          <p className="text-xs text-gray-500">
+            Choose how PRs are created when you click the &quot;Create PR&quot; button.
+          </p>
+        </div>
 
         {/* Action buttons */}
         <div className="flex gap-2 pt-2">

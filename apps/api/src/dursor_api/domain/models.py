@@ -442,6 +442,7 @@ class UserPreferences(BaseModel):
     default_repo_name: str | None = None
     default_branch: str | None = None
     default_branch_prefix: str | None = None
+    pr_creation_mode: str = "auto"  # 'auto' or 'manual'
 
 
 class UserPreferencesSave(BaseModel):
@@ -451,3 +452,4 @@ class UserPreferencesSave(BaseModel):
     default_repo_name: str | None = None
     default_branch: str | None = None
     default_branch_prefix: str | None = None
+    pr_creation_mode: str | None = None  # 'auto' or 'manual'

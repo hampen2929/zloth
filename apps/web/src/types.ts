@@ -219,11 +219,14 @@ export interface RepoSelectRequest {
 }
 
 // User Preferences
+export type PRCreationMode = 'auto' | 'manual';
+
 export interface UserPreferences {
   default_repo_owner: string | null;
   default_repo_name: string | null;
   default_branch: string | null;
   default_branch_prefix: string | null;
+  pr_creation_mode: PRCreationMode;
 }
 
 export interface UserPreferencesSave {
@@ -231,4 +234,5 @@ export interface UserPreferencesSave {
   default_repo_name?: string | null;
   default_branch?: string | null;
   default_branch_prefix?: string | null;
+  pr_creation_mode?: PRCreationMode | null;
 }

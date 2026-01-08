@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { prsApi } from '@/lib/api';
+import useSWR from 'swr';
+import { prsApi, preferencesApi } from '@/lib/api';
 import type { Run } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { StreamingLogs } from '@/components/StreamingLogs';
@@ -25,6 +26,9 @@ import {
 interface RunDetailPanelProps {
   run: Run;
   taskId: string;
+  repoOwner?: string;
+  repoName?: string;
+  baseBranch?: string;
   onPRCreated: () => void;
 }
 
@@ -49,6 +53,9 @@ function getDefaultTab(status: Run['status']): Tab {
 export function RunDetailPanel({
   run,
   taskId,
+  repoOwner,
+  repoName,
+  baseBranch,
   onPRCreated,
 }: RunDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>(() => getDefaultTab(run.status));
@@ -64,6 +71,9 @@ export function RunDetailPanel({
     setActiveTab(getDefaultTab(run.status));
   }, [run.id, run.status]);
   const { success, error } = useToast();
+
+  // Get user preferences for PR creation mode
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
 
   const handleCreatePR = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,9 +203,27 @@ export function RunDetailPanel({
             <Button
               variant="success"
               size="sm"
-              onClick={() => setShowPRForm(!showPRForm)}
+              onClick={() => {
+                const prCreationMode = preferences?.pr_creation_mode || 'auto';
+                if (prCreationMode === 'manual') {
+                  // Open GitHub PR creation page
+                  if (repoOwner && repoName && run.working_branch) {
+                    const base = baseBranch || 'main';
+                    const head = run.working_branch;
+                    const prUrl = `https://github.com/${repoOwner}/${repoName}/compare/${base}...${head}?expand=1`;
+                    window.open(prUrl, '_blank', 'noopener,noreferrer');
+                    success('Opened GitHub PR creation page');
+                  } else {
+                    error('Repository information not available. Please configure defaults in Settings.');
+                  }
+                } else {
+                  setShowPRForm(!showPRForm);
+                }
+              }}
             >
-              {showPRForm ? 'Cancel' : 'Create PR'}
+              {showPRForm ? 'Cancel' : (
+                preferences?.pr_creation_mode === 'manual' ? 'Open PR Page' : 'Create PR'
+              )}
             </Button>
           )}
         </div>

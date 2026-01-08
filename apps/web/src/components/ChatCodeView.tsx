@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { tasksApi, runsApi, prsApi } from '@/lib/api';
+import useSWR from 'swr';
+import { tasksApi, runsApi, prsApi, preferencesApi } from '@/lib/api';
 import type { Message, ModelProfile, ExecutorType, Run, RunStatus } from '@/types';
 import { Button } from './ui/Button';
 import { DiffViewer } from './DiffViewer';
@@ -36,6 +37,9 @@ interface ChatCodeViewProps {
   models: ModelProfile[];
   executorType?: ExecutorType;
   initialModelIds?: string[];
+  repoOwner?: string;
+  repoName?: string;
+  baseBranch?: string;
   onRunsCreated: () => void;
   onPRCreated: () => void;
 }
@@ -55,6 +59,9 @@ export function ChatCodeView({
   models,
   executorType = 'patch_agent',
   initialModelIds,
+  repoOwner,
+  repoName,
+  baseBranch,
   onRunsCreated,
   onPRCreated,
 }: ChatCodeViewProps) {
@@ -67,6 +74,9 @@ export function ChatCodeView({
   const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
+
+  // Get user preferences for PR creation mode
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
 
   // Determine the locked executor:
   // - If we already have runs, lock to the earliest run's executor_type.
@@ -102,10 +112,27 @@ export function ChatCodeView({
     }
   };
 
-  // Create PR with AI-generated title and description
+  // Create PR with AI-generated title and description, or open GitHub PR page
   const handleCreatePR = async () => {
     if (!latestSuccessfulRun) return;
 
+    const prCreationMode = preferences?.pr_creation_mode || 'auto';
+
+    if (prCreationMode === 'manual') {
+      // Open GitHub PR creation page
+      if (repoOwner && repoName && latestSuccessfulRun.working_branch) {
+        const base = baseBranch || 'main';
+        const head = latestSuccessfulRun.working_branch;
+        const prUrl = `https://github.com/${repoOwner}/${repoName}/compare/${base}...${head}?expand=1`;
+        window.open(prUrl, '_blank', 'noopener,noreferrer');
+        success('Opened GitHub PR creation page');
+      } else {
+        error('Repository information not available. Please configure defaults in Settings.');
+      }
+      return;
+    }
+
+    // Auto mode: Create PR via API
     setCreatingPR(true);
     try {
       const result = await prsApi.createAuto(taskId, {
@@ -325,7 +352,14 @@ export function ChatCodeView({
               isLoading={creatingPR}
               className="flex items-center gap-1.5"
             >
-              {creatingPR ? 'Creating PR...' : 'Create PR'}
+              {creatingPR ? 'Creating PR...' : (
+                preferences?.pr_creation_mode === 'manual' ? (
+                  <>
+                    Open PR Page
+                    <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+                  </>
+                ) : 'Create PR'
+              )}
             </Button>
           ) : null}
         </div>

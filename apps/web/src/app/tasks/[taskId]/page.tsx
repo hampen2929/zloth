@@ -3,7 +3,7 @@
 import { use, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import useSWR, { mutate } from 'swr';
-import { tasksApi, runsApi, modelsApi } from '@/lib/api';
+import { tasksApi, runsApi, modelsApi, reposApi } from '@/lib/api';
 import { ChatCodeView } from '@/components/ChatCodeView';
 import { MessageSkeleton } from '@/components/ui/Skeleton';
 import { ExclamationCircleIcon } from '@heroicons/react/24/outline';
@@ -11,6 +11,29 @@ import type { ExecutorType } from '@/types';
 
 interface PageProps {
   params: Promise<{ taskId: string }>;
+}
+
+/**
+ * Extract owner and repo name from a GitHub repository URL
+ * Supports formats:
+ * - https://github.com/owner/repo
+ * - https://github.com/owner/repo.git
+ * - git@github.com:owner/repo.git
+ */
+function parseRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
+  // HTTPS format: https://github.com/owner/repo(.git)
+  const httpsMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/.]+)/);
+  if (httpsMatch) {
+    return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  }
+
+  // SSH format: git@github.com:owner/repo.git
+  const sshMatch = repoUrl.match(/git@github\.com:([^/]+)\/([^/.]+)/);
+  if (sshMatch) {
+    return { owner: sshMatch[1], repo: sshMatch[2] };
+  }
+
+  return null;
 }
 
 function TaskPageContent({ taskId }: { taskId: string }) {
@@ -33,6 +56,15 @@ function TaskPageContent({ taskId }: { taskId: string }) {
   );
 
   const { data: models } = useSWR('models', modelsApi.list);
+
+  // Get repository info for PR creation URL
+  const { data: repo } = useSWR(
+    task?.repo_id ? `repo-${task.repo_id}` : null,
+    () => task ? reposApi.get(task.repo_id) : null
+  );
+
+  // Parse repo URL to get owner/repo
+  const repoInfo = repo ? parseRepoUrl(repo.repo_url) : null;
 
   // Error state
   if (taskError) {
@@ -67,6 +99,9 @@ function TaskPageContent({ taskId }: { taskId: string }) {
         models={models || []}
         executorType={executorType}
         initialModelIds={initialModelIds}
+        repoOwner={repoInfo?.owner}
+        repoName={repoInfo?.repo}
+        baseBranch={repo?.default_branch}
         onRunsCreated={() => {
           mutate(`runs-${taskId}`);
         }}
