@@ -20,7 +20,14 @@ from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.agents.patch_agent import PatchAgent
 from dursor_api.config import settings
 from dursor_api.domain.enums import ExecutorType, RunStatus
-from dursor_api.domain.models import AgentConstraints, AgentRequest, FileDiff, Run, RunCreate
+from dursor_api.domain.models import (
+    SUMMARY_FILE_PATH,
+    AgentConstraints,
+    AgentRequest,
+    FileDiff,
+    Run,
+    RunCreate,
+)
 from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
@@ -648,17 +655,17 @@ class RunService:
         Returns:
             Summary text if file exists, None otherwise.
         """
-        summary_file = worktree_path / AgentConstraints.SUMMARY_FILE_PATH
+        summary_file = worktree_path / SUMMARY_FILE_PATH
         summary: str | None = None
 
         try:
             if summary_file.exists():
                 summary = summary_file.read_text(encoding="utf-8").strip()
-                logs.append(f"Read summary from {AgentConstraints.SUMMARY_FILE_PATH}")
+                logs.append(f"Read summary from {SUMMARY_FILE_PATH}")
 
                 # Remove the file so it's not committed
                 summary_file.unlink()
-                logs.append(f"Removed {AgentConstraints.SUMMARY_FILE_PATH}")
+                logs.append(f"Removed {SUMMARY_FILE_PATH}")
 
                 # Clean up empty summary
                 if not summary:
