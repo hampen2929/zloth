@@ -34,7 +34,7 @@ from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from dursor_api.services.git_service import GitService
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
-from dursor_api.storage.dao import RunDAO, TaskDAO
+from dursor_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
 
 if TYPE_CHECKING:
     from dursor_api.services.github_service import GitHubService
@@ -111,6 +111,7 @@ class RunService:
         git_service: GitService | None = None,
         github_service: "GitHubService | None" = None,
         output_manager: "OutputManager | None" = None,
+        user_preferences_dao: UserPreferencesDAO | None = None,
     ):
         self.run_dao = run_dao
         self.task_dao = task_dao
@@ -119,6 +120,7 @@ class RunService:
         self.git_service = git_service or GitService()
         self.github_service = github_service
         self.output_manager = output_manager
+        self.user_preferences_dao = user_preferences_dao
         self.queue = QueueAdapter()
         self.llm_router = LLMRouter()
         self.claude_executor = ClaudeCodeExecutor(
@@ -304,11 +306,19 @@ class RunService:
         )
 
         if not worktree_info:
+            # Get branch prefix from user preferences
+            branch_prefix = "dursor"
+            if self.user_preferences_dao:
+                prefs = await self.user_preferences_dao.get()
+                if prefs and prefs.branch_prefix:
+                    branch_prefix = prefs.branch_prefix
+
             # Create new worktree for this run
             worktree_info = await self.git_service.create_worktree(
                 repo=repo,
                 base_branch=base_ref,
                 run_id=run.id,
+                branch_prefix=branch_prefix,
             )
 
         # Update run with worktree info

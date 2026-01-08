@@ -690,6 +690,7 @@ class UserPreferencesDAO:
         default_repo_owner: str | None = None,
         default_repo_name: str | None = None,
         default_branch: str | None = None,
+        branch_prefix: str | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
@@ -707,18 +708,19 @@ class UserPreferencesDAO:
                 SET default_repo_owner = ?,
                     default_repo_name = ?,
                     default_branch = ?,
+                    branch_prefix = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
-                (default_repo_owner, default_repo_name, default_branch, now),
+                (default_repo_owner, default_repo_name, default_branch, branch_prefix, now),
             )
         else:
             await self.db.connection.execute(
                 """
-                INSERT INTO user_preferences (id, default_repo_owner, default_repo_name, default_branch, created_at, updated_at)
-                VALUES (1, ?, ?, ?, ?, ?)
+                INSERT INTO user_preferences (id, default_repo_owner, default_repo_name, default_branch, branch_prefix, created_at, updated_at)
+                VALUES (1, ?, ?, ?, ?, ?, ?)
                 """,
-                (default_repo_owner, default_repo_name, default_branch, now, now),
+                (default_repo_owner, default_repo_name, default_branch, branch_prefix, now, now),
             )
 
         await self.db.connection.commit()
@@ -727,11 +729,15 @@ class UserPreferencesDAO:
             default_repo_owner=default_repo_owner,
             default_repo_name=default_repo_name,
             default_branch=default_branch,
+            branch_prefix=branch_prefix or "dursor",
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
+        # Handle branch_prefix with default for backward compatibility
+        branch_prefix = row["branch_prefix"] if "branch_prefix" in row.keys() else "dursor"
         return UserPreferences(
             default_repo_owner=row["default_repo_owner"],
             default_repo_name=row["default_repo_name"],
             default_branch=row["default_branch"],
+            branch_prefix=branch_prefix or "dursor",
         )

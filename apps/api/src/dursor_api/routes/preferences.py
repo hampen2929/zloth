@@ -30,4 +30,5 @@ async def save_preferences(
         default_repo_owner=data.default_repo_owner,
         default_repo_name=data.default_repo_name,
         default_branch=data.default_branch,
+        branch_prefix=data.branch_prefix,
     )

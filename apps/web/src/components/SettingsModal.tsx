@@ -504,14 +504,18 @@ function DefaultsTab() {
   const [selectedRepo, setSelectedRepo] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
+  const [branchPrefix, setBranchPrefix] = useState<string>('dursor');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
 
   // Initialize from saved preferences
   useEffect(() => {
-    if (preferences && repos) {
-      if (preferences.default_repo_owner && preferences.default_repo_name) {
+    if (preferences) {
+      // Initialize branch prefix
+      setBranchPrefix(preferences.branch_prefix || 'dursor');
+
+      if (repos && preferences.default_repo_owner && preferences.default_repo_name) {
         const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
         setSelectedRepo(repoFullName);
         // Load branches for the default repo
@@ -524,13 +528,26 @@ function DefaultsTab() {
     setBranchesLoading(true);
     try {
       const branchList = await githubApi.listBranches(owner, repo);
-      setBranches(branchList);
-      if (defaultBranch && branchList.includes(defaultBranch)) {
+
+      // Get repository's default branch from repos list
+      const repoInfo = repos?.find(r => r.owner === owner && r.name === repo);
+      const repoDefaultBranch = repoInfo?.default_branch;
+
+      // Sort branches: repository default branch first, then alphabetically
+      const sortedBranches = [...branchList].sort((a, b) => {
+        // Repository's default branch comes first
+        if (a === repoDefaultBranch) return -1;
+        if (b === repoDefaultBranch) return 1;
+        // Then alphabetically
+        return a.localeCompare(b);
+      });
+
+      setBranches(sortedBranches);
+      if (defaultBranch && sortedBranches.includes(defaultBranch)) {
         setSelectedBranch(defaultBranch);
-      } else if (branchList.length > 0) {
-        // Try to select 'main' or 'master' or the first branch
-        const mainBranch = branchList.find(b => b === 'main') || branchList.find(b => b === 'master') || branchList[0];
-        setSelectedBranch(mainBranch);
+      } else if (sortedBranches.length > 0) {
+        // Select the repository's default branch or the first one
+        setSelectedBranch(repoDefaultBranch && sortedBranches.includes(repoDefaultBranch) ? repoDefaultBranch : sortedBranches[0]);
       }
     } catch (err) {
       console.error('Failed to load branches:', err);
@@ -559,6 +576,7 @@ function DefaultsTab() {
         default_repo_owner: owner,
         default_repo_name: repo,
         default_branch: selectedBranch || null,
+        branch_prefix: branchPrefix || 'dursor',
       });
       mutate('preferences');
       success('Default settings saved successfully');
@@ -576,10 +594,12 @@ function DefaultsTab() {
         default_repo_owner: null,
         default_repo_name: null,
         default_branch: null,
+        branch_prefix: 'dursor',
       });
       setSelectedRepo('');
       setSelectedBranch('');
       setBranches([]);
+      setBranchPrefix('dursor');
       mutate('preferences');
       success('Default settings cleared');
     } catch (err) {
@@ -682,6 +702,27 @@ function DefaultsTab() {
           </select>
           <p className="text-xs text-gray-500">
             Select the branch that will be pre-selected when creating new tasks.
+          </p>
+        </div>
+
+        {/* Branch Prefix */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Branch Prefix
+          </label>
+          <input
+            type="text"
+            value={branchPrefix}
+            onChange={(e) => setBranchPrefix(e.target.value)}
+            placeholder="dursor"
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors placeholder:text-gray-500'
+            )}
+          />
+          <p className="text-xs text-gray-500">
+            Prefix for generated branch names (e.g., &quot;{branchPrefix}/abc12345&quot;). Default is &quot;dursor&quot;.
           </p>
         </div>
 

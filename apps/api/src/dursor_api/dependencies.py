@@ -114,6 +114,7 @@ async def get_run_service() -> RunService:
         git_service = get_git_service()
         github_service = await get_github_service()
         output_manager = get_output_manager()
+        user_preferences_dao = await get_user_preferences_dao()
         _run_service = RunService(
             run_dao,
             task_dao,
@@ -122,6 +123,7 @@ async def get_run_service() -> RunService:
             git_service,
             github_service,
             output_manager,
+            user_preferences_dao,
         )
     return _run_service
 

@@ -61,6 +61,17 @@ class Database:
             )
             await self._connection.commit()
 
+        # Migration: Add branch_prefix column to user_preferences table if it doesn't exist
+        cursor = await self._connection.execute("PRAGMA table_info(user_preferences)")
+        prefs_columns = await cursor.fetchall()
+        prefs_column_names = [col["name"] for col in prefs_columns]
+
+        if "branch_prefix" not in prefs_column_names:
+            await self._connection.execute(
+                "ALTER TABLE user_preferences ADD COLUMN branch_prefix TEXT DEFAULT 'dursor'"
+            )
+            await self._connection.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""
