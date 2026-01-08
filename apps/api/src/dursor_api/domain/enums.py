@@ -36,3 +36,10 @@ class ExecutorType(str, Enum):
     CLAUDE_CODE = "claude_code"  # Claude Code CLI execution
     CODEX_CLI = "codex_cli"  # OpenAI Codex CLI execution
     GEMINI_CLI = "gemini_cli"  # Google Gemini CLI execution
+
+
+class PRCreationMode(str, Enum):
+    """Default behavior for 'Create PR' actions."""
+
+    CREATE = "create"  # Create PR immediately via GitHub API
+    LINK = "link"  # Open a GitHub compare link; user creates PR manually

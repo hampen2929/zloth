@@ -7,6 +7,7 @@ export type Provider = 'openai' | 'anthropic' | 'google';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type ExecutorType = 'patch_agent' | 'claude_code' | 'codex_cli' | 'gemini_cli';
+export type PRCreationMode = 'create' | 'link';
 
 // Model Profile
 export interface ModelProfile {
@@ -180,6 +181,21 @@ export interface PRCreated {
   number: number;
 }
 
+export interface PRCreateLink {
+  url: string;
+  branch: string;
+  base: string;
+}
+
+export interface PRSyncRequest {
+  selected_run_id: string;
+}
+
+export interface PRSyncResult {
+  found: boolean;
+  pr: PRCreated | null;
+}
+
 export interface PRUpdated {
   url: string;
   latest_commit: string;
@@ -224,6 +240,7 @@ export interface UserPreferences {
   default_repo_name: string | null;
   default_branch: string | null;
   default_branch_prefix: string | null;
+  default_pr_creation_mode: PRCreationMode;
 }
 
 export interface UserPreferencesSave {
@@ -231,4 +248,5 @@ export interface UserPreferencesSave {
   default_repo_name?: string | null;
   default_branch?: string | null;
   default_branch_prefix?: string | null;
+  default_pr_creation_mode?: PRCreationMode | null;
 }

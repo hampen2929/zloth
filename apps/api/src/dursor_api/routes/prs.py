@@ -3,7 +3,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from dursor_api.dependencies import get_pr_service
-from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRCreated, PRUpdate, PRUpdated
+from dursor_api.domain.models import (
+    PR,
+    PRCreate,
+    PRCreateAuto,
+    PRCreateLink,
+    PRCreated,
+    PRSyncRequest,
+    PRSyncResult,
+    PRUpdate,
+    PRUpdated,
+)
 from dursor_api.services.pr_service import GitHubPermissionError, PRService
 
 router = APIRouter(tags=["prs"])
@@ -49,6 +59,51 @@ async def create_pr_auto(
             branch=pr.branch,
             number=pr.number,
         )
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/prs/link", response_model=PRCreateLink)
+async def create_pr_link(
+    task_id: str,
+    data: PRCreate,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PRCreateLink:
+    """Generate a GitHub compare link for manual PR creation."""
+    try:
+        return await pr_service.create_link(task_id, data)
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/prs/auto/link", response_model=PRCreateLink)
+async def create_pr_link_auto(
+    task_id: str,
+    data: PRCreateAuto,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PRCreateLink:
+    """Generate a GitHub compare link for manual PR creation (auto flow)."""
+    try:
+        return await pr_service.create_link_auto(task_id, data)
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/prs/sync", response_model=PRSyncResult)
+async def sync_manual_pr(
+    task_id: str,
+    data: PRSyncRequest,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PRSyncResult:
+    """Sync a manually created PR (created via the GitHub compare UI)."""
+    try:
+        return await pr_service.sync_manual_pr(task_id, data.selected_run_id)
     except GitHubPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:

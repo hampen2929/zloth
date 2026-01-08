@@ -11,11 +11,11 @@ import logging
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.domain.enums import Provider
-from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRUpdate, Repo
+from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRCreateLink, PRCreated, PRSyncResult, PRUpdate, Repo
 from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
 from dursor_api.services.repo_service import RepoService
@@ -82,6 +82,51 @@ class PRService:
 
         return parts[0], parts[1]
 
+    async def _ensure_branch_pushed(self, *, owner: str, repo: str, repo_obj: Repo, run) -> None:
+        """Ensure the run's working branch exists on the remote.
+
+        For CLI runs, we usually have a worktree and can push from it.
+        If the push fails due to permission issues, raise a friendly error.
+        """
+        if not run.worktree_path:
+            return
+        try:
+            auth_url = await self.github_service.get_auth_url(owner, repo)
+            await self.git_service.push(
+                Path(run.worktree_path),
+                branch=run.working_branch,
+                auth_url=auth_url,
+            )
+        except Exception as e:
+            if "403" in str(e) or "Write access" in str(e):
+                raise GitHubPermissionError(
+                    f"GitHub App lacks write access to {owner}/{repo}. "
+                    "Please ensure the GitHub App has 'Contents' permission "
+                    "set to 'Read and write' and is installed on this repository."
+                ) from e
+            raise
+
+    def _build_github_compare_url(
+        self,
+        *,
+        owner: str,
+        repo: str,
+        base: str,
+        head: str,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> str:
+        """Build a GitHub compare URL that leads to PR creation UI."""
+        # Note: GitHub accepts query params like `expand=1` and `quick_pull=1`.
+        params: dict[str, str] = {"expand": "1", "quick_pull": "1"}
+        if title:
+            params["title"] = title
+        if body:
+            params["body"] = body
+
+        compare_path = f"https://github.com/{owner}/{repo}/compare/{base}...{head}"
+        return f"{compare_path}?{urlencode(params)}"
+
     async def create(self, task_id: str, data: PRCreate) -> PR:
         """Create a Pull Request from an already-pushed branch.
 
@@ -119,23 +164,12 @@ class PRService:
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
 
-        # If branch hasn't been pushed yet, push it now
-        if run.worktree_path:
-            try:
-                auth_url = await self.github_service.get_auth_url(owner, repo_name)
-                await self.git_service.push(
-                    Path(run.worktree_path),
-                    branch=run.working_branch,
-                    auth_url=auth_url,
-                )
-            except Exception as e:
-                if "403" in str(e) or "Write access" in str(e):
-                    raise GitHubPermissionError(
-                        f"GitHub App lacks write access to {owner}/{repo_name}. "
-                        "Please ensure the GitHub App has 'Contents' permission "
-                        "set to 'Read and write' and is installed on this repository."
-                    ) from e
-                raise
+        await self._ensure_branch_pushed(
+            owner=owner,
+            repo=repo_name,
+            repo_obj=repo_obj,
+            run=run,
+        )
 
         # Diagnostics: confirm PR branch is based on latest default (origin/<default>)
         await self._log_pr_branch_base_state(repo_obj, run)
@@ -208,23 +242,12 @@ class PRService:
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
 
-        # If branch hasn't been pushed yet, push it now
-        if run.worktree_path:
-            try:
-                auth_url = await self.github_service.get_auth_url(owner, repo_name)
-                await self.git_service.push(
-                    Path(run.worktree_path),
-                    branch=run.working_branch,
-                    auth_url=auth_url,
-                )
-            except Exception as e:
-                if "403" in str(e) or "Write access" in str(e):
-                    raise GitHubPermissionError(
-                        f"GitHub App lacks write access to {owner}/{repo_name}. "
-                        "Please ensure the GitHub App has 'Contents' permission "
-                        "set to 'Read and write' and is installed on this repository."
-                    ) from e
-                raise
+        await self._ensure_branch_pushed(
+            owner=owner,
+            repo=repo_name,
+            repo_obj=repo_obj,
+            run=run,
+        )
 
         # Diagnostics: confirm PR branch is based on latest default (origin/<default>)
         await self._log_pr_branch_base_state(repo_obj, run)
@@ -271,6 +294,129 @@ class PRService:
             title=title,
             body=description,
             latest_commit=run.commit_sha,
+        )
+
+    async def create_link(self, task_id: str, data: PRCreate) -> PRCreateLink:
+        """Generate a GitHub compare URL for manual PR creation."""
+        task = await self.task_dao.get(task_id)
+        if not task:
+            raise ValueError(f"Task not found: {task_id}")
+
+        repo_obj = await self.repo_service.get(task.repo_id)
+        if not repo_obj:
+            raise ValueError(f"Repo not found: {task.repo_id}")
+
+        run = await self.run_dao.get(data.selected_run_id)
+        if not run:
+            raise ValueError(f"Run not found: {data.selected_run_id}")
+
+        if not run.working_branch:
+            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+        await self._ensure_branch_pushed(owner=owner, repo=repo_name, repo_obj=repo_obj, run=run)
+
+        base = repo_obj.default_branch
+        url = self._build_github_compare_url(
+            owner=owner,
+            repo=repo_name,
+            base=base,
+            head=run.working_branch,
+            title=data.title,
+            body=(data.body or "").strip() or None,
+        )
+        return PRCreateLink(url=url, branch=run.working_branch, base=base)
+
+    async def create_link_auto(self, task_id: str, data: PRCreateAuto) -> PRCreateLink:
+        """Generate a GitHub compare URL for manual PR creation (auto title/body omitted)."""
+        task = await self.task_dao.get(task_id)
+        if not task:
+            raise ValueError(f"Task not found: {task_id}")
+
+        repo_obj = await self.repo_service.get(task.repo_id)
+        if not repo_obj:
+            raise ValueError(f"Repo not found: {task.repo_id}")
+
+        run = await self.run_dao.get(data.selected_run_id)
+        if not run:
+            raise ValueError(f"Run not found: {data.selected_run_id}")
+
+        if not run.working_branch:
+            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+        await self._ensure_branch_pushed(owner=owner, repo=repo_name, repo_obj=repo_obj, run=run)
+
+        base = repo_obj.default_branch
+        url = self._build_github_compare_url(
+            owner=owner,
+            repo=repo_name,
+            base=base,
+            head=run.working_branch,
+        )
+        return PRCreateLink(url=url, branch=run.working_branch, base=base)
+
+    async def sync_manual_pr(self, task_id: str, selected_run_id: str) -> PRSyncResult:
+        """Sync a PR that may have been created manually via GitHub UI."""
+        task = await self.task_dao.get(task_id)
+        if not task:
+            raise ValueError(f"Task not found: {task_id}")
+
+        repo_obj = await self.repo_service.get(task.repo_id)
+        if not repo_obj:
+            raise ValueError(f"Repo not found: {task.repo_id}")
+
+        run = await self.run_dao.get(selected_run_id)
+        if not run:
+            raise ValueError(f"Run not found: {selected_run_id}")
+
+        if not run.working_branch:
+            raise ValueError(f"Run has no working branch: {selected_run_id}")
+
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+        base = repo_obj.default_branch
+        head = f"{owner}:{run.working_branch}"
+
+        pr_data = await self.github_service.find_pull_request_by_head(
+            owner=owner,
+            repo=repo_name,
+            head=head,
+            base=base,
+            state="all",
+        )
+        if not pr_data:
+            return PRSyncResult(found=False, pr=None)
+
+        number = pr_data["number"]
+        existing = await self.pr_dao.get_by_task_and_number(task_id, number)
+        if existing:
+            return PRSyncResult(
+                found=True,
+                pr=PRCreated(
+                    pr_id=existing.id,
+                    url=existing.url,
+                    branch=existing.branch,
+                    number=existing.number,
+                ),
+            )
+
+        created = await self.pr_dao.create(
+            task_id=task_id,
+            number=number,
+            url=pr_data["html_url"],
+            branch=pr_data["head"]["ref"],
+            title=pr_data["title"],
+            body=pr_data.get("body"),
+            latest_commit=pr_data.get("head", {}).get("sha") or run.commit_sha or "",
+        )
+        return PRSyncResult(
+            found=True,
+            pr=PRCreated(
+                pr_id=created.id,
+                url=created.url,
+                branch=created.branch,
+                number=created.number,
+            ),
         )
 
     async def _generate_title(self, diff: str, task, run) -> str:

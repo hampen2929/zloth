@@ -342,3 +342,44 @@ class GitHubService:
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
             json=update_data,
         )
+
+    async def find_pull_request_by_head(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        head: str,
+        base: str | None = None,
+        state: str = "all",
+    ) -> dict | None:
+        """Find a pull request by head branch (and optional base branch).
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            head: Head in the form "owner:branch".
+            base: Optional base branch name.
+            state: PR state: open|closed|all.
+
+        Returns:
+            PR dict if found, else None.
+        """
+        params: dict[str, Any] = {
+            "head": head,
+            "state": state,
+            "per_page": 20,
+            "sort": "created",
+            "direction": "desc",
+        }
+        if base:
+            params["base"] = base
+
+        prs = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params=params,
+        )
+
+        if isinstance(prs, list) and prs:
+            return prs[0]
+        return None

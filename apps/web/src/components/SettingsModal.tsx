@@ -3,7 +3,11 @@
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 import { modelsApi, githubApi, preferencesApi } from '@/lib/api';
-import type { Provider, ModelProfileCreate, GitHubAppConfig, GitHubRepository, UserPreferences } from '@/types';
+import type {
+  Provider,
+  ModelProfileCreate,
+  PRCreationMode,
+} from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
@@ -112,7 +116,7 @@ function ModelsTab() {
         await modelsApi.delete(modelId);
         mutate('models');
         success('Model deleted successfully');
-      } catch (err) {
+      } catch {
         toastError('Failed to delete model');
       }
     }
@@ -323,7 +327,7 @@ function AddModelForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 function GitHubAppTab() {
-  const { data: config, error, isLoading } = useSWR('github-config', githubApi.getConfig);
+  const { data: config, isLoading } = useSWR('github-config', githubApi.getConfig);
   const [appId, setAppId] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [installationId, setInstallationId] = useState('');
@@ -494,7 +498,7 @@ function GitHubAppTab() {
 }
 
 function DefaultsTab() {
-  const { data: preferences, isLoading: prefsLoading } = useSWR('preferences', preferencesApi.get);
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: githubConfig } = useSWR('github-config', githubApi.getConfig);
   const { data: repos, isLoading: reposLoading } = useSWR(
     githubConfig?.is_configured ? 'github-repos' : null,
@@ -505,6 +509,7 @@ function DefaultsTab() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [branchPrefix, setBranchPrefix] = useState<string>('');
+  const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('create');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -525,6 +530,7 @@ function DefaultsTab() {
   useEffect(() => {
     if (preferences) {
       setBranchPrefix(preferences.default_branch_prefix || '');
+      setPrCreationMode(preferences.default_pr_creation_mode || 'create');
     }
   }, [preferences]);
 
@@ -595,10 +601,11 @@ function DefaultsTab() {
         default_repo_name: repo,
         default_branch: selectedBranch || null,
         default_branch_prefix: branchPrefix.trim() ? branchPrefix.trim() : null,
+        default_pr_creation_mode: prCreationMode,
       });
       mutate('preferences');
       success('Default settings saved successfully');
-    } catch (err) {
+    } catch {
       toastError('Failed to save settings');
     } finally {
       setLoading(false);
@@ -613,14 +620,16 @@ function DefaultsTab() {
         default_repo_name: null,
         default_branch: null,
         default_branch_prefix: null,
+        default_pr_creation_mode: null,
       });
       setSelectedRepo('');
       setSelectedBranch('');
       setBranches([]);
       setBranchPrefix('');
+      setPrCreationMode('create');
       mutate('preferences');
       success('Default settings cleared');
-    } catch (err) {
+    } catch {
       toastError('Failed to clear settings');
     } finally {
       setLoading(false);
@@ -731,6 +740,28 @@ function DefaultsTab() {
           placeholder="dursor"
           hint="Prefix used for new work branches (e.g., dursor/abcd1234). Leave blank to use the default."
         />
+
+        {/* PR creation behavior */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Create PR behavior
+          </label>
+          <select
+            value={prCreationMode}
+            onChange={(e) => setPrCreationMode(e.target.value as PRCreationMode)}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors'
+            )}
+          >
+            <option value="create">Create PR automatically (current behavior)</option>
+            <option value="link">Open PR link (manual creation)</option>
+          </select>
+          <p className="text-xs text-gray-500">
+            Choose whether “Create PR” creates the PR immediately or opens the GitHub PR creation page.
+          </p>
+        </div>
 
         {/* Action buttons */}
         <div className="flex gap-2 pt-2">
