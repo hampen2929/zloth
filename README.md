@@ -47,6 +47,14 @@ dursor is designed for:
   - No dependency on external services beyond the LLM APIs
   - Works with your existing API keys
 
+### Comparison Matrix
+
+|  | dursor | LLM Providers (Claude Code, Codex, Gemini CLI) | AI Coding SaaS (Cursor, etc.) |
+|---|:---:|:---:|:---:|
+| Multiple AI models | ✅ | ❌ | ❌ |
+| On-premises / Localhost | ✅ | ✅ | ❌ |
+| Chat-based interface | ✅ | ❌ | ✅ |
+
 ## Quick Start
 
 ### Prerequisites
