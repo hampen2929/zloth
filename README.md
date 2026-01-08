@@ -1,4 +1,4 @@
-# dursor
+# Dursor
 
 > BYO API Key / Multi-model Parallel Execution / Conversation-driven PR Development
 
