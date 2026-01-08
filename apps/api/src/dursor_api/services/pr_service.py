@@ -476,15 +476,13 @@ class PRService:
         files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
 
         summary = run.summary or title
-        files_list = "\n".join(f"- {f}" for f in sorted(files)[:10])
+
+        # Generate changes as simple bullet points (no sub-sections)
+        files_list = [f"- {f}" for f in sorted(files)[:10]]
         if len(files) > 10:
-            files_list += "\n- ..."
-
-        changes_text = f"""- Modified {len(files)} file(s)
-- +{added_lines} -{removed_lines} lines
-
-### Files Changed
-{files_list}"""
+            files_list.append("- ...")
+        changes_text = "\n".join(files_list)
+        changes_text += f"\n- Total: +{added_lines} -{removed_lines} lines"
 
         if template:
             return self._fill_template_sections(
@@ -510,8 +508,8 @@ class PRService:
     ) -> str:
         """Fill in template sections with provided content.
 
-        Replaces content under known headings (Summary, Changes, Description, etc.)
-        with the provided values, preserving the template structure.
+        Preserves the exact template structure, only replacing the content
+        under each section heading. Does not add any sections not in the template.
 
         Args:
             template: PR template string.
@@ -523,16 +521,25 @@ class PRService:
         """
         result = template.replace("\r\n", "\n")
 
+        # Remove HTML comments (<!-- ... -->) but keep the structure
+        result = re.sub(r"<!--.*?-->", "", result, flags=re.DOTALL)
+
         # Define section mappings: heading pattern -> content to insert
         section_mappings = [
             (r"(#{1,6}\s+(?:summary|description)\s*\n)", summary),
             (r"(#{1,6}\s+changes\s*\n)", changes),
+            # Review Notes, Test Plan, etc. - leave placeholder if no content
+            (r"(#{1,6}\s+(?:review\s*notes?|test\s*plan)\s*\n)", "N/A"),
         ]
 
         for pattern, content in section_mappings:
             result = self._replace_section_content(result, pattern, content)
 
-        return result
+        # Clean up multiple blank lines and leading/trailing whitespace
+        result = re.sub(r"\n{3,}", "\n\n", result)
+        result = result.strip()
+
+        return result + "\n" if result else ""
 
     def _replace_section_content(
         self, template: str, heading_pattern: str, new_content: str
@@ -990,15 +997,12 @@ class PRService:
         removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
         files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
 
-        files_list = "\n".join(f"- {f}" for f in sorted(files)[:10])
+        # Generate changes as simple bullet points (no sub-sections)
+        files_list = [f"- {f}" for f in sorted(files)[:10]]
         if len(files) > 10:
-            files_list += "\n- ..."
-
-        changes_text = f"""- Modified {len(files)} file(s)
-- +{added_lines} -{removed_lines} lines
-
-### Files Changed
-{files_list}"""
+            files_list.append("- ...")
+        changes_text = "\n".join(files_list)
+        changes_text += f"\n- Total: +{added_lines} -{removed_lines} lines"
 
         if template:
             return self._fill_template_sections(
