@@ -7,6 +7,7 @@ Welcome to the dursor documentation. This guide will help you understand, develo
 ### For Users
 
 - [README](../README.md) - Project overview and quick start guide
+- [Summary](./SUMMARY.md) - Comprehensive repository summary and architecture overview
 
 ### For Developers
 
