@@ -61,7 +61,7 @@ dursor is designed for:
 
 *dursor runs AI Coding CLIs on localhost behind the scenes
 
-> **dursor is the only solution that combines a web-based chat interface, localhost deployment, and multiple AI models.**
+> **dursor is the only OSS solution that combines a web-based chat interface, localhost deployment, multiple AI models, and BYO API Key support.**
 
 ## Quick Start
 
