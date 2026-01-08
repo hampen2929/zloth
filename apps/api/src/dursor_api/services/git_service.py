@@ -103,7 +103,7 @@ class GitService:
         def _create_worktree():
             source_repo = git.Repo(repo.workspace_path)
 
-            # Fetch to ensure we have latest refs
+            # Fetch to ensure we have latest refs from origin
             try:
                 # Unshallow if this is a shallow clone to get full history
                 if source_repo.head.is_valid():
@@ -122,27 +122,23 @@ class GitService:
                 # Ignore fetch errors (might be offline)
                 pass
 
-            # Ensure base branch exists locally and is up to date with origin
+            # Determine the start point for worktree
+            # Prefer origin/{base_branch} to ensure we use the latest remote state
+            start_point = base_branch
             try:
-                source_repo.git.checkout(base_branch)
-                # Reset local branch to origin to ensure we have the latest
-                try:
-                    source_repo.git.reset("--hard", f"origin/{base_branch}")
-                except git.GitCommandError:
-                    # origin/{base_branch} might not exist, continue with local
-                    pass
+                # Check if origin/{base_branch} exists
+                source_repo.git.rev_parse(f"origin/{base_branch}")
+                start_point = f"origin/{base_branch}"
             except git.GitCommandError:
-                try:
-                    source_repo.git.checkout("-b", base_branch, f"origin/{base_branch}")
-                except git.GitCommandError:
-                    pass
+                # Fall back to local branch if origin ref doesn't exist
+                pass
 
-            # Create worktree with new branch
+            # Create worktree with new branch from the start point
             source_repo.git.worktree(
                 "add",
                 "-b", branch_name,
                 str(worktree_path),
-                base_branch,
+                start_point,
             )
 
             return WorktreeInfo(
