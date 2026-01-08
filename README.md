@@ -49,13 +49,13 @@ dursor is designed for:
 
 ### Comparison Matrix
 
-|  | dursor | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini CLI) |
-|---|:---:|:---:|:---:|:---:|
-| Multiple AI models | ✅ | ✅ | ✅ | ❌ |
-| On-premises / Localhost | ✅ | ❌ | ✅ | ✅ |
-| Web-based chat interface | ✅ | ✅ | ❌ | ✅ |
-| CLI integration | ❌ | ❌ | ✅ | ✅ |
-| IDE integration | ❌ | ❌ | ✅ | ❌ |
+|  | dursor | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini) | AI Coding Cloud (Claude Code, Codex, Gemini) |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Multiple AI models | ✅ | ✅ | ✅ | ❌ | ❌ |
+| On-premises / Localhost | ✅ | ❌ | ✅ | ✅ | ❌ |
+| Web-based chat interface | ✅ | ✅ | ❌ | ❌ | ✅ |
+| CLI integration | ❌ | ❌ | ✅ | ✅ | ❌ |
+| IDE integration | ❌ | ❌ | ✅ | ❌ | ❌ |
 
 > **dursor is the only solution that combines multiple AI models, localhost deployment, and a web-based chat interface.**
 
