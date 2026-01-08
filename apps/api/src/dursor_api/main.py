@@ -9,6 +9,7 @@ from dursor_api.config import settings
 from dursor_api.routes import (
     github_router,
     models_router,
+    preferences_router,
     repos_router,
     tasks_router,
     runs_router,
@@ -38,10 +39,11 @@ app = FastAPI(
 )
 
 # CORS middleware for frontend
+# Allow all origins for SSE streaming support from various deployment scenarios
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,  # Must be False when allow_origins is "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -49,6 +51,7 @@ app.add_middleware(
 # Include routers
 app.include_router(github_router, prefix="/v1")
 app.include_router(models_router, prefix="/v1")
+app.include_router(preferences_router, prefix="/v1")
 app.include_router(repos_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")

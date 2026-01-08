@@ -201,6 +201,9 @@ docker compose down
 | `DURSOR_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Yes* |
 | `DURSOR_DEBUG` | Debug mode | No |
 | `DURSOR_LOG_LEVEL` | Log level | No |
+| `DURSOR_CLAUDE_CLI_PATH` | Path to Claude Code CLI | No (default: `claude`) |
+| `DURSOR_CODEX_CLI_PATH` | Path to Codex CLI | No (default: `codex`) |
+| `DURSOR_GEMINI_CLI_PATH` | Path to Gemini CLI | No (default: `gemini`) |
 
 *GitHub App can be configured via environment variables or through the Settings UI.
 

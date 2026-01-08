@@ -50,11 +50,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_task ON messages(task_id);
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL REFERENCES tasks(id),
-    model_id TEXT NOT NULL,          -- can be env model ID (not in model_profiles)
-    model_name TEXT NOT NULL,        -- denormalized for env model support
-    provider TEXT NOT NULL,          -- denormalized for env model support
+    model_id TEXT,                   -- can be NULL for claude_code executor
+    model_name TEXT,                 -- denormalized for env model support
+    provider TEXT,                   -- denormalized for env model support
+    executor_type TEXT NOT NULL DEFAULT 'patch_agent',  -- patch_agent, claude_code
+    working_branch TEXT,             -- git branch for worktree (claude_code)
+    worktree_path TEXT,              -- filesystem path to worktree (claude_code)
+    session_id TEXT,                 -- CLI session ID for conversation persistence
     instruction TEXT NOT NULL,
     base_ref TEXT,
+    commit_sha TEXT,                 -- latest commit SHA for the run
     status TEXT NOT NULL DEFAULT 'queued',  -- queued, running, succeeded, failed, canceled
     summary TEXT,
     patch TEXT,
@@ -94,6 +99,16 @@ CREATE TABLE IF NOT EXISTS github_app_config (
     app_id TEXT NOT NULL,
     private_key TEXT NOT NULL,              -- Base64 encoded private key
     installation_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- User preferences (singleton table for default settings)
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Singleton constraint
+    default_repo_owner TEXT,                -- Default repository owner (e.g., "anthropics")
+    default_repo_name TEXT,                 -- Default repository name (e.g., "claude-code")
+    default_branch TEXT,                    -- Default branch (e.g., "main")
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

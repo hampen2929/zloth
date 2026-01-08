@@ -3,8 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi } from '@/lib/api';
-import type { GitHubRepository } from '@/types';
+import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
+import type { GitHubRepository, ExecutorType } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
@@ -17,6 +17,7 @@ import {
   CheckIcon,
   CpuChipIcon,
   LockClosedIcon,
+  CommandLineIcon,
 } from '@heroicons/react/24/outline';
 
 export default function HomePage() {
@@ -29,6 +30,7 @@ export default function HomePage() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [executorType, setExecutorType] = useState<ExecutorType>('claude_code');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,10 +67,26 @@ export default function HomePage() {
   // Data fetching
   const { data: models } = useSWR('models', modelsApi.list);
   const { data: repos } = useSWR('github-repos', githubApi.listRepos);
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
     selectedRepo ? `branches-${selectedRepo.owner}-${selectedRepo.name}` : null,
     () => selectedRepo ? githubApi.listBranches(selectedRepo.owner, selectedRepo.name) : null
   );
+
+  // Apply default preferences when repos are loaded
+  useEffect(() => {
+    if (repos && preferences && !selectedRepo) {
+      if (preferences.default_repo_owner && preferences.default_repo_name) {
+        const defaultRepo = repos.find(
+          (r) => r.owner === preferences.default_repo_owner && r.name === preferences.default_repo_name
+        );
+        if (defaultRepo) {
+          setSelectedRepo(defaultRepo);
+          setSelectedBranch(preferences.default_branch || defaultRepo.default_branch);
+        }
+      }
+    }
+  }, [repos, preferences, selectedRepo]);
 
   // Set default branch when repo changes
   const handleRepoSelect = useCallback((repo: GitHubRepository) => {
@@ -105,7 +123,11 @@ export default function HomePage() {
   };
 
   const handleSubmit = async () => {
-    if (!instruction.trim() || !selectedRepo || !selectedBranch || selectedModels.length === 0) {
+    // Validate based on executor type
+    if (!instruction.trim() || !selectedRepo || !selectedBranch) {
+      return;
+    }
+    if (executorType === 'patch_agent' && selectedModels.length === 0) {
       return;
     }
 
@@ -132,8 +154,27 @@ export default function HomePage() {
         content: instruction,
       });
 
-      // Navigate to the task page (runs will be created there)
-      router.push(`/tasks/${task.id}?models=${selectedModels.join(',')}`);
+      // Create runs based on executor type
+      if (isCLIExecutor) {
+        await runsApi.create(task.id, {
+          instruction: instruction,
+          executor_type: executorType,
+        });
+      } else if (selectedModels.length > 0) {
+        await runsApi.create(task.id, {
+          instruction: instruction,
+          model_ids: selectedModels,
+          executor_type: 'patch_agent',
+        });
+      }
+
+      // Navigate to the task page with executor type
+      const params = new URLSearchParams();
+      params.set('executor', executorType);
+      if (executorType === 'patch_agent') {
+        params.set('models', selectedModels.join(','));
+      }
+      router.push(`/tasks/${task.id}?${params.toString()}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start task';
       setError(message);
@@ -160,7 +201,9 @@ export default function HomePage() {
     }
   };
 
-  const canSubmit = instruction.trim() && selectedRepo && selectedBranch && selectedModels.length > 0 && !loading;
+  const isCLIExecutor = executorType === 'claude_code' || executorType === 'codex_cli' || executorType === 'gemini_cli';
+  const canSubmit = instruction.trim() && selectedRepo && selectedBranch && !loading &&
+    (isCLIExecutor || selectedModels.length > 0);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
@@ -188,65 +231,178 @@ export default function HomePage() {
 
           {/* Bottom Bar */}
           <div className="px-4 pb-4 flex items-center justify-between">
-            {/* Model Selector */}
-            <div className="relative" ref={modelDropdownRef}>
-              <button
-                onClick={() => setShowModelDropdown(!showModelDropdown)}
-                className={cn(
-                  'flex items-center gap-2 text-sm transition-colors',
-                  'text-gray-400 hover:text-white',
-                  'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 -ml-2'
-                )}
-              >
-                <CpuChipIcon className="w-4 h-4" />
-                <span>{getSelectedModelNames()}</span>
-                <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showModelDropdown && 'rotate-180')} />
-              </button>
+            <div className="flex items-center gap-4">
+              {/* Executor Selector Dropdown */}
+              <div className="relative" ref={modelDropdownRef}>
+                <button
+                  onClick={() => setShowModelDropdown(!showModelDropdown)}
+                  className={cn(
+                    'flex items-center gap-2 text-sm transition-colors',
+                    'text-gray-400 hover:text-white',
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
+                  )}
+                >
+                  {executorType === 'claude_code' ? (
+                    <>
+                      <CommandLineIcon className="w-4 h-4" />
+                      <span>Claude Code</span>
+                    </>
+                  ) : executorType === 'codex_cli' ? (
+                    <>
+                      <CommandLineIcon className="w-4 h-4" />
+                      <span>Codex</span>
+                    </>
+                  ) : executorType === 'gemini_cli' ? (
+                    <>
+                      <CommandLineIcon className="w-4 h-4" />
+                      <span>Gemini CLI</span>
+                    </>
+                  ) : (
+                    <>
+                      <CpuChipIcon className="w-4 h-4" />
+                      <span>{getSelectedModelNames()}</span>
+                    </>
+                  )}
+                  <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showModelDropdown && 'rotate-180')} />
+                </button>
 
-              {showModelDropdown && models && (
-                <div className="absolute bottom-full left-0 mb-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                  <div className="p-3 border-b border-gray-700">
-                    <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Select Models</span>
-                  </div>
-                  <div className="max-h-60 overflow-y-auto">
-                    {models.length === 0 ? (
-                      <div className="p-4 text-center">
-                        <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                        <p className="text-gray-500 text-sm">No models configured</p>
-                        <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
+                {showModelDropdown && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col max-h-80">
+                    {/* Models Section (scrollable) */}
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                      <div className="p-3 border-b border-gray-700 sticky top-0 bg-gray-800">
+                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Models</span>
                       </div>
-                    ) : (
-                      models.map((model) => {
-                        const isSelected = selectedModels.includes(model.id);
-                        return (
-                          <button
-                            key={model.id}
-                            onClick={() => toggleModel(model.id)}
-                            className={cn(
-                              'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                              'hover:bg-gray-700 transition-colors',
-                              'focus:outline-none focus:bg-gray-700'
-                            )}
-                          >
-                            <div className={cn(
-                              'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
-                              isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
-                            )}>
-                              {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-gray-100 text-sm font-medium truncate">
-                                {model.display_name || model.model_name}
+                      {!models || models.length === 0 ? (
+                        <div className="p-4 text-center">
+                          <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                          <p className="text-gray-500 text-sm">No models configured</p>
+                          <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
+                        </div>
+                      ) : (
+                        models.map((model) => {
+                          const isSelected = selectedModels.includes(model.id);
+                          return (
+                            <button
+                              key={model.id}
+                              onClick={() => {
+                                setExecutorType('patch_agent');
+                                toggleModel(model.id);
+                              }}
+                              className={cn(
+                                'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                                'hover:bg-gray-700 transition-colors',
+                                'focus:outline-none focus:bg-gray-700'
+                              )}
+                            >
+                              <div className={cn(
+                                'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                              )}>
+                                {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
                               </div>
-                              <div className="text-gray-500 text-xs">{model.provider}</div>
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-gray-100 text-sm font-medium truncate">
+                                  {model.display_name || model.model_name}
+                                </div>
+                                <div className="text-gray-500 text-xs">{model.provider}</div>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* CLI Options (fixed at bottom) */}
+                    <div className="border-t border-gray-700 flex-shrink-0">
+                      <div className="p-3 border-b border-gray-700">
+                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">CLI Agents</span>
+                      </div>
+                      {/* Claude Code Option */}
+                      <button
+                        onClick={() => {
+                          setExecutorType('claude_code');
+                          setSelectedModels([]);
+                          setShowModelDropdown(false);
+                        }}
+                        className={cn(
+                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                          'hover:bg-gray-700 transition-colors',
+                          'focus:outline-none focus:bg-gray-700'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
+                          executorType === 'claude_code' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        )}>
+                          {executorType === 'claude_code' && <CheckIcon className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <div className="text-gray-100 text-sm font-medium">Claude Code</div>
+                            <div className="text-gray-500 text-xs">Use Claude Code CLI</div>
+                          </div>
+                        </div>
+                      </button>
+                      {/* Codex Option */}
+                      <button
+                        onClick={() => {
+                          setExecutorType('codex_cli');
+                          setSelectedModels([]);
+                          setShowModelDropdown(false);
+                        }}
+                        className={cn(
+                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                          'hover:bg-gray-700 transition-colors',
+                          'focus:outline-none focus:bg-gray-700'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
+                          executorType === 'codex_cli' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        )}>
+                          {executorType === 'codex_cli' && <CheckIcon className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <div className="text-gray-100 text-sm font-medium">Codex</div>
+                            <div className="text-gray-500 text-xs">Use OpenAI Codex CLI</div>
+                          </div>
+                        </div>
+                      </button>
+                      {/* Gemini CLI Option */}
+                      <button
+                        onClick={() => {
+                          setExecutorType('gemini_cli');
+                          setSelectedModels([]);
+                          setShowModelDropdown(false);
+                        }}
+                        className={cn(
+                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                          'hover:bg-gray-700 transition-colors',
+                          'focus:outline-none focus:bg-gray-700'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
+                          executorType === 'gemini_cli' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        )}>
+                          {executorType === 'gemini_cli' && <CheckIcon className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <div className="text-gray-100 text-sm font-medium">Gemini CLI</div>
+                            <div className="text-gray-500 text-xs">Use Google Gemini CLI</div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Right side buttons */}

@@ -11,6 +11,7 @@ import {
   ArrowPathIcon,
   XCircleIcon,
   InboxIcon,
+  CommandLineIcon,
 } from '@heroicons/react/24/outline';
 
 interface RunsPanelProps {
@@ -121,6 +122,18 @@ export function RunsPanel({
                 {group.runs.map((run) => {
                   const statusConfig = STATUS_CONFIG[run.status];
                   const isSelected = selectedRunId === run.id;
+                  const isCLI =
+                    run.executor_type === 'claude_code' ||
+                    run.executor_type === 'codex_cli' ||
+                    run.executor_type === 'gemini_cli';
+                  const cliName =
+                    run.executor_type === 'claude_code'
+                      ? 'Claude Code'
+                      : run.executor_type === 'codex_cli'
+                        ? 'Codex'
+                        : run.executor_type === 'gemini_cli'
+                          ? 'Gemini CLI'
+                          : 'CLI';
 
                   return (
                     <button
@@ -136,8 +149,15 @@ export function RunsPanel({
                       aria-selected={isSelected}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm text-gray-100">
-                          {run.model_name}
+                        <span className="font-medium text-sm text-gray-100 flex items-center gap-1.5">
+                          {isCLI ? (
+                            <>
+                              <CommandLineIcon className="w-4 h-4 text-purple-400" />
+                              <span>{cliName}</span>
+                            </>
+                          ) : (
+                            run.model_name
+                          )}
                         </span>
                         <span
                           className={cn('flex items-center', statusConfig.color)}
@@ -149,7 +169,15 @@ export function RunsPanel({
                         </span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {run.provider}
+                        {isCLI ? (
+                          run.working_branch ? (
+                            <span className="font-mono text-purple-400">{run.working_branch}</span>
+                          ) : (
+                            'CLI Executor'
+                          )
+                        ) : (
+                          run.provider
+                        )}
                       </div>
                       {run.status === 'succeeded' && run.summary && (
                         <div className="text-xs text-gray-400 mt-2 line-clamp-2">

@@ -310,3 +310,35 @@ class GitHubService:
                 "base": base,
             },
         )
+
+    async def update_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> dict:
+        """Update a Pull Request via GitHub API.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            pr_number: PR number.
+            title: New PR title (optional).
+            body: New PR body (optional).
+
+        Returns:
+            GitHub API response as dict.
+        """
+        update_data = {}
+        if title is not None:
+            update_data["title"] = title
+        if body is not None:
+            update_data["body"] = body
+
+        return await self._github_request(
+            "PATCH",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            json=update_data,
+        )

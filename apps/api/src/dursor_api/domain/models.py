@@ -5,8 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from dursor_api.domain.enums import MessageRole, Provider, RunStatus
-
+from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
 
 # ============================================================
 # Model Profile
@@ -130,17 +129,25 @@ class RunCreate(BaseModel):
     """Request for creating Runs."""
 
     instruction: str = Field(..., description="Natural language instruction")
-    model_ids: list[str] = Field(..., description="List of model profile IDs to run")
+    model_ids: list[str] | None = Field(
+        None, description="List of model profile IDs to run (required for patch_agent)"
+    )
     base_ref: str | None = Field(None, description="Base branch/commit")
+    executor_type: ExecutorType = Field(
+        default=ExecutorType.PATCH_AGENT,
+        description="Executor type: patch_agent (LLM) or claude_code (CLI)",
+    )
 
 
 class RunSummary(BaseModel):
     """Summary of a Run."""
 
     id: str
-    model_id: str
-    model_name: str
-    provider: Provider
+    model_id: str | None
+    model_name: str | None
+    provider: Provider | None
+    executor_type: ExecutorType
+    working_branch: str | None = None
     status: RunStatus
     created_at: datetime
 
@@ -160,11 +167,16 @@ class Run(BaseModel):
 
     id: str
     task_id: str
-    model_id: str
-    model_name: str
-    provider: Provider
+    model_id: str | None
+    model_name: str | None
+    provider: Provider | None
+    executor_type: ExecutorType = ExecutorType.PATCH_AGENT
+    working_branch: str | None = None
+    worktree_path: str | None = None
+    session_id: str | None = None  # CLI session ID for conversation persistence
     instruction: str
     base_ref: str | None
+    commit_sha: str | None = None  # Latest commit SHA for the run
     status: RunStatus
     summary: str | None = None
     patch: str | None = None
@@ -191,6 +203,12 @@ class PRCreate(BaseModel):
     selected_run_id: str = Field(..., description="ID of the run to use for PR")
     title: str
     body: str | None = None
+
+
+class PRCreateAuto(BaseModel):
+    """Request for auto-generating PR title and body using AI."""
+
+    selected_run_id: str = Field(..., description="ID of the run to use for PR")
 
 
 class PRUpdate(BaseModel):
@@ -234,14 +252,91 @@ class PR(BaseModel):
 # ============================================================
 
 
+# Summary file path constant (outside Pydantic model to avoid field issues)
+SUMMARY_FILE_PATH = ".dursor-summary.md"
+
+
 class AgentConstraints(BaseModel):
-    """Constraints for agent execution."""
+    """Constraints for agent execution.
+
+    This model defines constraints that are passed to AI Agents to ensure
+    they only perform file editing operations, while git operations are
+    managed by dursor (orchestrator management pattern).
+    """
 
     max_files_changed: int | None = Field(None, description="Max number of files to change")
     forbidden_paths: list[str] = Field(
-        default_factory=lambda: [".git", ".env", "*.secret", "*.key"],
+        default_factory=lambda: [
+            ".git",
+            ".env",
+            ".env.*",
+            "*.key",
+            "*.pem",
+            "*.secret",
+        ],
         description="Paths that cannot be modified",
     )
+    forbidden_commands: list[str] = Field(
+        default_factory=lambda: [
+            "git commit",
+            "git push",
+            "git checkout",
+            "git reset --hard",
+            "git rebase",
+            "git merge",
+        ],
+        description="Git commands that are forbidden for agents",
+    )
+    allowed_git_commands: list[str] = Field(
+        default_factory=lambda: [
+            "git status",
+            "git diff",
+            "git log",
+            "git show",
+            "git branch",
+        ],
+        description="Read-only git commands that are allowed",
+    )
+
+    def to_prompt(self) -> str:
+        """Convert constraints to prompt format for injection into agent instructions.
+
+        Returns:
+            Formatted string with constraints for agent prompts.
+        """
+        forbidden_paths_str = "\n".join(f"- {p}" for p in self.forbidden_paths)
+        forbidden_commands_str = ", ".join(f"`{c}`" for c in self.forbidden_commands)
+        allowed_commands_str = "\n".join(f"- `{c}`" for c in self.allowed_git_commands)
+
+        return f"""## Important Constraints
+
+### Forbidden Operations
+- The following git commands are forbidden: {forbidden_commands_str}
+- Only edit files, do not commit or push
+- Changes will be automatically detected and committed by the system after your edits
+
+### Forbidden Paths
+Access to the following paths is forbidden:
+{forbidden_paths_str}
+
+### Allowed Git Commands (Read-only)
+{allowed_commands_str}
+
+### Summary File (REQUIRED)
+After completing all changes, you MUST create a summary file at `{SUMMARY_FILE_PATH}`.
+This file should contain a brief summary (1-2 sentences in English) of what you did.
+
+Example content for `{SUMMARY_FILE_PATH}`:
+```
+Added user authentication with JWT tokens and password reset functionality.
+```
+
+Important:
+- Write ONLY the summary text, no headers or formatting
+- Keep it concise (1-2 sentences)
+- Write in English
+- This file will be automatically removed after reading
+"""
 
 
 class AgentRequest(BaseModel):
@@ -333,3 +428,24 @@ class RepoSelectRequest(BaseModel):
     owner: str
     repo: str
     branch: str | None = None
+
+
+# ============================================================
+# User Preferences
+# ============================================================
+
+
+class UserPreferences(BaseModel):
+    """User preferences for default settings."""
+
+    default_repo_owner: str | None = None
+    default_repo_name: str | None = None
+    default_branch: str | None = None
+
+
+class UserPreferencesSave(BaseModel):
+    """Request for saving user preferences."""
+
+    default_repo_owner: str | None = None
+    default_repo_name: str | None = None
+    default_branch: str | None = None

@@ -7,8 +7,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from dursor_api.domain.enums import MessageRole, Provider, RunStatus
-from dursor_api.domain.models import FileDiff, Message, ModelProfile, PR, Repo, Run, Task
+from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
+from dursor_api.domain.models import (
+    FileDiff,
+    Message,
+    ModelProfile,
+    PR,
+    Repo,
+    Run,
+    Task,
+    UserPreferences,
+)
 from dursor_api.storage.db import Database
 
 
@@ -293,21 +302,29 @@ class RunDAO:
     async def create(
         self,
         task_id: str,
-        model_id: str,
-        model_name: str,
-        provider: Provider,
         instruction: str,
+        executor_type: ExecutorType = ExecutorType.PATCH_AGENT,
+        model_id: str | None = None,
+        model_name: str | None = None,
+        provider: Provider | None = None,
         base_ref: str | None = None,
+        working_branch: str | None = None,
+        worktree_path: str | None = None,
+        session_id: str | None = None,
     ) -> Run:
         """Create a new run.
 
         Args:
             task_id: Task ID.
-            model_id: Model profile ID (can be env model ID).
-            model_name: Model name (denormalized for env model support).
-            provider: Model provider (denormalized for env model support).
             instruction: Task instruction.
+            executor_type: Type of executor (patch_agent or claude_code).
+            model_id: Model profile ID (required for patch_agent).
+            model_name: Model name (required for patch_agent).
+            provider: Model provider (required for patch_agent).
             base_ref: Base git ref.
+            working_branch: Git branch for worktree (claude_code).
+            worktree_path: Filesystem path to worktree (claude_code).
+            session_id: CLI session ID for conversation persistence.
 
         Returns:
             Created Run object.
@@ -317,10 +334,15 @@ class RunDAO:
 
         await self.db.connection.execute(
             """
-            INSERT INTO runs (id, task_id, model_id, model_name, provider, instruction, base_ref, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs (id, task_id, model_id, model_name, provider, executor_type, working_branch, worktree_path, session_id, instruction, base_ref, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (id, task_id, model_id, model_name, provider.value, instruction, base_ref, RunStatus.QUEUED.value, created_at),
+            (
+                id, task_id, model_id, model_name,
+                provider.value if provider else None,
+                executor_type.value, working_branch, worktree_path, session_id,
+                instruction, base_ref, RunStatus.QUEUED.value, created_at
+            ),
         )
         await self.db.connection.commit()
 
@@ -330,6 +352,10 @@ class RunDAO:
             model_id=model_id,
             model_name=model_name,
             provider=provider,
+            executor_type=executor_type,
+            working_branch=working_branch,
+            worktree_path=worktree_path,
+            session_id=session_id,
             instruction=instruction,
             base_ref=base_ref,
             status=RunStatus.QUEUED,
@@ -366,6 +392,8 @@ class RunDAO:
         logs: list[str] | None = None,
         warnings: list[str] | None = None,
         error: str | None = None,
+        commit_sha: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Update run status and results."""
         updates = ["status = ?"]
@@ -396,6 +424,12 @@ class RunDAO:
         if error is not None:
             updates.append("error = ?")
             params.append(error)
+        if commit_sha is not None:
+            updates.append("commit_sha = ?")
+            params.append(commit_sha)
+        if session_id is not None:
+            updates.append("session_id = ?")
+            params.append(session_id)
 
         params.append(id)
 
@@ -404,6 +438,97 @@ class RunDAO:
             params,
         )
         await self.db.connection.commit()
+
+    async def update_worktree(
+        self,
+        id: str,
+        working_branch: str,
+        worktree_path: str,
+    ) -> None:
+        """Update run with worktree information.
+
+        Args:
+            id: Run ID.
+            working_branch: Git branch name.
+            worktree_path: Filesystem path to worktree.
+        """
+        await self.db.connection.execute(
+            "UPDATE runs SET working_branch = ?, worktree_path = ? WHERE id = ?",
+            (working_branch, worktree_path, id),
+        )
+        await self.db.connection.commit()
+
+    async def update_session_id(self, id: str, session_id: str) -> None:
+        """Update run with session ID.
+
+        Args:
+            id: Run ID.
+            session_id: CLI session ID for conversation persistence.
+        """
+        await self.db.connection.execute(
+            "UPDATE runs SET session_id = ? WHERE id = ?",
+            (session_id, id),
+        )
+        await self.db.connection.commit()
+
+    async def get_latest_session_id(
+        self,
+        task_id: str,
+        executor_type: ExecutorType,
+    ) -> str | None:
+        """Get the latest session ID for a task and executor type.
+
+        Args:
+            task_id: Task ID.
+            executor_type: Type of executor.
+
+        Returns:
+            Session ID if found, None otherwise.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT session_id FROM runs
+            WHERE task_id = ? AND executor_type = ? AND session_id IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (task_id, executor_type.value),
+        )
+        row = await cursor.fetchone()
+        return row["session_id"] if row else None
+
+    async def get_latest_worktree_run(
+        self,
+        task_id: str,
+        executor_type: ExecutorType,
+    ) -> Run | None:
+        """Get the latest run with a valid worktree for a task and executor type.
+
+        This is used to reuse an existing worktree for subsequent runs in the
+        same task, enabling conversation continuation in the same working directory.
+
+        Args:
+            task_id: Task ID.
+            executor_type: Type of executor.
+
+        Returns:
+            Run with worktree if found, None otherwise.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM runs
+            WHERE task_id = ? AND executor_type = ?
+                AND worktree_path IS NOT NULL
+                AND status IN ('succeeded', 'failed', 'running', 'queued')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (task_id, executor_type.value),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
 
     def _row_to_model(self, row: Any) -> Run:
         files_changed = []
@@ -418,14 +543,25 @@ class RunDAO:
         if row["warnings"]:
             warnings = json.loads(row["warnings"])
 
+        # Handle nullable provider
+        provider = Provider(row["provider"]) if row["provider"] else None
+
+        # Handle executor_type with default for backward compatibility
+        executor_type = ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
+
         return Run(
             id=row["id"],
             task_id=row["task_id"],
             model_id=row["model_id"],
             model_name=row["model_name"],
-            provider=Provider(row["provider"]),
+            provider=provider,
+            executor_type=executor_type,
+            working_branch=row["working_branch"],
+            worktree_path=row["worktree_path"],
+            session_id=row["session_id"],
             instruction=row["instruction"],
             base_ref=row["base_ref"],
+            commit_sha=row["commit_sha"] if "commit_sha" in row.keys() else None,
             status=RunStatus(row["status"]),
             summary=row["summary"],
             patch=row["patch"],
@@ -509,6 +645,14 @@ class PRDAO:
         )
         await self.db.connection.commit()
 
+    async def update_body(self, id: str, body: str) -> None:
+        """Update PR's body/description."""
+        await self.db.connection.execute(
+            "UPDATE prs SET body = ?, updated_at = ? WHERE id = ?",
+            (body, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
     def _row_to_model(self, row: Any) -> PR:
         return PR(
             id=row["id"],
@@ -522,4 +666,72 @@ class PRDAO:
             status=row["status"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class UserPreferencesDAO:
+    """DAO for UserPreferences (singleton)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def get(self) -> UserPreferences | None:
+        """Get user preferences."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM user_preferences WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def save(
+        self,
+        default_repo_owner: str | None = None,
+        default_repo_name: str | None = None,
+        default_branch: str | None = None,
+    ) -> UserPreferences:
+        """Save user preferences (upsert)."""
+        now = now_iso()
+
+        # Try to update first
+        cursor = await self.db.connection.execute(
+            "SELECT id FROM user_preferences WHERE id = 1"
+        )
+        exists = await cursor.fetchone()
+
+        if exists:
+            await self.db.connection.execute(
+                """
+                UPDATE user_preferences
+                SET default_repo_owner = ?,
+                    default_repo_name = ?,
+                    default_branch = ?,
+                    updated_at = ?
+                WHERE id = 1
+                """,
+                (default_repo_owner, default_repo_name, default_branch, now),
+            )
+        else:
+            await self.db.connection.execute(
+                """
+                INSERT INTO user_preferences (id, default_repo_owner, default_repo_name, default_branch, created_at, updated_at)
+                VALUES (1, ?, ?, ?, ?, ?)
+                """,
+                (default_repo_owner, default_repo_name, default_branch, now, now),
+            )
+
+        await self.db.connection.commit()
+
+        return UserPreferences(
+            default_repo_owner=default_repo_owner,
+            default_repo_name=default_repo_name,
+            default_branch=default_branch,
+        )
+
+    def _row_to_model(self, row: Any) -> UserPreferences:
+        return UserPreferences(
+            default_repo_owner=row["default_repo_owner"],
+            default_repo_name=row["default_repo_name"],
+            default_branch=row["default_branch"],
         )

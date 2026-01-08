@@ -27,3 +27,12 @@ class MessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
+
+
+class ExecutorType(str, Enum):
+    """Executor type for runs."""
+
+    PATCH_AGENT = "patch_agent"  # LLM-based patch generation
+    CLAUDE_CODE = "claude_code"  # Claude Code CLI execution
+    CODEX_CLI = "codex_cli"  # OpenAI Codex CLI execution
+    GEMINI_CLI = "gemini_cli"  # Google Gemini CLI execution

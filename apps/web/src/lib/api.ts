@@ -16,14 +16,18 @@ import type {
   Run,
   RunCreate,
   RunsCreated,
+  OutputLine,
   PR,
   PRCreate,
+  PRCreateAuto,
   PRCreated,
   PRUpdate,
   PRUpdated,
   GitHubAppConfig,
   GitHubAppConfigSave,
   GitHubRepository,
+  UserPreferences,
+  UserPreferencesSave,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -148,12 +152,94 @@ export const runsApi = {
 
   cancel: (runId: string) =>
     fetchApi<void>(`/runs/${runId}/cancel`, { method: 'POST' }),
+
+  /**
+   * Get logs for a run (REST endpoint for polling).
+   */
+  getLogs: (runId: string, fromLine: number = 0) =>
+    fetchApi<{
+      logs: OutputLine[];
+      is_complete: boolean;
+      total_lines: number;
+      run_status: string;
+    }>(`/runs/${runId}/logs?from_line=${fromLine}`),
+
+  /**
+   * Stream run logs by polling the logs endpoint.
+   *
+   * This uses polling to fetch logs in real-time from OutputManager.
+   *
+   * @param runId - The run ID to stream logs for
+   * @param options - Streaming options
+   * @returns Cleanup function to stop polling
+   */
+  streamLogs: (
+    runId: string,
+    options: {
+      fromLine?: number;
+      onLine: (line: OutputLine) => void;
+      onComplete: () => void;
+      onError: (error: Error) => void;
+    }
+  ): (() => void) => {
+    let cancelled = false;
+    let nextLine = options.fromLine ?? 0;
+    const pollInterval = 500; // Poll every 500ms for responsiveness
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      try {
+        const result = await runsApi.getLogs(runId, nextLine);
+
+        // Send new lines
+        for (const log of result.logs) {
+          if (cancelled) break;
+          options.onLine(log);
+        }
+
+        // Update next line position
+        if (result.logs.length > 0) {
+          nextLine = result.total_lines;
+        }
+
+        // Check if complete
+        if (result.is_complete) {
+          options.onComplete();
+          return;
+        }
+
+        // Continue polling if still running
+        if (!cancelled) {
+          setTimeout(poll, pollInterval);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          options.onError(error instanceof Error ? error : new Error('Failed to fetch logs'));
+        }
+      }
+    };
+
+    // Start polling
+    poll();
+
+    // Return cleanup function
+    return () => {
+      cancelled = true;
+    };
+  },
 };
 
 // PRs
 export const prsApi = {
   create: (taskId: string, data: PRCreate) =>
     fetchApi<PRCreated>(`/tasks/${taskId}/prs`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  createAuto: (taskId: string, data: PRCreateAuto) =>
+    fetchApi<PRCreated>(`/tasks/${taskId}/prs/auto`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -168,6 +254,22 @@ export const prsApi = {
     fetchApi<PR>(`/tasks/${taskId}/prs/${prId}`),
 
   list: (taskId: string) => fetchApi<PR[]>(`/tasks/${taskId}/prs`),
+
+  regenerateDescription: (taskId: string, prId: string) =>
+    fetchApi<PR>(`/tasks/${taskId}/prs/${prId}/regenerate-description`, {
+      method: 'POST',
+    }),
+};
+
+// Preferences
+export const preferencesApi = {
+  get: () => fetchApi<UserPreferences>('/preferences'),
+
+  save: (data: UserPreferencesSave) =>
+    fetchApi<UserPreferences>('/preferences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 export { ApiError };

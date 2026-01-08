@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { prsApi } from '@/lib/api';
 import type { Run } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
+import { StreamingLogs } from '@/components/StreamingLogs';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
@@ -18,6 +19,7 @@ import {
   ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
   DocumentDuplicateIcon,
+  ClipboardDocumentIcon,
 } from '@heroicons/react/24/outline';
 
 interface RunDetailPanelProps {
@@ -34,18 +36,33 @@ const tabConfig: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'logs', label: 'Logs', icon: <CommandLineIcon className="w-4 h-4" /> },
 ];
 
+// Determine the default tab based on run status
+function getDefaultTab(status: Run['status']): Tab {
+  // Show logs tab for running/queued runs to see real-time output
+  if (status === 'running' || status === 'queued') {
+    return 'logs';
+  }
+  // Show diff tab for completed runs
+  return 'diff';
+}
+
 export function RunDetailPanel({
   run,
   taskId,
   onPRCreated,
 }: RunDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('diff');
+  const [activeTab, setActiveTab] = useState<Tab>(() => getDefaultTab(run.status));
   const [showPRForm, setShowPRForm] = useState(false);
   const [prTitle, setPRTitle] = useState('');
   const [prBody, setPRBody] = useState('');
   const [creating, setCreating] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Update tab when run changes or status changes
+  useEffect(() => {
+    setActiveTab(getDefaultTab(run.status));
+  }, [run.id, run.status]);
   const { success, error } = useToast();
 
   const handleCreatePR = async (e: React.FormEvent) => {
@@ -108,15 +125,67 @@ export function RunDetailPanel({
     }
   };
 
+  const isCLI =
+    run.executor_type === 'claude_code' ||
+    run.executor_type === 'codex_cli' ||
+    run.executor_type === 'gemini_cli';
+  const cliName =
+    run.executor_type === 'claude_code'
+      ? 'Claude Code'
+      : run.executor_type === 'codex_cli'
+        ? 'Codex'
+        : run.executor_type === 'gemini_cli'
+          ? 'Gemini CLI'
+          : 'CLI';
+
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
       {/* Header */}
       <div className="p-4 border-b border-gray-800">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-semibold text-gray-100">{run.model_name}</h2>
+            <h2 className="font-semibold text-gray-100 flex items-center gap-2">
+              {isCLI ? (
+                <>
+                  <CommandLineIcon className="w-5 h-5 text-purple-400" />
+                  <span>{cliName}</span>
+                </>
+              ) : (
+                run.model_name
+              )}
+            </h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-gray-500">{run.provider}</span>
+              {isCLI ? (
+                run.working_branch && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        if (navigator.clipboard) {
+                          await navigator.clipboard.writeText(run.working_branch!);
+                        } else {
+                          // Fallback for non-secure contexts
+                          const textarea = document.createElement('textarea');
+                          textarea.value = run.working_branch!;
+                          document.body.appendChild(textarea);
+                          textarea.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(textarea);
+                        }
+                        success('Branch name copied!');
+                      } catch {
+                        error('Failed to copy to clipboard');
+                      }
+                    }}
+                    className="flex items-center gap-1 text-xs font-mono text-purple-400 hover:text-purple-300 transition-colors"
+                    title="Click to copy branch name"
+                  >
+                    <span>{run.working_branch}</span>
+                    <ClipboardDocumentIcon className="w-3 h-3" />
+                  </button>
+                )
+              ) : (
+                <span className="text-xs text-gray-500">{run.provider}</span>
+              )}
               {getStatusBadge()}
             </div>
           </div>
@@ -211,30 +280,95 @@ export function RunDetailPanel({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4" role="tabpanel">
+        {/* Running status - show logs tab or status indicator */}
         {run.status === 'running' && (
-          <div className="flex flex-col items-center justify-center h-full">
-            <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-gray-400 font-medium">Running...</p>
-            <p className="text-gray-500 text-sm mt-1">This may take a few moments</p>
-          </div>
+          <>
+            {activeTab === 'logs' ? (
+              <StreamingLogs
+                runId={run.id}
+                isRunning={true}
+                initialLogs={run.logs}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full">
+                <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+                <p className="text-gray-400 font-medium">Running...</p>
+                <p className="text-gray-500 text-sm mt-1">This may take a few moments</p>
+                <button
+                  onClick={() => setActiveTab('logs')}
+                  className="mt-4 text-blue-400 hover:text-blue-300 text-sm underline"
+                >
+                  View live logs
+                </button>
+              </div>
+            )}
+          </>
         )}
 
+        {/* Queued status - show logs tab or status indicator */}
         {run.status === 'queued' && (
-          <div className="flex flex-col items-center justify-center h-full">
-            <ClockIcon className="w-10 h-10 text-gray-500 mb-4" />
-            <p className="text-gray-400 font-medium">Waiting in queue...</p>
-            <p className="text-gray-500 text-sm mt-1">Your run will start soon</p>
-          </div>
+          <>
+            {activeTab === 'logs' ? (
+              <StreamingLogs
+                runId={run.id}
+                isRunning={false}
+                initialLogs={run.logs}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full">
+                <ClockIcon className="w-10 h-10 text-gray-500 mb-4" />
+                <p className="text-gray-400 font-medium">Waiting in queue...</p>
+                <p className="text-gray-500 text-sm mt-1">Your run will start soon</p>
+              </div>
+            )}
+          </>
         )}
 
+        {/* Failed status */}
         {run.status === 'failed' && (
-          <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
-              <h3 className="font-medium text-red-400">Execution Failed</h3>
-            </div>
-            <p className="text-sm text-red-300">{run.error}</p>
-          </div>
+          <>
+            {activeTab === 'logs' ? (
+              <div className="space-y-4">
+                {/* Error summary at top */}
+                <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
+                    <h3 className="font-medium text-red-400">Execution Failed</h3>
+                  </div>
+                  <p className="text-sm text-red-300">{run.error}</p>
+                </div>
+                {/* Logs below */}
+                <div className="font-mono text-xs space-y-1 bg-gray-800/50 rounded-lg p-3">
+                  {!run.logs || run.logs.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">No logs available.</p>
+                  ) : (
+                    run.logs.map((log, i) => (
+                      <div key={i} className="text-gray-400 leading-relaxed">
+                        <span className="text-gray-600 mr-2 select-none">{i + 1}</span>
+                        {log}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
+                  <h3 className="font-medium text-red-400">Execution Failed</h3>
+                </div>
+                <p className="text-sm text-red-300">{run.error}</p>
+                {run.logs && run.logs.length > 0 && (
+                  <button
+                    onClick={() => setActiveTab('logs')}
+                    className="mt-3 text-blue-400 hover:text-blue-300 text-sm underline"
+                  >
+                    View logs ({run.logs.length} lines)
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {run.status === 'succeeded' && (
@@ -242,7 +376,10 @@ export function RunDetailPanel({
             {activeTab === 'summary' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="font-medium text-gray-200 mb-2">Summary</h3>
+                  <h3 className="font-medium text-gray-200 mb-2 flex items-center gap-2">
+                    <span>📋</span>
+                    <span>Summary</span>
+                  </h3>
                   <p className="text-gray-300 text-sm leading-relaxed">{run.summary}</p>
                 </div>
 

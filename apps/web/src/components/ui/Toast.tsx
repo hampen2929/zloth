@@ -60,7 +60,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
       className={cn(
         'flex items-start gap-3 p-4 rounded-lg border shadow-lg',
         'bg-gray-900 backdrop-blur-sm',
-        'animate-in slide-in-from-right-full duration-300',
+        'animate-in slide-in-from-left-full duration-300',
         toastStyles[toast.type]
       )}
       role="alert"
@@ -91,7 +91,7 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"
+      className="fixed bottom-4 left-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"
       aria-label="Notifications"
     >
       {toasts.map((toast) => (

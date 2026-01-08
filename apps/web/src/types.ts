@@ -6,6 +6,7 @@
 export type Provider = 'openai' | 'anthropic' | 'google';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 export type MessageRole = 'user' | 'assistant' | 'system';
+export type ExecutorType = 'patch_agent' | 'claude_code' | 'codex_cli' | 'gemini_cli';
 
 // Model Profile
 export interface ModelProfile {
@@ -75,9 +76,11 @@ export interface MessageCreate {
 // Run
 export interface RunSummary {
   id: string;
-  model_id: string;
-  model_name: string;
-  provider: Provider;
+  model_id: string | null;
+  model_name: string | null;
+  provider: Provider | null;
+  executor_type: ExecutorType;
+  working_branch: string | null;
   status: RunStatus;
   created_at: string;
 }
@@ -93,11 +96,15 @@ export interface FileDiff {
 export interface Run {
   id: string;
   task_id: string;
-  model_id: string;
-  model_name: string;
-  provider: Provider;
+  model_id: string | null;
+  model_name: string | null;
+  provider: Provider | null;
+  executor_type: ExecutorType;
+  working_branch: string | null;
+  worktree_path: string | null;
   instruction: string;
   base_ref: string | null;
+  commit_sha: string | null;
   status: RunStatus;
   summary: string | null;
   patch: string | null;
@@ -112,12 +119,20 @@ export interface Run {
 
 export interface RunCreate {
   instruction: string;
-  model_ids: string[];
+  model_ids?: string[];
   base_ref?: string;
+  executor_type?: ExecutorType;
 }
 
 export interface RunsCreated {
   run_ids: string[];
+}
+
+// Streaming Output
+export interface OutputLine {
+  line_number: number;
+  content: string;
+  timestamp: number;
 }
 
 // Pull Request
@@ -147,6 +162,10 @@ export interface PRCreate {
   selected_run_id: string;
   title: string;
   body?: string;
+}
+
+export interface PRCreateAuto {
+  selected_run_id: string;
 }
 
 export interface PRUpdate {
@@ -197,4 +216,17 @@ export interface RepoSelectRequest {
   owner: string;
   repo: string;
   branch?: string;
+}
+
+// User Preferences
+export interface UserPreferences {
+  default_repo_owner: string | null;
+  default_repo_name: string | null;
+  default_branch: string | null;
+}
+
+export interface UserPreferencesSave {
+  default_repo_owner?: string | null;
+  default_repo_name?: string | null;
+  default_branch?: string | null;
 }

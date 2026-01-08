@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.domain.models import PR, PRCreate, PRCreated, PRUpdate, PRUpdated
 from dursor_api.dependencies import get_pr_service
+from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRCreated, PRUpdate, PRUpdated
 from dursor_api.services.pr_service import GitHubPermissionError, PRService
 
 router = APIRouter(tags=["prs"])
@@ -18,6 +18,31 @@ async def create_pr(
     """Create a Pull Request from a run."""
     try:
         pr = await pr_service.create(task_id, data)
+        return PRCreated(
+            pr_id=pr.id,
+            url=pr.url,
+            branch=pr.branch,
+            number=pr.number,
+        )
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/prs/auto", response_model=PRCreated, status_code=201)
+async def create_pr_auto(
+    task_id: str,
+    data: PRCreateAuto,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PRCreated:
+    """Create a Pull Request with AI-generated title and description.
+
+    This endpoint automatically generates the PR title and description
+    using AI based on the diff and task context.
+    """
+    try:
+        pr = await pr_service.create_auto(task_id, data)
         return PRCreated(
             pr_id=pr.id,
             url=pr.url,
@@ -70,3 +95,25 @@ async def list_prs(
 ) -> list[PR]:
     """List Pull Requests for a task."""
     return await pr_service.list(task_id)
+
+
+@router.post("/tasks/{task_id}/prs/{pr_id}/regenerate-description", response_model=PR)
+async def regenerate_pr_description(
+    task_id: str,
+    pr_id: str,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PR:
+    """Regenerate PR description from current diff.
+
+    This endpoint:
+    1. Gets cumulative diff from base branch
+    2. Loads pull_request_template if available
+    3. Generates description using LLM
+    4. Updates PR via GitHub API
+    """
+    try:
+        return await pr_service.regenerate_description(task_id, pr_id)
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
