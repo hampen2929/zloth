@@ -6,6 +6,7 @@ a codebase and break down hearing content into actionable development tasks.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -108,6 +109,11 @@ class BreakdownService:
         self.repo_dao = repo_dao
         self.output_manager = output_manager
 
+        # Store breakdown results (in-memory for now)
+        self._results: dict[str, TaskBreakdownResponse] = {}
+        # Track running tasks
+        self._running_tasks: dict[str, asyncio.Task[None]] = {}
+
         # Initialize executors
         self._claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(
@@ -164,43 +170,70 @@ class BreakdownService:
         self,
         request: TaskBreakdownRequest,
     ) -> TaskBreakdownResponse:
-        """Break down hearing content into development tasks.
+        """Start breaking down hearing content into development tasks.
+
+        This method returns immediately with a 'running' status and processes
+        the breakdown in the background. Use get_result() to poll for completion.
 
         Args:
             request: Breakdown request with content, executor type, and repo ID.
 
         Returns:
-            TaskBreakdownResponse with broken down tasks.
+            TaskBreakdownResponse with 'running' status and breakdown_id.
         """
         breakdown_id = str(uuid.uuid4())
         logger.info(f"Starting breakdown {breakdown_id} for repo {request.repo_id}")
 
-        try:
-            # Get repository
-            repo = await self.repo_dao.get(request.repo_id)
-            if not repo:
-                return TaskBreakdownResponse(
-                    breakdown_id=breakdown_id,
-                    status=BreakdownStatus.FAILED,
-                    tasks=[],
-                    summary=None,
-                    original_content=request.content,
-                    error=f"Repository not found: {request.repo_id}",
-                )
+        # Validate repository exists first
+        repo = await self.repo_dao.get(request.repo_id)
+        if not repo:
+            return TaskBreakdownResponse(
+                breakdown_id=breakdown_id,
+                status=BreakdownStatus.FAILED,
+                tasks=[],
+                summary=None,
+                original_content=request.content,
+                error=f"Repository not found: {request.repo_id}",
+            )
 
-            # Execute breakdown
+        # Create initial response with 'running' status
+        initial_response = TaskBreakdownResponse(
+            breakdown_id=breakdown_id,
+            status=BreakdownStatus.RUNNING,
+            tasks=[],
+            summary=None,
+            original_content=request.content,
+        )
+
+        # Store initial result
+        self._results[breakdown_id] = initial_response
+
+        # Start background task
+        task = asyncio.create_task(
+            self._run_breakdown_in_background(breakdown_id, repo, request)
+        )
+        self._running_tasks[breakdown_id] = task
+
+        return initial_response
+
+    async def _run_breakdown_in_background(
+        self,
+        breakdown_id: str,
+        repo: Repo,
+        request: TaskBreakdownRequest,
+    ) -> None:
+        """Run breakdown in background and update result when done."""
+        try:
             result = await self._execute_breakdown(
                 breakdown_id=breakdown_id,
                 repo=repo,
                 request=request,
             )
-
-            return result
-
+            self._results[breakdown_id] = result
         except Exception as e:
             logger.exception(f"Breakdown {breakdown_id} failed: {e}")
             await self.output_manager.mark_complete(breakdown_id)
-            return TaskBreakdownResponse(
+            self._results[breakdown_id] = TaskBreakdownResponse(
                 breakdown_id=breakdown_id,
                 status=BreakdownStatus.FAILED,
                 tasks=[],
@@ -208,6 +241,20 @@ class BreakdownService:
                 original_content=request.content,
                 error=str(e),
             )
+        finally:
+            # Clean up running task reference
+            self._running_tasks.pop(breakdown_id, None)
+
+    async def get_result(self, breakdown_id: str) -> TaskBreakdownResponse | None:
+        """Get the result of a breakdown.
+
+        Args:
+            breakdown_id: The breakdown ID to get result for.
+
+        Returns:
+            TaskBreakdownResponse if found, None otherwise.
+        """
+        return self._results.get(breakdown_id)
 
     async def _execute_breakdown(
         self,

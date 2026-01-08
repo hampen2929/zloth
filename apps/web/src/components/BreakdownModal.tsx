@@ -93,18 +93,52 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
     }
   }, [logs]);
 
+  // Get the default branch for the selected repository
+  const selectedRepoDefaultBranch = (() => {
+    if (!repos || !selectedRepo) return null;
+    return repos.find((r) => r.full_name === selectedRepo)?.default_branch ?? null;
+  })();
+
+  // Build branch options with default branch on top
+  const branchOptions: { value: string; label: string }[] = (() => {
+    const list = branches || [];
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+
+    if (selectedRepoDefaultBranch) {
+      seen.add(selectedRepoDefaultBranch);
+      opts.push({
+        value: selectedRepoDefaultBranch,
+        label: `Default (${selectedRepoDefaultBranch})`,
+      });
+    }
+
+    for (const b of list) {
+      if (seen.has(b)) continue;
+      seen.add(b);
+      opts.push({ value: b, label: b });
+    }
+
+    return opts;
+  })();
+
   // Load branches when repo changes
-  const loadBranches = useCallback(async (owner: string, repo: string) => {
+  const loadBranches = useCallback(async (owner: string, repo: string, defaultBranch?: string | null) => {
     setBranchesLoading(true);
     try {
       const branchList = await githubApi.listBranches(owner, repo);
       setBranches(branchList);
       if (branchList.length > 0) {
-        const mainBranch =
-          branchList.find((b) => b === 'main') ||
-          branchList.find((b) => b === 'master') ||
-          branchList[0];
-        setSelectedBranch(mainBranch);
+        // Prefer the repository's default branch
+        if (defaultBranch && branchList.includes(defaultBranch)) {
+          setSelectedBranch(defaultBranch);
+        } else {
+          const mainBranch =
+            branchList.find((b) => b === 'main') ||
+            branchList.find((b) => b === 'master') ||
+            branchList[0];
+          setSelectedBranch(mainBranch);
+        }
       }
     } catch (err) {
       console.error('Failed to load branches:', err);
@@ -121,7 +155,9 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
 
     if (fullName) {
       const [owner, repo] = fullName.split('/');
-      await loadBranches(owner, repo);
+      // Get the default branch for this repository
+      const repoData = repos?.find((r) => r.full_name === fullName);
+      await loadBranches(owner, repo, repoData?.default_branch);
     }
   };
 
@@ -142,15 +178,17 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
         branch: selectedBranch,
       });
 
-      // Start breakdown analysis
-      const result = await breakdownApi.analyze({
+      // Start breakdown analysis (returns immediately with 'running' status)
+      const initialResult = await breakdownApi.analyze({
         content: content.trim(),
         executor_type: executorType,
         repo_id: repoResult.id,
       });
 
+      console.log('Breakdown started:', initialResult);
+
       // Start streaming logs
-      cleanupRef.current = breakdownApi.streamLogs(result.breakdown_id, {
+      cleanupRef.current = breakdownApi.streamLogs(initialResult.breakdown_id, {
         onLine: (line) => {
           setLogs((prev) => [...prev, line]);
         },
@@ -162,20 +200,40 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
         },
       });
 
-      // Poll for result (breakdown might still be running)
-      // Wait a bit for the analysis to complete
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Poll for the final result
+      const pollInterval = 2000; // 2 seconds
+      const maxAttempts = 180; // 6 minutes max
+      let attempts = 0;
+      let finalResult = initialResult;
 
-      // The result is returned immediately but might have running status
-      // For simplicity, we'll use the initial result
-      setBreakdownResult(result);
+      while (
+        (finalResult.status === 'running' || finalResult.status === 'pending') &&
+        attempts < maxAttempts
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        attempts++;
 
-      if (result.status === 'succeeded') {
+        try {
+          finalResult = await breakdownApi.getResult(initialResult.breakdown_id);
+          console.log(`Poll attempt ${attempts}:`, finalResult.status);
+        } catch (pollErr) {
+          console.error('Poll error:', pollErr);
+          // Continue polling on error
+        }
+      }
+
+      setBreakdownResult(finalResult);
+
+      if (finalResult.status === 'succeeded') {
         setPhase('result');
         // Select all tasks by default
-        setSelectedTasks(new Set(result.tasks.map((_, i) => i)));
-      } else if (result.status === 'failed') {
-        setError(result.error || 'Breakdown failed');
+        setSelectedTasks(new Set(finalResult.tasks.map((_, i) => i)));
+      } else if (finalResult.status === 'failed') {
+        setError(finalResult.error || 'Breakdown failed');
+        setPhase('input');
+      } else {
+        // Timeout or unknown status
+        setError('Breakdown timed out. Please try again.');
         setPhase('input');
       }
     } catch (err) {
@@ -323,9 +381,9 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
                   <option value="">
                     {branchesLoading ? 'Loading...' : 'Select a branch'}
                   </option>
-                  {branches.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
+                  {branchOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
@@ -334,10 +392,10 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
 
             {/* Content Input */}
             <Textarea
-              label="Hearing Content"
+              label="Content"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={`Paste your hearing content here...
+              placeholder={`Enter the content to analyze...
 
 Example:
 - Login screen doesn't show error message when password is wrong

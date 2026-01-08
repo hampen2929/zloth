@@ -311,6 +311,9 @@ export const breakdownApi = {
       body: JSON.stringify(data),
     }),
 
+  getResult: (breakdownId: string) =>
+    fetchApi<TaskBreakdownResponse>(`/breakdown/${breakdownId}`),
+
   getLogs: (breakdownId: string, fromLine: number = 0) =>
     fetchApi<BreakdownLogsResponse>(
       `/breakdown/${breakdownId}/logs?from_line=${fromLine}`

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from dursor_api.dependencies import get_breakdown_service
@@ -25,20 +25,45 @@ async def breakdown_tasks(
     request: TaskBreakdownRequest,
     breakdown_service: BreakdownService = Depends(get_breakdown_service),
 ) -> TaskBreakdownResponse:
-    """Break down hearing content into development tasks.
+    """Start breaking down hearing content into development tasks.
 
-    This endpoint uses an AI agent (Claude Code, Codex, or Gemini CLI)
-    to analyze the codebase and decompose the provided hearing content
-    into specific, actionable development tasks.
+    This endpoint starts the breakdown process in the background and returns
+    immediately with a 'running' status. Use GET /breakdown/{id} to poll
+    for the final result.
 
     Args:
         request: Breakdown request with content and executor type.
         breakdown_service: Breakdown service instance.
 
     Returns:
-        TaskBreakdownResponse with decomposed tasks.
+        TaskBreakdownResponse with 'running' status and breakdown_id.
     """
     return await breakdown_service.breakdown(request)
+
+
+@router.get("/{breakdown_id}", response_model=TaskBreakdownResponse)
+async def get_breakdown_result(
+    breakdown_id: str,
+    breakdown_service: BreakdownService = Depends(get_breakdown_service),
+) -> TaskBreakdownResponse:
+    """Get the result of a breakdown.
+
+    Poll this endpoint to get the final breakdown result.
+
+    Args:
+        breakdown_id: Breakdown session ID.
+        breakdown_service: Breakdown service instance.
+
+    Returns:
+        TaskBreakdownResponse with current status and results.
+
+    Raises:
+        HTTPException: If breakdown not found.
+    """
+    result = await breakdown_service.get_result(breakdown_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Breakdown not found: {breakdown_id}")
+    return result
 
 
 @router.get("/{breakdown_id}/logs", response_model=BreakdownLogsResponse)
