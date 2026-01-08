@@ -2,6 +2,27 @@
 
 This file provides context for Claude Code to understand the project.
 
+## Quick Reference
+
+```bash
+# Backend (apps/api)
+uv sync --extra dev          # Install dependencies
+uv run pytest                 # Run tests
+uv run ruff check src/        # Lint check
+uv run ruff format src/       # Format code
+uv run mypy src/              # Type check
+
+# Frontend (apps/web)
+npm ci                        # Install dependencies
+npm run lint                  # ESLint check
+npm run build                 # Build
+npm run dev                   # Start dev server
+
+# Docker
+docker compose up -d --build  # Start all services
+docker compose down           # Stop all services
+```
+
 ## Project Overview
 
 **dursor** is a self-hostable multi-model parallel coding agent.
@@ -260,3 +281,32 @@ A: Check that `DURSOR_ENCRYPTION_KEY` is set
 
 **Q: Cannot create PR**
 A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull requests` permissions.
+
+## Claude Code Guidelines
+
+### Before Making Changes
+- Always read relevant files before editing
+- Run linters and tests before committing
+- Backend: `cd apps/api && uv run ruff check src/ && uv run pytest`
+- Frontend: `cd apps/web && npm run lint && npm run build`
+
+### File Organization Rules
+- Python source code goes in `apps/api/src/dursor_api/`
+- TypeScript source code goes in `apps/web/src/`
+- New API routes should follow the existing pattern in `routes/`
+- New services should follow the existing pattern in `services/`
+
+### Code Style Enforcement
+- Python: ruff handles both linting and formatting
+- TypeScript: ESLint for linting, Prettier for formatting
+- Always run format before commit: `uv run ruff format src/` (Python)
+
+### Testing Requirements
+- All new Python code should have corresponding tests
+- Run `uv run pytest` to verify tests pass
+- Frontend build must succeed: `npm run build`
+
+### Security Considerations
+- Never commit `.env` files or API keys
+- Forbidden paths (`.git`, `.env`, `workspaces/`, `data/`) should not be modified
+- API keys must be encrypted using the crypto service

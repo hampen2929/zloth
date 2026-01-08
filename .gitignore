@@ -45,3 +45,6 @@ logs/
 
 # Build artifacts
 *.tgz
+
+# Claude Code local settings
+.claude/settings.local.json
