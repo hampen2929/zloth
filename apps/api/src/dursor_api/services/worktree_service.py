@@ -35,23 +35,25 @@ class WorktreeService:
         self.worktrees_dir = self.workspaces_dir / "worktrees"
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
-    def _generate_branch_name(self, run_id: str) -> str:
+    def _generate_branch_name(self, run_id: str, branch_prefix: str = "dursor") -> str:
         """Generate a unique branch name for a run.
 
         Args:
             run_id: Run ID.
+            branch_prefix: Prefix for branch name.
 
         Returns:
-            Branch name in format: dursor/{short_id}
+            Branch name in format: {branch_prefix}/{short_id}
         """
         short_id = run_id[:8]
-        return f"dursor/{short_id}"
+        return f"{branch_prefix}/{short_id}"
 
     async def create_worktree(
         self,
         repo: Repo,
         base_branch: str,
         run_id: str,
+        branch_prefix: str = "dursor",
     ) -> WorktreeInfo:
         """Create a new git worktree for the run.
 
@@ -59,6 +61,7 @@ class WorktreeService:
             repo: Repository object with workspace_path.
             base_branch: Base branch to create worktree from.
             run_id: Run ID for naming.
+            branch_prefix: Prefix for branch name.
 
         Returns:
             WorktreeInfo with path and branch information.
@@ -66,7 +69,7 @@ class WorktreeService:
         Raises:
             git.GitCommandError: If git worktree creation fails.
         """
-        branch_name = self._generate_branch_name(run_id)
+        branch_name = self._generate_branch_name(run_id, branch_prefix)
         worktree_path = self.worktrees_dir / f"run_{run_id}"
 
         # Run git commands in a thread pool to avoid blocking

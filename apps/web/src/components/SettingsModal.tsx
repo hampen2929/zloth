@@ -503,6 +503,7 @@ function DefaultsTab() {
 
   const [selectedRepo, setSelectedRepo] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [branchPrefix, setBranchPrefix] = useState<string>('dursor');
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -510,8 +511,9 @@ function DefaultsTab() {
 
   // Initialize from saved preferences
   useEffect(() => {
-    if (preferences && repos) {
-      if (preferences.default_repo_owner && preferences.default_repo_name) {
+    if (preferences) {
+      setBranchPrefix(preferences.branch_prefix || 'dursor');
+      if (repos && preferences.default_repo_owner && preferences.default_repo_name) {
         const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
         setSelectedRepo(repoFullName);
         // Load branches for the default repo
@@ -559,6 +561,7 @@ function DefaultsTab() {
         default_repo_owner: owner,
         default_repo_name: repo,
         default_branch: selectedBranch || null,
+        branch_prefix: branchPrefix || 'dursor',
       });
       mutate('preferences');
       success('Default settings saved successfully');
@@ -576,9 +579,11 @@ function DefaultsTab() {
         default_repo_owner: null,
         default_repo_name: null,
         default_branch: null,
+        branch_prefix: 'dursor',
       });
       setSelectedRepo('');
       setSelectedBranch('');
+      setBranchPrefix('dursor');
       setBranches([]);
       mutate('preferences');
       success('Default settings cleared');
@@ -589,18 +594,61 @@ function DefaultsTab() {
     }
   };
 
+  const handleSaveBranchPrefixOnly = async () => {
+    setLoading(true);
+    try {
+      await preferencesApi.save({
+        default_repo_owner: preferences?.default_repo_owner || null,
+        default_repo_name: preferences?.default_repo_name || null,
+        default_branch: preferences?.default_branch || null,
+        branch_prefix: branchPrefix || 'dursor',
+      });
+      mutate('preferences');
+      success('Branch prefix saved successfully');
+    } catch (err) {
+      toastError('Failed to save branch prefix');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!githubConfig?.is_configured) {
     return (
       <div>
         <div className="mb-6">
-          <h3 className="text-lg font-semibold text-gray-100">Default Repository & Branch</h3>
+          <h3 className="text-lg font-semibold text-gray-100">Default Settings</h3>
           <p className="text-sm text-gray-400 mt-1">
-            Set default repository and branch to use when creating new tasks.
+            Configure default settings for your tasks.
           </p>
         </div>
+
+        {/* Branch prefix - available without GitHub */}
+        <div className="space-y-4 mb-6">
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-300">
+              Branch Prefix
+            </label>
+            <Input
+              value={branchPrefix}
+              onChange={(e) => setBranchPrefix(e.target.value)}
+              placeholder="dursor"
+            />
+            <p className="text-xs text-gray-500">
+              Prefix for auto-generated branch names (e.g., &quot;{branchPrefix}/abc12345&quot;).
+            </p>
+          </div>
+          <Button
+            onClick={handleSaveBranchPrefixOnly}
+            isLoading={loading}
+            className="w-full"
+          >
+            Save Branch Prefix
+          </Button>
+        </div>
+
         <div className="flex items-center gap-2 p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg text-yellow-400 text-sm">
           <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
-          <span>Configure GitHub App first to select default repository.</span>
+          <span>Configure GitHub App to select default repository and branch.</span>
         </div>
       </div>
     );
@@ -682,6 +730,21 @@ function DefaultsTab() {
           </select>
           <p className="text-xs text-gray-500">
             Select the branch that will be pre-selected when creating new tasks.
+          </p>
+        </div>
+
+        {/* Branch prefix */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Branch Prefix
+          </label>
+          <Input
+            value={branchPrefix}
+            onChange={(e) => setBranchPrefix(e.target.value)}
+            placeholder="dursor"
+          />
+          <p className="text-xs text-gray-500">
+            Prefix for auto-generated branch names (e.g., &quot;{branchPrefix}/abc12345&quot;).
           </p>
         </div>
 
