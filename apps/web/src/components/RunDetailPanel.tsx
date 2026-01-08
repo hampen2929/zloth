@@ -6,6 +6,7 @@ import { prsApi, preferencesApi } from '@/lib/api';
 import type { Run } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { StreamingLogs } from '@/components/StreamingLogs';
+import { ProgressDisplay } from '@/components/ProgressDisplay';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
@@ -32,6 +33,7 @@ interface RunDetailPanelProps {
   onPRCreated: () => void;
   onRetry?: () => void;
   onSwitchModel?: () => void;
+  onCancel?: () => void;
 }
 
 type Tab = 'summary' | 'diff' | 'logs';
@@ -58,6 +60,7 @@ export function RunDetailPanel({
   onPRCreated,
   onRetry,
   onSwitchModel,
+  onCancel,
 }: RunDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>(() => getDefaultTab(run.status));
   const [showPRForm, setShowPRForm] = useState(false);
@@ -335,7 +338,7 @@ export function RunDetailPanel({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4" role="tabpanel">
-        {/* Running status - show logs tab or status indicator */}
+        {/* Running status - show progress display or logs */}
         {run.status === 'running' && (
           <>
             {activeTab === 'logs' ? (
@@ -345,22 +348,18 @@ export function RunDetailPanel({
                 initialLogs={run.logs}
               />
             ) : (
-              <div className="flex flex-col items-center justify-center h-full">
-                <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-                <p className="text-gray-400 font-medium">Running...</p>
-                <p className="text-gray-500 text-sm mt-1">This may take a few moments</p>
-                <button
-                  onClick={() => setActiveTab('logs')}
-                  className="mt-4 text-blue-400 hover:text-blue-300 text-sm underline"
-                >
-                  View live logs
-                </button>
-              </div>
+              <ProgressDisplay
+                status="running"
+                startedAt={run.started_at}
+                logs={run.logs}
+                onCancel={onCancel}
+                onViewLogs={() => setActiveTab('logs')}
+              />
             )}
           </>
         )}
 
-        {/* Queued status - show logs tab or status indicator */}
+        {/* Queued status - show progress display or logs */}
         {run.status === 'queued' && (
           <>
             {activeTab === 'logs' ? (
@@ -370,11 +369,12 @@ export function RunDetailPanel({
                 initialLogs={run.logs}
               />
             ) : (
-              <div className="flex flex-col items-center justify-center h-full">
-                <ClockIcon className="w-10 h-10 text-gray-500 mb-4" />
-                <p className="text-gray-400 font-medium">Waiting in queue...</p>
-                <p className="text-gray-500 text-sm mt-1">Your run will start soon</p>
-              </div>
+              <ProgressDisplay
+                status="queued"
+                startedAt={null}
+                logs={run.logs}
+                onViewLogs={() => setActiveTab('logs')}
+              />
             )}
           </>
         )}

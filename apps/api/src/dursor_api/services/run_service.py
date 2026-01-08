@@ -173,6 +173,7 @@ class RunService:
                 instruction=data.instruction,
                 base_ref=data.base_ref or repo.default_branch,
                 executor_type=ExecutorType.CLAUDE_CODE,
+                message_id=data.message_id,
             )
             runs.append(run)
         elif data.executor_type == ExecutorType.CODEX_CLI:
@@ -183,6 +184,7 @@ class RunService:
                 instruction=data.instruction,
                 base_ref=data.base_ref or repo.default_branch,
                 executor_type=ExecutorType.CODEX_CLI,
+                message_id=data.message_id,
             )
             runs.append(run)
         elif data.executor_type == ExecutorType.GEMINI_CLI:
@@ -193,6 +195,7 @@ class RunService:
                 instruction=data.instruction,
                 base_ref=data.base_ref or repo.default_branch,
                 executor_type=ExecutorType.GEMINI_CLI,
+                message_id=data.message_id,
             )
             runs.append(run)
         else:
@@ -228,6 +231,7 @@ class RunService:
                     task_id=task_id,
                     instruction=data.instruction,
                     executor_type=ExecutorType.PATCH_AGENT,
+                    message_id=data.message_id,
                     model_id=model_id,
                     model_name=model.model_name,
                     provider=model.provider,
@@ -255,6 +259,7 @@ class RunService:
         instruction: str,
         base_ref: str,
         executor_type: ExecutorType,
+        message_id: str | None = None,
     ) -> Run:
         """Create and start a CLI-based run (Claude Code, Codex, or Gemini).
 
@@ -268,6 +273,7 @@ class RunService:
             instruction: Natural language instruction.
             base_ref: Base branch to work from.
             executor_type: Type of CLI executor to use.
+            message_id: ID of the triggering message.
 
         Returns:
             Created Run object.
@@ -336,6 +342,7 @@ class RunService:
             task_id=task_id,
             instruction=instruction,
             executor_type=executor_type,
+            message_id=message_id,
             base_ref=base_ref,
         )
 

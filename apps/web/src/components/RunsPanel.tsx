@@ -91,25 +91,34 @@ export function RunsPanel({
     return counts;
   }, [runs]);
 
-  // Group runs by instruction (same batch)
-  const groupedRuns: { instruction: string; runs: Run[] }[] = [];
-  let currentInstruction = '';
-  let currentGroup: Run[] = [];
+  // Group runs by message_id (or instruction as fallback for backward compatibility)
+  const groupedRuns = useMemo(() => {
+    const groups: { key: string; instruction: string; runs: Run[]; isLegacy: boolean }[] = [];
+    const groupMap = new Map<string, { instruction: string; runs: Run[]; isLegacy: boolean }>();
 
-  for (const run of filteredRuns) {
-    if (run.instruction !== currentInstruction) {
-      if (currentGroup.length > 0) {
-        groupedRuns.push({ instruction: currentInstruction, runs: currentGroup });
+    for (const run of filteredRuns) {
+      // Use message_id if available, otherwise fall back to instruction
+      const groupKey = run.message_id || `legacy:${run.instruction}`;
+      const isLegacy = !run.message_id;
+
+      if (groupMap.has(groupKey)) {
+        groupMap.get(groupKey)!.runs.push(run);
+      } else {
+        groupMap.set(groupKey, { instruction: run.instruction, runs: [run], isLegacy });
       }
-      currentInstruction = run.instruction;
-      currentGroup = [run];
-    } else {
-      currentGroup.push(run);
     }
-  }
-  if (currentGroup.length > 0) {
-    groupedRuns.push({ instruction: currentInstruction, runs: currentGroup });
-  }
+
+    // Convert map to array while preserving order
+    for (const run of filteredRuns) {
+      const groupKey = run.message_id || `legacy:${run.instruction}`;
+      const group = groupMap.get(groupKey);
+      if (group && !groups.some((g) => g.key === groupKey)) {
+        groups.push({ key: groupKey, ...group });
+      }
+    }
+
+    return groups;
+  }, [filteredRuns]);
 
   if (isLoading) {
     return (
@@ -205,11 +214,14 @@ export function RunsPanel({
             )}
           </div>
         ) : (
-          groupedRuns.map((group, groupIndex) => (
-            <div key={groupIndex} className="space-y-2">
+          groupedRuns.map((group) => (
+            <div key={group.key} className="space-y-2">
               <div
-                className="text-xs text-gray-500 px-1 font-medium"
-                title={group.instruction}
+                className={cn(
+                  'text-xs px-1 font-medium',
+                  group.isLegacy ? 'text-gray-600' : 'text-gray-500'
+                )}
+                title={group.isLegacy ? `(Legacy) ${group.instruction}` : group.instruction}
               >
                 {truncate(group.instruction, 60)}
               </div>

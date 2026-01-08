@@ -66,6 +66,13 @@ class Database:
             await conn.execute("ALTER TABLE runs ADD COLUMN commit_sha TEXT")
             await conn.commit()
 
+        # Migration: Add message_id column to runs table if it doesn't exist
+        if "message_id" not in column_names:
+            await conn.execute(
+                "ALTER TABLE runs ADD COLUMN message_id TEXT REFERENCES messages(id)"
+            )
+            await conn.commit()
+
         # Migration: Add default_branch_prefix column to user_preferences table if it doesn't exist
         cursor = await conn.execute("PRAGMA table_info(user_preferences)")
         pref_columns = await cursor.fetchall()
