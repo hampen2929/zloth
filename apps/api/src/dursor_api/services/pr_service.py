@@ -93,7 +93,9 @@ class PRService:
 
         return parts[0], parts[1]
 
-    async def _ensure_branch_pushed(self, *, owner: str, repo: str, repo_obj: Repo, run: Run) -> None:
+    async def _ensure_branch_pushed(
+        self, *, owner: str, repo: str, repo_obj: Repo, run: Run
+    ) -> None:
         """Ensure the run's working branch exists on the remote.
 
         For CLI runs, we usually have a worktree and can push from it.
