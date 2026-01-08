@@ -44,19 +44,19 @@ dursor is designed for:
 
 ### Comparison Matrix
 
-|  | dursor | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini) | AI Coding Cloud (Claude Code, Codex, Gemini) |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Web-based chat interface | ✅ | ✅ | ❌ | ❌ | ✅ |
-| On-premises / Localhost | ✅ | ❌ | ✅ | ✅ | ❌ |
-| Multiple AI models | ✅ | ✅ | ✅ | ❌ | ❌ |
-| BYO API Key | ✅ | ❌ | ✅ | ✅ | ❌ |
-| OSS | ✅ | ❌ | ❌ | ✅ | ❌ |
-| CLI integration | ✅* | ❌ | ❌ | ✅ | ❌ |
-| IDE integration | ❌ | ❌ | ✅ | ❌ | ❌ |
+|  | dursor | OpenHands | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini) | AI Coding Cloud (Claude Code, Codex, Gemini) |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Web-based chat interface | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| On-premises / Localhost | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| Multiple AI models | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| BYO API Key | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| OSS | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| CLI integration | ✅* | ❌ | ❌ | ❌ | ✅ | ❌ |
+| IDE integration | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 
 *dursor runs AI Coding CLIs on localhost behind the scenes
 
-> **dursor is the only OSS solution that combines a web-based chat interface, localhost deployment, multiple AI models, and BYO API Key support.**
+> **dursor is the only OSS solution that combines a web-based chat interface, localhost deployment, multiple AI models, BYO API Key support, and CLI integration.**
 
 ## Quick Start
 
