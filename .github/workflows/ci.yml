@@ -16,21 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        run: uv python install 3.13
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
+        run: uv sync --extra dev
 
       - name: Run ruff check
-        run: ruff check src/
+        run: uv run ruff check src/
 
       - name: Run ruff format check
-        run: ruff format --check src/
+        run: uv run ruff format --check src/
 
   backend-typecheck:
     name: Backend Type Check (mypy)
@@ -41,18 +40,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        run: uv python install 3.13
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Run mypy
-        run: mypy src/
+        run: uv run mypy src/
 
   backend-test:
     name: Backend Test (pytest)
@@ -63,18 +61,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        run: uv python install 3.13
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Run pytest
-        run: pytest --tb=short -q
+        run: uv run pytest --tb=short -q
 
   frontend-lint:
     name: Frontend Lint (ESLint)

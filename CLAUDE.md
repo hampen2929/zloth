@@ -12,7 +12,7 @@ This file provides context for Claude Code to understand the project.
 - **Conversation-driven PR Development**: Grow PRs through chat interaction
 
 ### Tech Stack
-- **Backend**: FastAPI (Python 3.13+)
+- **Backend**: FastAPI (Python 3.13+, uv)
 - **Frontend**: Next.js 14 (React, TypeScript, Tailwind CSS)
 - **Database**: SQLite (aiosqlite)
 - **LLM**: OpenAI, Anthropic, Google Generative AI
@@ -153,20 +153,18 @@ cd apps/api
 # Install uv (if not installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Create virtual environment and install dependencies
-uv venv
-source .venv/bin/activate
-uv pip install -e ".[dev]"
+# Install dependencies (automatically creates virtual environment)
+uv sync --extra dev
 
 # Start dev server
-python -m dursor_api.main
+uv run python -m dursor_api.main
 
 # Test
-pytest
+uv run pytest
 
 # Lint
-ruff check src/
-mypy src/
+uv run ruff check src/
+uv run mypy src/
 ```
 
 ### Frontend
