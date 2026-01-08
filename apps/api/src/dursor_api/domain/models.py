@@ -252,6 +252,10 @@ class PR(BaseModel):
 # ============================================================
 
 
+# Summary file path constant (outside Pydantic model to avoid field issues)
+SUMMARY_FILE_PATH = ".dursor-summary.md"
+
+
 class AgentConstraints(BaseModel):
     """Constraints for agent execution.
 
@@ -317,6 +321,21 @@ Access to the following paths is forbidden:
 
 ### Allowed Git Commands (Read-only)
 {allowed_commands_str}
+
+### Summary File (REQUIRED)
+After completing all changes, you MUST create a summary file at `{SUMMARY_FILE_PATH}`.
+This file should contain a brief summary (1-2 sentences in English) of what you did.
+
+Example content for `{SUMMARY_FILE_PATH}`:
+```
+Added user authentication with JWT tokens and password reset functionality.
+```
+
+Important:
+- Write ONLY the summary text, no headers or formatting
+- Keep it concise (1-2 sentences)
+- Write in English
+- This file will be automatically removed after reading
 """
 
 

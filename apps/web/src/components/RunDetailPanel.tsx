@@ -295,7 +295,10 @@ export function RunDetailPanel({
             {activeTab === 'summary' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="font-medium text-gray-200 mb-2">Summary</h3>
+                  <h3 className="font-medium text-gray-200 mb-2 flex items-center gap-2">
+                    <span>📋</span>
+                    <span>Summary</span>
+                  </h3>
                   <p className="text-gray-300 text-sm leading-relaxed">{run.summary}</p>
                 </div>
 
