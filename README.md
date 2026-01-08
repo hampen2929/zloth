@@ -1,8 +1,8 @@
-# cursor
+# bursor
 
 > BYO API Key / Multi-model Parallel Execution / Conversation-driven PR Development
 
-**cursor** is a self-hostable cloud coding agent that lets you:
+**bursor** is a self-hostable cloud coding agent that lets you:
 - Use your own API keys (OpenAI, Anthropic, Google)
 - Run multiple models in parallel on the same task
 - Compare outputs side-by-side and choose the best
@@ -30,8 +30,8 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-org/cursor.git
-   cd cursor
+   git clone https://github.com/your-org/bursor.git
+   cd bursor
    ```
 
 2. **Set up the API server**
@@ -90,7 +90,7 @@ docker-compose up -d
 ## Project Structure
 
 ```
-cursor/
+bursor/
 ├── apps/
 │   ├── api/                    # FastAPI backend
 │   │   └── src/dursor_api/

@@ -1,6 +1,6 @@
-# cursor Documentation
+# bursor Documentation
 
-Welcome to the cursor documentation. This guide will help you understand, develop, and contribute to the project.
+Welcome to the bursor documentation. This guide will help you understand, develop, and contribute to the project.
 
 ## Documentation Index
 
@@ -26,8 +26,8 @@ Welcome to the cursor documentation. This guide will help you understand, develo
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/cursor.git
-cd cursor
+git clone https://github.com/your-org/bursor.git
+cd bursor
 
 # Backend setup
 cd apps/api
@@ -58,7 +58,7 @@ flowchart LR
 ### Project Structure
 
 ```
-cursor/
+bursor/
 ├── apps/
 │   ├── api/          # FastAPI backend
 │   └── web/          # Next.js frontend
@@ -78,5 +78,5 @@ cursor/
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-org/cursor/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/cursor/discussions)
+- **Issues**: [GitHub Issues](https://github.com/your-org/bursor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/your-org/bursor/discussions)
