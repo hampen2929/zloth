@@ -125,6 +125,13 @@ class Message(BaseModel):
 # ============================================================
 
 
+class ExecutorConfig(BaseModel):
+    """Configuration for a specific executor in a run request."""
+
+    executor_type: ExecutorType
+    model_id: str | None = Field(None, description="Model ID (required for PATCH_AGENT)")
+
+
 class RunCreate(BaseModel):
     """Request for creating Runs."""
 
@@ -133,9 +140,12 @@ class RunCreate(BaseModel):
         None, description="List of model profile IDs to run (required for patch_agent)"
     )
     base_ref: str | None = Field(None, description="Base branch/commit")
-    executor_type: ExecutorType = Field(
-        default=ExecutorType.PATCH_AGENT,
+    executor_type: ExecutorType | None = Field(
+        default=None,
         description="Executor type: patch_agent (LLM) or claude_code (CLI)",
+    )
+    executors: list[ExecutorConfig] | None = Field(
+        None, description="List of executor configurations for parallel execution"
     )
     message_id: str | None = Field(None, description="ID of the triggering message")
 

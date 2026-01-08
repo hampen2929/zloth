@@ -23,6 +23,7 @@ from dursor_api.domain.models import (
     SUMMARY_FILE_PATH,
     AgentConstraints,
     AgentRequest,
+    ExecutorConfig,
     FileDiff,
     Run,
     RunCreate,
@@ -154,92 +155,88 @@ class RunService:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
         runs = []
+        executors: list[ExecutorConfig] = []
 
-        # Lock executor after the first run in the task.
-        # Users expect "resume" style conversations to keep using the initially chosen executor.
-        existing_runs = await self.run_dao.list(task_id)
-        locked_executor: ExecutorType | None = None
-        if existing_runs:
-            # DAO returns newest-first; the earliest run is last.
-            locked_executor = existing_runs[-1].executor_type
-            if data.executor_type != locked_executor:
-                data = data.model_copy(update={"executor_type": locked_executor})
-
-        if data.executor_type == ExecutorType.CLAUDE_CODE:
-            # Create a single Claude Code run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.CLAUDE_CODE,
-                message_id=data.message_id,
-            )
-            runs.append(run)
-        elif data.executor_type == ExecutorType.CODEX_CLI:
-            # Create a single Codex CLI run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.CODEX_CLI,
-                message_id=data.message_id,
-            )
-            runs.append(run)
-        elif data.executor_type == ExecutorType.GEMINI_CLI:
-            # Create a single Gemini CLI run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.GEMINI_CLI,
-                message_id=data.message_id,
-            )
-            runs.append(run)
+        if data.executors:
+            executors = data.executors
         else:
-            # Create runs for each model (PatchAgent)
-            model_ids = data.model_ids
-            if not model_ids:
-                # If the task is already locked to patch_agent, reuse the most recent
-                # model set (grouped by latest patch_agent instruction).
-                patch_runs = [
-                    r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT
-                ]
-                if patch_runs:
-                    latest_instruction = patch_runs[0].instruction  # newest-first
-                    model_ids = []
-                    seen: set[str] = set()
-                    for r in patch_runs:
-                        if r.instruction != latest_instruction:
-                            continue
-                        if r.model_id and r.model_id not in seen:
-                            seen.add(r.model_id)
-                            model_ids.append(r.model_id)
+            # Backward compatibility logic
+            existing_runs = await self.run_dao.list(task_id)
+            
+            # Use provided executor_type or default to PATCH_AGENT
+            executor_type = data.executor_type or ExecutorType.PATCH_AGENT
+            
+            # Apply locking logic only for legacy single-executor mode
+            if existing_runs:
+                # DAO returns newest-first; the earliest run is last.
+                locked_executor = existing_runs[-1].executor_type
+                # If we are in legacy mode (no explicit executors list), respect the lock
+                if data.executor_type and data.executor_type != locked_executor:
+                     # Force the locked executor type
+                     executor_type = locked_executor
+
+            if executor_type == ExecutorType.PATCH_AGENT:
+                model_ids = data.model_ids
+                if not model_ids:
+                    # Reuse models from history
+                    patch_runs = [
+                        r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT
+                    ]
+                    if patch_runs:
+                        latest_instruction = patch_runs[0].instruction  # newest-first
+                        model_ids = []
+                        seen: set[str] = set()
+                        for r in patch_runs:
+                            if r.instruction != latest_instruction:
+                                continue
+                            if r.model_id and r.model_id not in seen:
+                                seen.add(r.model_id)
+                                model_ids.append(r.model_id)
+                
                 if not model_ids:
                     raise ValueError("model_ids required for patch_agent executor")
+                
+                for mid in model_ids:
+                    executors.append(ExecutorConfig(executor_type=ExecutorType.PATCH_AGENT, model_id=mid))
+            else:
+                executors.append(ExecutorConfig(executor_type=executor_type))
 
-            for model_id in model_ids:
-                # Verify model exists and get model info
-                model = await self.model_service.get(model_id)
+        # Execute all configured runs
+        for config in executors:
+            if config.executor_type in (
+                ExecutorType.CLAUDE_CODE,
+                ExecutorType.CODEX_CLI,
+                ExecutorType.GEMINI_CLI,
+            ):
+                run = await self._create_cli_run(
+                    task_id=task_id,
+                    repo=repo,
+                    instruction=data.instruction,
+                    base_ref=data.base_ref or repo.default_branch,
+                    executor_type=config.executor_type,
+                    message_id=data.message_id,
+                )
+                runs.append(run)
+            elif config.executor_type == ExecutorType.PATCH_AGENT:
+                if not config.model_id:
+                    continue
+
+                model = await self.model_service.get(config.model_id)
                 if not model:
-                    raise ValueError(f"Model not found: {model_id}")
+                    raise ValueError(f"Model not found: {config.model_id}")
 
-                # Create run record with denormalized model info
                 run = await self.run_dao.create(
                     task_id=task_id,
                     instruction=data.instruction,
                     executor_type=ExecutorType.PATCH_AGENT,
                     message_id=data.message_id,
-                    model_id=model_id,
+                    model_id=config.model_id,
                     model_name=model.model_name,
                     provider=model.provider,
                     base_ref=data.base_ref or repo.default_branch,
                 )
                 runs.append(run)
 
-                # Enqueue for execution
                 def make_patch_agent_coro(
                     r: Run, rp: Any
                 ) -> Callable[[], Coroutine[Any, Any, None]]:

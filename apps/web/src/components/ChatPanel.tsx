@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { tasksApi, runsApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType } from '@/types';
+import type { Message, ModelProfile, ExecutorType, ExecutorConfig } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -41,7 +41,13 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
-  const [currentExecutor, setCurrentExecutor] = useState<ExecutorType>(executorType);
+  
+  // Multi-executor selection state
+  const [usePatchAgent, setUsePatchAgent] = useState(executorType === 'patch_agent');
+  const [useClaude, setUseClaude] = useState(executorType === 'claude_code');
+  const [useCodex, setUseCodex] = useState(executorType === 'codex_cli');
+  const [useGemini, setUseGemini] = useState(executorType === 'gemini_cli');
+
   const [loading, setLoading] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -72,16 +78,24 @@ export function ChatPanel({
     }
   }, [models, selectedModels.length, initialModelIds]);
 
-  // Update executor type from props
+  // Update executor selection from props if changed externally
+  // Note: We only set this if we want to reset to single selection when props change
+  // For now, let's respect initial props but allow free modification
   useEffect(() => {
-    setCurrentExecutor(executorType);
+    // Only update if explicit change (this might be tricky if we want to keep multi-select state)
+    // For now, let's assume props are only for initialization or external reset
   }, [executorType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    const isCLIExecutor = currentExecutor === 'claude_code' || currentExecutor === 'codex_cli' || currentExecutor === 'gemini_cli';
-    if (!isCLIExecutor && selectedModels.length === 0) return;
+    
+    // Validation: At least one executor must be selected
+    const isAnyExecutorSelected = usePatchAgent || useClaude || useCodex || useGemini;
+    if (!isAnyExecutorSelected) return;
+    
+    // If patch agent is selected, at least one model must be selected
+    if (usePatchAgent && selectedModels.length === 0) return;
 
     // Optimistic UI: Clear input and show pending message immediately
     const pendingId = `pending-${Date.now()}`;
@@ -101,29 +115,32 @@ export function ChatPanel({
         content: messageContent,
       });
 
-      // Create runs based on executor type, linking to the message
-      const cliExecutorNames: Record<string, string> = {
-        'claude_code': 'Claude Code',
-        'codex_cli': 'Codex',
-        'gemini_cli': 'Gemini CLI',
-      };
-
-      if (isCLIExecutor) {
-        await runsApi.create(taskId, {
-          instruction: messageContent,
-          executor_type: currentExecutor,
-          message_id: message.id,
+      // Build executors list
+      const executors: ExecutorConfig[] = [];
+      
+      if (usePatchAgent) {
+        selectedModels.forEach(modelId => {
+          executors.push({ executor_type: 'patch_agent', model_id: modelId });
         });
-        success(`Started ${cliExecutorNames[currentExecutor]} run`);
-      } else {
-        await runsApi.create(taskId, {
-          instruction: messageContent,
-          model_ids: selectedModels,
-          executor_type: 'patch_agent',
-          message_id: message.id,
-        });
-        success(`Started ${selectedModels.length} run${selectedModels.length > 1 ? 's' : ''}`);
       }
+      if (useClaude) {
+        executors.push({ executor_type: 'claude_code' });
+      }
+      if (useCodex) {
+        executors.push({ executor_type: 'codex_cli' });
+      }
+      if (useGemini) {
+        executors.push({ executor_type: 'gemini_cli' });
+      }
+
+      await runsApi.create(taskId, {
+        instruction: messageContent,
+        executors: executors,
+        message_id: message.id,
+      });
+
+      const count = executors.length;
+      success(`Started ${count} run${count > 1 ? 's' : ''}`);
 
       onRunsCreated();
     } catch (err) {
@@ -167,6 +184,9 @@ export function ChatPanel({
       setSelectedModels(models.map((m) => m.id));
     }
   };
+
+  // Helper to count active runs
+  const activeExecutorCount = [usePatchAgent, useClaude, useCodex, useGemini].filter(Boolean).length;
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
@@ -260,18 +280,18 @@ export function ChatPanel({
 
       {/* Executor Type & Model Selection */}
       <div className="border-t border-gray-800 p-3 space-y-3">
-        {/* Executor Type Toggle */}
+        {/* Executor Type Toggles (Multi-select) */}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Executor:</span>
+          <span className="text-xs text-gray-500">Executors:</span>
           <div className="flex items-center bg-gray-800 rounded-lg p-0.5">
             <button
               type="button"
-              onClick={() => setCurrentExecutor('patch_agent')}
+              onClick={() => setUsePatchAgent(!usePatchAgent)}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'patch_agent'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
+                usePatchAgent
+                  ? 'bg-gray-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
               )}
             >
               <CpuChipIcon className="w-3.5 h-3.5" />
@@ -279,12 +299,12 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              onClick={() => setCurrentExecutor('claude_code')}
+              onClick={() => setUseClaude(!useClaude)}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'claude_code'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
+                useClaude
+                  ? 'bg-purple-700 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
               )}
             >
               <CommandLineIcon className="w-3.5 h-3.5" />
@@ -292,12 +312,12 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              onClick={() => setCurrentExecutor('codex_cli')}
+              onClick={() => setUseCodex(!useCodex)}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'codex_cli'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
+                useCodex
+                  ? 'bg-purple-700 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
               )}
             >
               <CommandLineIcon className="w-3.5 h-3.5" />
@@ -305,12 +325,12 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              onClick={() => setCurrentExecutor('gemini_cli')}
+              onClick={() => setUseGemini(!useGemini)}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'gemini_cli'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
+                useGemini
+                  ? 'bg-purple-700 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
               )}
             >
               <CommandLineIcon className="w-3.5 h-3.5" />
@@ -320,10 +340,10 @@ export function ChatPanel({
         </div>
 
         {/* Model Selection (only for patch_agent) */}
-        {currentExecutor === 'patch_agent' && (
-          <div>
+        {usePatchAgent && (
+          <div className="animate-in fade-in slide-in-from-top-1 duration-200">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-500">Select models to run:</span>
+              <span className="text-xs text-gray-500">Select models:</span>
               {models.length > 1 && (
                 <button
                   type="button"
@@ -367,14 +387,23 @@ export function ChatPanel({
         )}
 
         {/* CLI executor info */}
-        {(currentExecutor === 'claude_code' || currentExecutor === 'codex_cli' || currentExecutor === 'gemini_cli') && (
-          <div className="flex items-center gap-2 p-2 bg-purple-900/20 rounded-lg border border-purple-800/30">
-            <CommandLineIcon className="w-4 h-4 text-purple-400" />
-            <span className="text-xs text-purple-300">
-              {currentExecutor === 'claude_code' && 'Claude Code will execute in an isolated worktree'}
-              {currentExecutor === 'codex_cli' && 'Codex will execute in an isolated worktree'}
-              {currentExecutor === 'gemini_cli' && 'Gemini CLI will execute in an isolated worktree'}
-            </span>
+        {(useClaude || useCodex || useGemini) && (
+          <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+             {useClaude && (
+                <div className="flex items-center gap-2 p-1.5 bg-purple-900/20 rounded border border-purple-800/30">
+                    <span className="text-[10px] text-purple-300">Claude Code active</span>
+                </div>
+             )}
+             {useCodex && (
+                <div className="flex items-center gap-2 p-1.5 bg-purple-900/20 rounded border border-purple-800/30">
+                    <span className="text-[10px] text-purple-300">Codex active</span>
+                </div>
+             )}
+             {useGemini && (
+                <div className="flex items-center gap-2 p-1.5 bg-purple-900/20 rounded border border-purple-800/30">
+                    <span className="text-[10px] text-purple-300">Gemini active</span>
+                </div>
+             )}
           </div>
         )}
       </div>
@@ -404,7 +433,7 @@ export function ChatPanel({
           />
           <Button
             type="submit"
-            disabled={loading || !input.trim() || (currentExecutor === 'patch_agent' && selectedModels.length === 0)}
+            disabled={loading || !input.trim() || (!usePatchAgent && !useClaude && !useCodex && !useGemini) || (usePatchAgent && selectedModels.length === 0)}
             isLoading={loading}
             className="self-end"
           >
@@ -415,26 +444,18 @@ export function ChatPanel({
           <span className="text-xs text-gray-500">
             {getShortcutText('Enter')} to submit
           </span>
-          {currentExecutor === 'patch_agent' && selectedModels.length > 0 && (
-            <span className="text-xs text-gray-500">
-              {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''} selected
-            </span>
-          )}
-          {currentExecutor === 'claude_code' && (
-            <span className="text-xs text-purple-400">
-              Claude Code CLI
-            </span>
-          )}
-          {currentExecutor === 'codex_cli' && (
-            <span className="text-xs text-purple-400">
-              Codex CLI
-            </span>
-          )}
-          {currentExecutor === 'gemini_cli' && (
-            <span className="text-xs text-purple-400">
-              Gemini CLI
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {usePatchAgent && selectedModels.length > 0 && (
+              <span className="text-xs text-gray-500">
+                {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''}
+              </span>
+            )}
+            {(useClaude || useCodex || useGemini) && (
+               <span className="text-xs text-purple-400">
+                   {[useClaude && 'Claude', useCodex && 'Codex', useGemini && 'Gemini'].filter(Boolean).join(', ')}
+               </span>
+            )}
+          </div>
         </div>
       </form>
     </div>

@@ -120,11 +120,17 @@ export interface Run {
   completed_at: string | null;
 }
 
+export interface ExecutorConfig {
+  executor_type: ExecutorType;
+  model_id?: string;
+}
+
 export interface RunCreate {
   instruction: string;
   model_ids?: string[];
   base_ref?: string;
   executor_type?: ExecutorType;
+  executors?: ExecutorConfig[];
   message_id?: string;
 }
 
