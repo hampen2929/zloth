@@ -23,6 +23,25 @@
 - **Self-hosted**: Run locally or on your own infrastructure
 - **BYO API Keys**: Securely store and use your own LLM API keys
 
+## Who is dursor for?
+
+dursor is designed for:
+
+- **People who want to complete implementations through chat**
+  - Tired of AI conversations in CLI tools
+  - Tired of AI-assisted coding in IDEs
+  - Prefer a web-based chat interface for code generation
+
+- **People who want to use multiple AI models**
+  - Compare outputs from different models side-by-side
+  - Choose the best implementation from multiple options
+  - Not locked into a single AI provider
+
+- **Organizations that can use AI APIs but cannot install local tools**
+  - Your company allows API access but restricts local tool installations
+  - Self-hosted solution that runs on your own infrastructure
+  - Works with your existing API keys without additional software on developer machines
+
 ## Quick Start
 
 ### Prerequisites
