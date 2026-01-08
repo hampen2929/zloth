@@ -123,8 +123,7 @@ class OutputManager:
             # Notify all subscribers
             subscriber_count = len(self._subscribers[run_id])
             logger.debug(
-                f"Publishing line {line_number} to {subscriber_count} "
-                f"subscribers for run {run_id}"
+                f"Publishing line {line_number} to {subscriber_count} subscribers for run {run_id}"
             )
             for queue in self._subscribers[run_id]:
                 try:
@@ -172,8 +171,7 @@ class OutputManager:
             history = self._streams[run_id][from_line:]
             is_completed = self._completed[run_id] is not None
             logger.info(
-                f"Subscribe to run {run_id}: history={len(history)} lines, "
-                f"completed={is_completed}"
+                f"Subscribe to run {run_id}: history={len(history)} lines, completed={is_completed}"
             )
 
         try:
@@ -295,16 +293,12 @@ class OutputManager:
             Dict with stats.
         """
         async with self._lock:
-            active_runs = sum(
-                1 for completed in self._completed.values() if completed is None
-            )
+            active_runs = sum(1 for completed in self._completed.values() if completed is None)
             completed_runs = sum(
                 1 for completed in self._completed.values() if completed is not None
             )
             total_lines = sum(len(lines) for lines in self._streams.values())
-            total_subscribers = sum(
-                len(subs) for subs in self._subscribers.values()
-            )
+            total_subscribers = sum(len(subs) for subs in self._subscribers.values())
 
             return {
                 "active_runs": active_runs,

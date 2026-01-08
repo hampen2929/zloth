@@ -119,12 +119,14 @@ class BaseExecutor(ABC):
             if line.startswith("--- a/"):
                 # Save previous file if exists
                 if current_file:
-                    files.append(FileDiff(
-                        path=current_file,
-                        added_lines=added_lines,
-                        removed_lines=removed_lines,
-                        patch="\n".join(current_patch_lines),
-                    ))
+                    files.append(
+                        FileDiff(
+                            path=current_file,
+                            added_lines=added_lines,
+                            removed_lines=removed_lines,
+                            patch="\n".join(current_patch_lines),
+                        )
+                    )
                 # Reset for new file
                 current_patch_lines = [line]
                 added_lines = 0
@@ -150,12 +152,14 @@ class BaseExecutor(ABC):
 
         # Save last file
         if current_file:
-            files.append(FileDiff(
-                path=current_file,
-                added_lines=added_lines,
-                removed_lines=removed_lines,
-                patch="\n".join(current_patch_lines),
-            ))
+            files.append(
+                FileDiff(
+                    path=current_file,
+                    added_lines=added_lines,
+                    removed_lines=removed_lines,
+                    patch="\n".join(current_patch_lines),
+                )
+            )
 
         return files
 

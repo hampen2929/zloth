@@ -69,7 +69,9 @@ class GeminiExecutor:
 
         # Don't log full instruction - it can be very long
         cmd_display = [
-            self.options.gemini_cli_path, f"<instruction:{len(instruction)} chars>", "--yolo"
+            self.options.gemini_cli_path,
+            f"<instruction:{len(instruction)} chars>",
+            "--yolo",
         ]
         logs.append(f"Executing: {' '.join(cmd_display)}")
         logs.append(f"Working directory: {worktree_path}")
@@ -129,8 +131,7 @@ class GeminiExecutor:
                     files_changed=[],
                     logs=logs,
                     error=(
-                        f"Gemini CLI exited with code {process.returncode}\n\n"
-                        f"Last output:\n{tail}"
+                        f"Gemini CLI exited with code {process.returncode}\n\nLast output:\n{tail}"
                     ),
                 )
 

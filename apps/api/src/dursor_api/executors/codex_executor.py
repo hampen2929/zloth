@@ -195,8 +195,7 @@ class CodexExecutor:
 
         # Prefer scanning line-by-line for the common hint.
         hint_re = re.compile(
-            r"To continue this session,\s*run\s*codex\s+resume\s+"
-            + uuid_re,
+            r"To continue this session,\s*run\s*codex\s+resume\s+" + uuid_re,
             re.IGNORECASE,
         )
         session_line_re = re.compile(r"\bsession id:\s*" + uuid_re + r"\b", re.IGNORECASE)

@@ -127,9 +127,7 @@ class RunService:
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
         )
-        self.codex_executor = CodexExecutor(
-            CodexOptions(codex_cli_path=settings.codex_cli_path)
-        )
+        self.codex_executor = CodexExecutor(CodexOptions(codex_cli_path=settings.codex_cli_path))
         self.gemini_executor = GeminiExecutor(
             GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
         )
@@ -203,8 +201,7 @@ class RunService:
                 # If the task is already locked to patch_agent, reuse the most recent
                 # model set (grouped by latest patch_agent instruction).
                 patch_runs = [
-                    r for r in existing_runs
-                    if r.executor_type == ExecutorType.PATCH_AGENT
+                    r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT
                 ]
                 if patch_runs:
                     latest_instruction = patch_runs[0].instruction  # newest-first
@@ -293,8 +290,8 @@ class RunService:
                 # If we're working from the repo's default branch, ensure the existing worktree
                 # still contains the latest origin/<default>. Otherwise, create a fresh worktree
                 # from the latest default to avoid PRs being based on a stale main.
-                should_check_default = (
-                    (base_ref == repo.default_branch) and bool(repo.default_branch)
+                should_check_default = (base_ref == repo.default_branch) and bool(
+                    repo.default_branch
                 )
                 if should_check_default:
                     default_ref = f"origin/{repo.default_branch}"
@@ -561,8 +558,7 @@ class RunService:
                 f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
             )
             logger.info(
-                f"[{run.id[:8]}] Instruction length: "
-                f"{len(instruction_with_constraints)} chars"
+                f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars"
             )
 
             # 3. Execute the CLI (file editing only)
@@ -605,9 +601,7 @@ class RunService:
                 return
 
             # 4. Read and remove summary file (before staging)
-            summary_from_file = await self._read_and_remove_summary_file(
-                worktree_info.path, logs
-            )
+            summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
 
             # 5. Stage all changes
             await self.git_service.stage_all(worktree_info.path)
@@ -635,9 +629,7 @@ class RunService:
 
             # Determine final summary (priority: file > CLI output > generated)
             final_summary = (
-                summary_from_file
-                or result.summary
-                or self._generate_summary(files_changed)
+                summary_from_file or result.summary or self._generate_summary(files_changed)
             )
 
             # 7. Commit (automatic)
@@ -789,12 +781,14 @@ class RunService:
             if line.startswith("--- a/"):
                 # Save previous file if exists
                 if current_file:
-                    files.append(FileDiff(
-                        path=current_file,
-                        added_lines=added_lines,
-                        removed_lines=removed_lines,
-                        patch="\n".join(current_patch_lines),
-                    ))
+                    files.append(
+                        FileDiff(
+                            path=current_file,
+                            added_lines=added_lines,
+                            removed_lines=removed_lines,
+                            patch="\n".join(current_patch_lines),
+                        )
+                    )
                 # Reset for new file
                 current_patch_lines = [line]
                 added_lines = 0
@@ -820,12 +814,14 @@ class RunService:
 
         # Save last file
         if current_file:
-            files.append(FileDiff(
-                path=current_file,
-                added_lines=added_lines,
-                removed_lines=removed_lines,
-                patch="\n".join(current_patch_lines),
-            ))
+            files.append(
+                FileDiff(
+                    path=current_file,
+                    added_lines=added_lines,
+                    removed_lines=removed_lines,
+                    patch="\n".join(current_patch_lines),
+                )
+            )
 
         return files
 

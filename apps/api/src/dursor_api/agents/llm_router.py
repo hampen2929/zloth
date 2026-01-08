@@ -120,10 +120,12 @@ class LLMClient:
         contents = []
         for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
-            contents.append({
-                "role": role,
-                "parts": [{"text": msg["content"]}],
-            })
+            contents.append(
+                {
+                    "role": role,
+                    "parts": [{"text": msg["content"]}],
+                }
+            )
 
         request_body: dict[str, Any] = {
             "contents": contents,

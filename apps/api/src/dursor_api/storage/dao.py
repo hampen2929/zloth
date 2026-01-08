@@ -86,9 +86,7 @@ class ModelProfileDAO:
 
     async def delete(self, id: str) -> bool:
         """Delete a model profile."""
-        cursor = await self.db.connection.execute(
-            "DELETE FROM model_profiles WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("DELETE FROM model_profiles WHERE id = ?", (id,))
         await self.db.connection.commit()
         return cursor.rowcount > 0
 
@@ -148,9 +146,7 @@ class RepoDAO:
 
     async def get(self, id: str) -> Repo | None:
         """Get a repo by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM repos WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM repos WHERE id = ?", (id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -208,9 +204,7 @@ class TaskDAO:
 
     async def get(self, id: str) -> Task | None:
         """Get a task by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM tasks WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM tasks WHERE id = ?", (id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -344,10 +338,19 @@ class RunDAO:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                id, task_id, model_id, model_name,
+                id,
+                task_id,
+                model_id,
+                model_name,
                 provider.value if provider else None,
-                executor_type.value, working_branch, worktree_path, session_id,
-                instruction, base_ref, RunStatus.QUEUED.value, created_at
+                executor_type.value,
+                working_branch,
+                worktree_path,
+                session_id,
+                instruction,
+                base_ref,
+                RunStatus.QUEUED.value,
+                created_at,
             ),
         )
         await self.db.connection.commit()
@@ -554,9 +557,7 @@ class RunDAO:
 
         # Handle executor_type with default for backward compatibility
         executor_type = (
-            ExecutorType(row["executor_type"])
-            if row["executor_type"]
-            else ExecutorType.PATCH_AGENT
+            ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
         )
 
         return Run(
@@ -580,13 +581,9 @@ class RunDAO:
             warnings=warnings,
             error=row["error"],
             created_at=datetime.fromisoformat(row["created_at"]),
-            started_at=(
-                datetime.fromisoformat(row["started_at"]) if row["started_at"] else None
-            ),
+            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
             completed_at=(
-                datetime.fromisoformat(row["completed_at"])
-                if row["completed_at"]
-                else None
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
             ),
         )
 
@@ -639,9 +636,7 @@ class PRDAO:
 
     async def get(self, id: str) -> PR | None:
         """Get a PR by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM prs WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM prs WHERE id = ?", (id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -707,9 +702,7 @@ class UserPreferencesDAO:
 
     async def get(self) -> UserPreferences | None:
         """Get user preferences."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM user_preferences WHERE id = 1"
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM user_preferences WHERE id = 1")
         row = await cursor.fetchone()
         if not row:
             return None
@@ -727,9 +720,7 @@ class UserPreferencesDAO:
         now = now_iso()
 
         # Try to update first
-        cursor = await self.db.connection.execute(
-            "SELECT id FROM user_preferences WHERE id = 1"
-        )
+        cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")
         exists = await cursor.fetchone()
 
         if exists:

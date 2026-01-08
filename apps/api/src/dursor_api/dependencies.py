@@ -1,6 +1,5 @@
 """FastAPI dependency injection."""
 
-
 from dursor_api.config import settings
 from dursor_api.services.crypto_service import CryptoService
 from dursor_api.services.git_service import GitService
@@ -134,9 +133,7 @@ async def get_pr_service() -> PRService:
     repo_service = await get_repo_service()
     github_service = await get_github_service()
     git_service = get_git_service()
-    return PRService(
-        pr_dao, task_dao, run_dao, repo_service, github_service, git_service
-    )
+    return PRService(pr_dao, task_dao, run_dao, repo_service, github_service, git_service)
 
 
 async def get_github_service() -> GitHubService:

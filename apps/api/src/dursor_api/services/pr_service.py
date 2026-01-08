@@ -477,7 +477,7 @@ class PRService:
                 ),
             )
             # Clean up the response - remove quotes and extra whitespace
-            title = response.strip().strip('"\'')
+            title = response.strip().strip("\"'")
             # Ensure title is not too long
             if len(title) > 72:
                 title = title[:69] + "..."
@@ -575,36 +575,40 @@ class PRService:
         ]
 
         if template:
-            prompt_parts.extend([
-                "",
-                "## Template (MUST FOLLOW EXACTLY)",
-                "You MUST create the Description following this exact template structure.",
-                "- Keep ALL section headings from the template.",
-                "- Fill in each section with appropriate content based on the diff and context.",
-                "- Do NOT add sections that are not in the template.",
-                "- Do NOT remove or rename any sections from the template.",
-                "- Replace HTML comments (<!-- ... -->) with actual content.",
-                "",
-                "Template:",
-                "```markdown",
-                template,
-                "```",
-            ])
+            prompt_parts.extend(
+                [
+                    "",
+                    "## Template (MUST FOLLOW EXACTLY)",
+                    "You MUST create the Description following this exact template structure.",
+                    "- Keep ALL section headings from the template.",
+                    "- Fill in each section with content based on the diff and context.",
+                    "- Do NOT add sections that are not in the template.",
+                    "- Do NOT remove or rename any sections from the template.",
+                    "- Replace HTML comments (<!-- ... -->) with actual content.",
+                    "",
+                    "Template:",
+                    "```markdown",
+                    template,
+                    "```",
+                ]
+            )
         else:
-            prompt_parts.extend([
-                "",
-                "## Output Format",
-                "Create the Description in the following format:",
-                "",
-                "## Summary",
-                "(Overview of changes in 1-3 sentences)",
-                "",
-                "## Changes",
-                "(Main changes as bullet points)",
-                "",
-                "## Test Plan",
-                "(Testing methods and verification items)",
-            ])
+            prompt_parts.extend(
+                [
+                    "",
+                    "## Output Format",
+                    "Create the Description in the following format:",
+                    "",
+                    "## Summary",
+                    "(Overview of changes in 1-3 sentences)",
+                    "",
+                    "## Changes",
+                    "(Main changes as bullet points)",
+                    "",
+                    "## Test Plan",
+                    "(Testing methods and verification items)",
+                ]
+            )
 
         return "\n".join(prompt_parts)
 
@@ -658,9 +662,7 @@ class PRService:
 - [ ] Unit tests
 """
 
-    def _fill_template_sections(
-        self, template: str, summary: str, changes: str
-    ) -> str:
+    def _fill_template_sections(self, template: str, summary: str, changes: str) -> str:
         """Fill in template sections with provided content.
 
         Preserves the exact template structure, only replacing the content
@@ -730,7 +732,7 @@ class PRService:
         section_end = next_match.start() if next_match else len(template)
 
         # Build the result: before + heading + new content + after
-        before = template[: heading_end]
+        before = template[:heading_end]
         after = template[section_end:]
 
         return f"{before}{new_content}\n\n{after}".strip() + "\n"
@@ -792,6 +794,7 @@ class PRService:
 
         # Apply patch manually
         import subprocess
+
         patch_file = workspace_path / ".dursor_patch.diff"
         try:
             patch_file.write_text(run.patch)
@@ -1098,42 +1101,44 @@ class PRService:
         ]
 
         if template:
-            prompt_parts.extend([
-                "",
-                "## Template (MUST FOLLOW EXACTLY)",
-                "You MUST create the Description following this exact template structure.",
-                "- Keep ALL section headings from the template.",
-                "- Fill in each section with appropriate content based on the diff and context.",
-                "- Do NOT add sections that are not in the template.",
-                "- Do NOT remove or rename any sections from the template.",
-                "- Replace HTML comments (<!-- ... -->) with actual content.",
-                "",
-                "Template:",
-                "```markdown",
-                template,
-                "```",
-            ])
+            prompt_parts.extend(
+                [
+                    "",
+                    "## Template (MUST FOLLOW EXACTLY)",
+                    "You MUST create the Description following this exact template structure.",
+                    "- Keep ALL section headings from the template.",
+                    "- Fill in each section with content based on the diff and context.",
+                    "- Do NOT add sections that are not in the template.",
+                    "- Do NOT remove or rename any sections from the template.",
+                    "- Replace HTML comments (<!-- ... -->) with actual content.",
+                    "",
+                    "Template:",
+                    "```markdown",
+                    template,
+                    "```",
+                ]
+            )
         else:
-            prompt_parts.extend([
-                "",
-                "## Output Format",
-                "Create the Description in the following format:",
-                "",
-                "## Summary",
-                "(Overview of changes in 1-3 sentences)",
-                "",
-                "## Changes",
-                "(Main changes as bullet points)",
-                "",
-                "## Test Plan",
-                "(Testing methods and verification items)",
-            ])
+            prompt_parts.extend(
+                [
+                    "",
+                    "## Output Format",
+                    "Create the Description in the following format:",
+                    "",
+                    "## Summary",
+                    "(Overview of changes in 1-3 sentences)",
+                    "",
+                    "## Changes",
+                    "(Main changes as bullet points)",
+                    "",
+                    "## Test Plan",
+                    "(Testing methods and verification items)",
+                ]
+            )
 
         return "\n".join(prompt_parts)
 
-    def _generate_fallback_description(
-        self, diff: str, pr: PR, template: str | None = None
-    ) -> str:
+    def _generate_fallback_description(self, diff: str, pr: PR, template: str | None = None) -> str:
         """Generate a simple fallback description.
 
         If a template is provided, fills in the template sections.

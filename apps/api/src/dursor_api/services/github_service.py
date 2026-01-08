@@ -69,9 +69,7 @@ class GitHubService:
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
         """Save GitHub App configuration to database."""
         # Check if config exists
-        existing = await self.db.fetch_one(
-            "SELECT id FROM github_app_config WHERE id = 1"
-        )
+        existing = await self.db.fetch_one("SELECT id FROM github_app_config WHERE id = 1")
 
         if data.private_key:
             # Encode private key to base64 for storage
@@ -131,9 +129,7 @@ class GitHubService:
                 # Assume it's already decoded
                 return settings.github_app_private_key
 
-        row = await self.db.fetch_one(
-            "SELECT private_key FROM github_app_config WHERE id = 1"
-        )
+        row = await self.db.fetch_one("SELECT private_key FROM github_app_config WHERE id = 1")
         if row and row["private_key"]:
             return base64.b64decode(row["private_key"]).decode()
 
@@ -208,9 +204,7 @@ class GitHubService:
 
         return token
 
-    async def _github_request(
-        self, method: str, endpoint: str, **kwargs: Any
-    ) -> Any:
+    async def _github_request(self, method: str, endpoint: str, **kwargs: Any) -> Any:
         """Make authenticated request to GitHub API."""
         token = await self._get_installation_token()
         if not token:

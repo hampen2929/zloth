@@ -50,16 +50,12 @@ class Database:
 
         # Migration: Add session_id column to runs table if it doesn't exist
         if "session_id" not in column_names:
-            await self._connection.execute(
-                "ALTER TABLE runs ADD COLUMN session_id TEXT"
-            )
+            await self._connection.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
             await self._connection.commit()
 
         # Migration: Add commit_sha column to runs table if it doesn't exist
         if "commit_sha" not in column_names:
-            await self._connection.execute(
-                "ALTER TABLE runs ADD COLUMN commit_sha TEXT"
-            )
+            await self._connection.execute("ALTER TABLE runs ADD COLUMN commit_sha TEXT")
             await self._connection.commit()
 
         # Migration: Add default_branch_prefix column to user_preferences table if it doesn't exist

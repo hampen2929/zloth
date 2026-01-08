@@ -96,7 +96,8 @@ class WorktreeService:
             # git worktree add -b <branch> <path> <base>
             source_repo.git.worktree(
                 "add",
-                "-b", branch_name,
+                "-b",
+                branch_name,
                 str(worktree_path),
                 base_branch,
             )
@@ -118,6 +119,7 @@ class WorktreeService:
             worktree_path: Path to the worktree to remove.
             delete_branch: Whether to also delete the branch.
         """
+
         def _cleanup():
             if not worktree_path.exists():
                 return
@@ -172,6 +174,7 @@ class WorktreeService:
         Returns:
             List of WorktreeInfo objects.
         """
+
         def _list():
             source_repo = git.Repo(repo.workspace_path)
             worktrees = []
@@ -190,12 +193,14 @@ class WorktreeService:
                     elif line == "" and current_path and current_branch:
                         # Only include worktrees in our worktrees directory
                         if str(current_path).startswith(str(self.worktrees_dir)):
-                            worktrees.append(WorktreeInfo(
-                                path=current_path,
-                                branch_name=current_branch,
-                                base_branch="",  # Not easily available
-                                created_at=datetime.utcnow(),  # Not easily available
-                            ))
+                            worktrees.append(
+                                WorktreeInfo(
+                                    path=current_path,
+                                    branch_name=current_branch,
+                                    base_branch="",  # Not easily available
+                                    created_at=datetime.utcnow(),  # Not easily available
+                                )
+                            )
                         current_path = None
                         current_branch = None
 
@@ -216,6 +221,7 @@ class WorktreeService:
         Returns:
             Tuple of (unified diff string, list of changed file paths).
         """
+
         def _get_changes():
             repo = git.Repo(worktree_path)
 
@@ -264,6 +270,7 @@ class WorktreeService:
         Returns:
             Commit SHA.
         """
+
         def _commit():
             repo = git.Repo(worktree_path)
             repo.git.add("-A")

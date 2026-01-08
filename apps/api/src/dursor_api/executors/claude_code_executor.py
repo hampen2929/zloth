@@ -82,7 +82,8 @@ class ClaudeCodeExecutor:
         # Note: We do NOT use --output-format json as it suppresses streaming output
         cmd = [
             self.options.claude_cli_path,
-            "-p", instruction,  # Pass instruction directly as argument
+            "-p",
+            instruction,  # Pass instruction directly as argument
             "--dangerously-skip-permissions",  # Allow file edits without permission prompts
         ]
 
@@ -94,7 +95,9 @@ class ClaudeCodeExecutor:
 
         # Don't log full instruction - it can be very long
         cmd_display = [
-            self.options.claude_cli_path, "-p", f"<instruction:{len(instruction)} chars>"
+            self.options.claude_cli_path,
+            "-p",
+            f"<instruction:{len(instruction)} chars>",
         ]
         logs.append(f"Executing: {' '.join(cmd_display)}")
         logs.append(f"Working directory: {worktree_path}")
@@ -124,16 +127,13 @@ class ClaudeCodeExecutor:
                     try:
                         line = await asyncio.wait_for(
                             process.stdout.readline(),
-                            timeout=300.0  # 5 min timeout per line
+                            timeout=300.0,  # 5 min timeout per line
                         )
                     except TimeoutError:
-                        logger.warning(
-                            "No output for 5 minutes, checking if process is alive..."
-                        )
+                        logger.warning("No output for 5 minutes, checking if process is alive...")
                         if process.returncode is None:
                             logger.warning(
-                                f"Process still running (PID: {process.pid}), "
-                                "continuing to wait..."
+                                f"Process still running (PID: {process.pid}), continuing to wait..."
                             )
                             continue
                         else:
@@ -192,8 +192,7 @@ class ClaudeCodeExecutor:
                     files_changed=[],
                     logs=logs,
                     error=(
-                        f"Claude Code exited with code {process.returncode}\n\n"
-                        f"Last output:\n{tail}"
+                        f"Claude Code exited with code {process.returncode}\n\nLast output:\n{tail}"
                     ),
                 )
 

@@ -107,4 +107,3 @@ async def ensure_english_commit_message(
 
     # Last resort: safe English fallback
     return "Update changes"
-

@@ -160,11 +160,13 @@ async def stream_run_logs(
         line_count = 0
         try:
             async for output_line in output_manager.subscribe(run_id, from_line):
-                data = json.dumps({
-                    "line_number": output_line.line_number,
-                    "content": output_line.content,
-                    "timestamp": output_line.timestamp,
-                })
+                data = json.dumps(
+                    {
+                        "line_number": output_line.line_number,
+                        "content": output_line.content,
+                        "timestamp": output_line.timestamp,
+                    }
+                )
                 yield f"data: {data}\n\n"
                 line_count += 1
                 if line_count % 10 == 0:
