@@ -55,7 +55,7 @@ class BaseExecutor(ABC):
         worktree_path: Path,
         instruction: str,
         constraints: AgentConstraints | None = None,
-        on_output: Callable[[str], Awaitable[None]] | None = None,
+        on_output: Callable[[str, str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
     ) -> ExecutorResult:
         """Execute the CLI with the given instruction.
@@ -64,7 +64,7 @@ class BaseExecutor(ABC):
             worktree_path: Working directory for the execution.
             instruction: Natural language instruction for the agent.
             constraints: Agent constraints (git ops forbidden, etc.).
-            on_output: Callback for output streaming.
+            on_output: Callback for output streaming (stream_name, line).
             resume_session_id: Session ID for conversation continuation.
 
         Returns:

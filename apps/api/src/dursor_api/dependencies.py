@@ -16,6 +16,7 @@ from dursor_api.storage.dao import (
     ModelProfileDAO,
     PRDAO,
     RepoDAO,
+    RunLogDAO,
     RunDAO,
     TaskDAO,
     UserPreferencesDAO,
@@ -66,6 +67,12 @@ async def get_run_dao() -> RunDAO:
     return RunDAO(db)
 
 
+async def get_run_log_dao() -> RunLogDAO:
+    """Get RunLog DAO."""
+    db = await get_db()
+    return RunLogDAO(db)
+
+
 async def get_pr_dao() -> PRDAO:
     """Get PR DAO."""
     db = await get_db()
@@ -98,13 +105,14 @@ async def get_run_service() -> RunService:
     global _run_service
     if _run_service is None:
         run_dao = await get_run_dao()
+        run_log_dao = await get_run_log_dao()
         task_dao = await get_task_dao()
         model_service = await get_model_service()
         repo_service = await get_repo_service()
         git_service = get_git_service()
         github_service = await get_github_service()
         _run_service = RunService(
-            run_dao, task_dao, model_service, repo_service, git_service, github_service
+            run_dao, run_log_dao, task_dao, model_service, repo_service, git_service, github_service
         )
     return _run_service
 

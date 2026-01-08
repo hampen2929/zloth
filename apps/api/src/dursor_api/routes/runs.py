@@ -1,8 +1,12 @@
 """Run routes."""
 
-from fastapi import APIRouter, Depends, HTTPException
+import asyncio
+import json
 
-from dursor_api.domain.models import Run, RunCreate, RunsCreated
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+
+from dursor_api.domain.models import Run, RunCreate, RunLogEntry, RunsCreated
 from dursor_api.dependencies import get_run_service
 from dursor_api.services.run_service import RunService
 
@@ -42,6 +46,76 @@ async def get_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return run
+
+
+@router.get("/runs/{run_id}/logs", response_model=list[RunLogEntry])
+async def list_run_logs(
+    run_id: str,
+    after_seq: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=2000),
+    run_service: RunService = Depends(get_run_service),
+) -> list[RunLogEntry]:
+    """List persisted log entries for a run."""
+    run = await run_service.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return await run_service.run_log_service.list(run_id=run_id, after_seq=after_seq, limit=limit)
+
+
+@router.get("/runs/{run_id}/logs/stream")
+async def stream_run_logs(
+    run_id: str,
+    request: Request,
+    from_seq: int = Query(0, ge=0),
+    run_service: RunService = Depends(get_run_service),
+) -> StreamingResponse:
+    """Stream run logs as Server-Sent Events (SSE)."""
+    run = await run_service.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    async def gen():
+        # Backlog first
+        backlog = await run_service.run_log_service.list(run_id=run_id, after_seq=from_seq, limit=1000)
+        for entry in backlog:
+            if await request.is_disconnected():
+                return
+            payload = {"type": "log", "data": entry.model_dump(mode="json")}
+            yield f"event: log\ndata: {json.dumps(payload)}\n\n"
+
+        queue, is_finished = await run_service.run_log_service.subscribe(run_id)
+        try:
+            if is_finished:
+                yield f"event: done\ndata: {json.dumps({'type': 'done', 'data': {'run_id': run_id}})}\n\n"
+                return
+
+            while True:
+                if await request.is_disconnected():
+                    return
+
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except TimeoutError:
+                    # Keep-alive to prevent proxy timeouts
+                    yield ": ping\n\n"
+                    continue
+
+                yield f"event: {event.type}\ndata: {json.dumps({'type': event.type, 'data': event.data})}\n\n"
+                if event.type == "done":
+                    return
+        finally:
+            await run_service.run_log_service.unsubscribe(run_id, queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Disable buffering on some reverse proxies (nginx)
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/runs/{run_id}/cancel", status_code=204)

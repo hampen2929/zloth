@@ -15,6 +15,7 @@ from dursor_api.domain.models import (
     PR,
     Repo,
     Run,
+    RunLogEntry,
     Task,
     UserPreferences,
 )
@@ -573,6 +574,61 @@ class RunDAO:
             started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
             completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
         )
+
+
+class RunLogDAO:
+    """DAO for run log entries (append-only)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def append(
+        self,
+        run_id: str,
+        stream: str,
+        text: str,
+        ts: str | None = None,
+    ) -> int:
+        """Append a log entry and return its sequence number."""
+        created_at = ts or now_iso()
+        cursor = await self.db.connection.execute(
+            """
+            INSERT INTO run_logs (run_id, ts, stream, text)
+            VALUES (?, ?, ?, ?)
+            """,
+            (run_id, created_at, stream, text),
+        )
+        await self.db.connection.commit()
+        # SQLite rowid is our per-entry sequence (monotonic per table, filtered per run)
+        return int(cursor.lastrowid)
+
+    async def list(
+        self,
+        run_id: str,
+        after_seq: int = 0,
+        limit: int = 500,
+    ) -> list[RunLogEntry]:
+        """List log entries for a run (ordered ascending)."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT id, ts, stream, text
+            FROM run_logs
+            WHERE run_id = ? AND id > ?
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (run_id, after_seq, limit),
+        )
+        rows = await cursor.fetchall()
+        return [
+            RunLogEntry(
+                seq=int(r["id"]),
+                ts=datetime.fromisoformat(r["ts"]),
+                stream=r["stream"],
+                text=r["text"],
+            )
+            for r in rows
+        ]
 
 
 class PRDAO:

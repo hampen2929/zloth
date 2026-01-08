@@ -53,7 +53,7 @@ class ClaudeCodeExecutor:
         self,
         worktree_path: Path,
         instruction: str,
-        on_output: Callable[[str], Awaitable[None]] | None = None,
+        on_output: Callable[[str, str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
     ) -> ExecutorResult:
         """Execute claude CLI with the given instruction.
@@ -108,54 +108,43 @@ class ClaudeCodeExecutor:
                 *cmd,
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent interactive input waiting
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=str(worktree_path),
                 env=env,
             )
             logger.info(f"Process created successfully with PID: {process.pid}")
 
-            # Stream output from CLI
-            async def read_output():
+            # Stream output from CLI (stdout/stderr)
+            async def read_stream(stream_name: str, reader: asyncio.StreamReader) -> None:
+                nonlocal output_lines
                 line_count = 0
-                logger.info("Starting to read output lines...")
+                logger.info("Starting to read %s...", stream_name)
                 while True:
-                    # Add timeout per line to detect hanging
-                    try:
-                        line = await asyncio.wait_for(
-                            process.stdout.readline(),
-                            timeout=300.0  # 5 min timeout per line
-                        )
-                    except TimeoutError:
-                        logger.warning(f"No output for 5 minutes, checking if process is alive...")
-                        if process.returncode is None:
-                            logger.warning(f"Process still running (PID: {process.pid}), continuing to wait...")
-                            continue
-                        else:
-                            logger.info(f"Process has exited with code: {process.returncode}")
-                            break
-
+                    line = await reader.readline()
                     if not line:
-                        logger.info(f"EOF reached after {line_count} lines")
                         break
-
                     decoded = line.decode("utf-8", errors="replace").rstrip()
-                    output_lines.append(decoded)
-                    logs.append(decoded)
+                    if stream_name == "stdout":
+                        output_lines.append(decoded)
+                        logs.append(decoded)
+                    else:
+                        logs.append(f"[stderr] {decoded}")
                     line_count += 1
 
-                    # Log progress every 10 lines
-                    if line_count % 10 == 0:
-                        logger.info(f"Read {line_count} lines so far...")
+                    if line_count % 50 == 0:
+                        logger.info("Read %s: %d lines so far...", stream_name, line_count)
 
-                    if len(output_lines) <= self.options.max_output_lines:
-                        if on_output:
-                            await on_output(decoded)
-                logger.info(f"Finished reading output: {line_count} lines total")
+                    if on_output and len(logs) <= self.options.max_output_lines:
+                        await on_output(stream_name, decoded)
+                logger.info("Finished reading %s: %d lines total", stream_name, line_count)
 
             try:
                 logger.info("Reading output...")
                 await asyncio.wait_for(
-                    read_output(),
+                    asyncio.gather(
+                        read_stream("stdout", process.stdout),  # type: ignore[arg-type]
+                        read_stream("stderr", process.stderr),  # type: ignore[arg-type]
+                    ),
                     timeout=self.options.timeout_seconds,
                 )
                 logger.info("Output reading completed")

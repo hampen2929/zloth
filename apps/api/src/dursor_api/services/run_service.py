@@ -34,7 +34,8 @@ from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from dursor_api.services.git_service import GitService
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
-from dursor_api.storage.dao import RunDAO, TaskDAO
+from dursor_api.services.run_log_service import RunLogService
+from dursor_api.storage.dao import RunDAO, RunLogDAO, TaskDAO
 
 if TYPE_CHECKING:
     from dursor_api.services.github_service import GitHubService
@@ -104,6 +105,7 @@ class RunService:
     def __init__(
         self,
         run_dao: RunDAO,
+        run_log_dao: RunLogDAO,
         task_dao: TaskDAO,
         model_service: ModelService,
         repo_service: RepoService,
@@ -111,6 +113,7 @@ class RunService:
         github_service: "GitHubService | None" = None,
     ):
         self.run_dao = run_dao
+        self.run_log_service = RunLogService(run_log_dao)
         self.task_dao = task_dao
         self.model_service = model_service
         self.repo_service = repo_service
@@ -364,6 +367,7 @@ class RunService:
 
         if cancelled:
             await self.run_dao.update_status(run_id, RunStatus.CANCELED)
+            await self.run_log_service.mark_finished(run_id)
 
             # Cleanup worktree if it's a CLI executor run
             cli_executors = {
@@ -408,6 +412,7 @@ class RunService:
         try:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
+            await self.run_log_service.append(run.id, "system", "Run started")
 
             # Create working copy
             workspace_path = self.repo_service.create_working_copy(repo, run.id)
@@ -451,6 +456,7 @@ class RunService:
             finally:
                 # Cleanup working copy
                 self.repo_service.cleanup_working_copy(run.id)
+                await self.run_log_service.mark_finished(run.id)
 
         except Exception as e:
             # Update status to failed
@@ -460,6 +466,8 @@ class RunService:
                 error=str(e),
                 logs=[f"Execution failed: {str(e)}"],
             )
+            await self.run_log_service.append(run.id, "stderr", f"Execution failed: {str(e)}")
+            await self.run_log_service.mark_finished(run.id)
 
     async def _execute_cli_run(
         self,
@@ -502,6 +510,7 @@ class RunService:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
             logger.info(f"[{run.id[:8]}] Starting {executor_name} run")
+            await self.run_log_service.append(run.id, "system", f"{executor_name} run started")
 
             # 1. Record pre-execution status
             pre_status = await self.git_service.get_status(worktree_info.path)
@@ -523,7 +532,7 @@ class RunService:
             result = await executor.execute(
                 worktree_path=worktree_info.path,
                 instruction=instruction_with_constraints,
-                on_output=lambda line: self._log_output(run.id, line),
+                on_output=lambda stream, line: self._log_output(run.id, stream, line),
                 resume_session_id=attempt_session_id,
             )
             if (
@@ -540,7 +549,7 @@ class RunService:
                 result = await executor.execute(
                     worktree_path=worktree_info.path,
                     instruction=instruction_with_constraints,
-                    on_output=lambda line: self._log_output(run.id, line),
+                    on_output=lambda stream, line: self._log_output(run.id, stream, line),
                     resume_session_id=None,
                 )
             logger.info(f"[{run.id[:8]}] CLI execution completed: success={result.success}")
@@ -553,6 +562,9 @@ class RunService:
                     logs=logs + result.logs,
                     session_id=result.session_id or resume_session_id,
                 )
+                if result.error:
+                    await self.run_log_service.append(run.id, "stderr", result.error)
+                await self.run_log_service.mark_finished(run.id)
                 return
 
             # 4. Read and remove summary file (before staging)
@@ -578,6 +590,7 @@ class RunService:
                     logs=logs + result.logs,
                     session_id=result.session_id or resume_session_id,
                 )
+                await self.run_log_service.mark_finished(run.id)
                 return
 
             # Parse diff to get file changes
@@ -626,6 +639,7 @@ class RunService:
                 session_id=result.session_id or resume_session_id,
                 commit_sha=commit_sha,
             )
+            await self.run_log_service.mark_finished(run.id)
 
         except Exception as e:
             # Update status to failed
@@ -636,6 +650,8 @@ class RunService:
                 logs=logs + [f"Execution failed: {str(e)}"],
                 commit_sha=commit_sha,
             )
+            await self.run_log_service.append(run.id, "stderr", f"Execution failed: {str(e)}")
+            await self.run_log_service.mark_finished(run.id)
 
     async def _read_and_remove_summary_file(
         self,
@@ -675,7 +691,7 @@ class RunService:
 
         return summary
 
-    async def _log_output(self, run_id: str, line: str) -> None:
+    async def _log_output(self, run_id: str, stream: str, line: str) -> None:
         """Log output from CLI execution.
 
         This logs output to console for debugging and could be extended
@@ -683,11 +699,12 @@ class RunService:
 
         Args:
             run_id: Run ID.
+            stream: Output stream name (stdout/stderr/system).
             line: Output line.
         """
         # Log to console for debugging
         logger.info(f"[{run_id[:8]}] {line}")
-        # TODO: Implement SSE streaming for real-time output
+        await self.run_log_service.append(run_id, stream, line)
 
     def _generate_commit_message(self, instruction: str, summary: str | None) -> str:
         """Generate a commit message from instruction and summary.

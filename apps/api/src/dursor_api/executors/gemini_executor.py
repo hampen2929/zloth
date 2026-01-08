@@ -35,7 +35,7 @@ class GeminiExecutor:
         self,
         worktree_path: Path,
         instruction: str,
-        on_output: Callable[[str], Awaitable[None]] | None = None,
+        on_output: Callable[[str, str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
     ) -> ExecutorResult:
         """Execute gemini CLI with the given instruction.
@@ -79,28 +79,29 @@ class GeminiExecutor:
                 *cmd,
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent interactive input waiting
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=str(worktree_path),
                 env=env,
             )
 
-            # Stream output from CLI
-            async def read_output():
+            async def read_stream(stream_name: str, reader: asyncio.StreamReader) -> None:
                 while True:
-                    line = await process.stdout.readline()
+                    line = await reader.readline()
                     if not line:
                         break
                     decoded = line.decode("utf-8", errors="replace").rstrip()
-                    output_lines.append(decoded)
-                    logs.append(decoded)
+                    output_lines.append(decoded if stream_name == "stdout" else f"[stderr] {decoded}")
+                    logs.append(decoded if stream_name == "stdout" else f"[stderr] {decoded}")
 
-                    if len(output_lines) <= self.options.max_output_lines:
-                        if on_output:
-                            await on_output(decoded)
+                    if len(output_lines) <= self.options.max_output_lines and on_output:
+                        await on_output(stream_name, decoded)
 
             try:
                 await asyncio.wait_for(
-                    read_output(),
+                    asyncio.gather(
+                        read_stream("stdout", process.stdout),  # type: ignore[arg-type]
+                        read_stream("stderr", process.stderr),  # type: ignore[arg-type]
+                    ),
                     timeout=self.options.timeout_seconds,
                 )
             except TimeoutError:

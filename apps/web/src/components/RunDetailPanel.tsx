@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { prsApi } from '@/lib/api';
-import type { Run } from '@/types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { prsApi, runsApi } from '@/lib/api';
+import type { Run, RunLogEntry, RunLogStream } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
@@ -47,7 +47,113 @@ export function RunDetailPanel({
   const [creating, setCreating] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [logEntries, setLogEntries] = useState<RunLogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [followLogs, setFollowLogs] = useState(true);
+  const [showStdout, setShowStdout] = useState(true);
+  const [showStderr, setShowStderr] = useState(true);
+  const [showSystem, setShowSystem] = useState(true);
+  const [sseStatus, setSseStatus] = useState<
+    'disconnected' | 'connecting' | 'connected' | 'error' | 'done'
+  >('disconnected');
+  const lastSeqRef = useRef<number>(0);
+  const logEndRef = useRef<HTMLDivElement | null>(null);
   const { success, error } = useToast();
+
+  const filteredLogEntries = useMemo(() => {
+    const enabled = new Set<RunLogStream>();
+    if (showStdout) enabled.add('stdout');
+    if (showStderr) enabled.add('stderr');
+    if (showSystem) enabled.add('system');
+    return logEntries.filter((e) => enabled.has(e.stream));
+  }, [logEntries, showStdout, showStderr, showSystem]);
+
+  useEffect(() => {
+    if (activeTab !== 'logs' || !followLogs) return;
+    logEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [activeTab, followLogs, filteredLogEntries.length]);
+
+  useEffect(() => {
+    if (activeTab !== 'logs') return;
+
+    let cancelled = false;
+    let es: EventSource | null = null;
+
+    async function start() {
+      setLogsLoading(true);
+      setLogsError(null);
+
+      try {
+        const history = await runsApi.listLogs(run.id, 0, 1000);
+        if (cancelled) return;
+        setLogEntries(history);
+        lastSeqRef.current = history.length > 0 ? history[history.length - 1].seq : 0;
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : 'Failed to load logs';
+        setLogsError(message);
+
+        // Fallback for older runs: show the summary logs stored on the run record.
+        if (run.logs && run.logs.length > 0) {
+          const fallback: RunLogEntry[] = run.logs.map((text, i) => ({
+            seq: i + 1,
+            ts: run.created_at,
+            stream: 'system',
+            text,
+          }));
+          setLogEntries(fallback);
+          lastSeqRef.current = 0;
+        }
+      } finally {
+        if (!cancelled) setLogsLoading(false);
+      }
+
+      setSseStatus('connecting');
+      es = new EventSource(`/api/runs/${run.id}/logs/stream?from_seq=${lastSeqRef.current}`);
+
+      es.onopen = () => {
+        if (!cancelled) setSseStatus('connected');
+      };
+
+      es.addEventListener('log', (evt) => {
+        if (cancelled) return;
+        try {
+          const msg = JSON.parse((evt as MessageEvent).data) as {
+            type: 'log';
+            data: RunLogEntry;
+          };
+          const entry = msg?.data;
+          if (!entry) return;
+          lastSeqRef.current = entry.seq;
+          setLogEntries((prev) => {
+            const next = [...prev, entry];
+            if (next.length > 2000) next.splice(0, next.length - 2000);
+            return next;
+          });
+        } catch {
+          // ignore malformed events
+        }
+      });
+
+      es.addEventListener('done', () => {
+        if (!cancelled) setSseStatus('done');
+        es?.close();
+      });
+
+      es.onerror = () => {
+        if (!cancelled) setSseStatus('error');
+      };
+    }
+
+    start();
+
+    return () => {
+      cancelled = true;
+      es?.close();
+      setSseStatus('disconnected');
+    };
+  }, [activeTab, run.id, run.created_at, run.logs]);
 
   const handleCreatePR = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -264,7 +370,111 @@ export function RunDetailPanel({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4" role="tabpanel">
-        {run.status === 'running' && (
+        {activeTab === 'logs' && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 text-xs text-gray-400">
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-2',
+                    sseStatus === 'connected'
+                      ? 'text-green-400'
+                      : sseStatus === 'connecting'
+                        ? 'text-yellow-400'
+                        : sseStatus === 'done'
+                          ? 'text-gray-400'
+                          : sseStatus === 'error'
+                            ? 'text-red-400'
+                            : 'text-gray-500'
+                  )}
+                >
+                  <span className="select-none">●</span>
+                  <span>
+                    {sseStatus === 'connected'
+                      ? 'Connected'
+                      : sseStatus === 'connecting'
+                        ? 'Connecting'
+                        : sseStatus === 'done'
+                          ? 'Done'
+                          : sseStatus === 'error'
+                            ? 'Error'
+                            : 'Disconnected'}
+                  </span>
+                </span>
+                {logsLoading && <span className="text-gray-500">Loading…</span>}
+                {logsError && <span className="text-red-400">{logsError}</span>}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs text-gray-300">
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-blue-500"
+                    checked={followLogs}
+                    onChange={(e) => setFollowLogs(e.target.checked)}
+                  />
+                  Follow
+                </label>
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-gray-500"
+                    checked={showStdout}
+                    onChange={(e) => setShowStdout(e.target.checked)}
+                  />
+                  stdout
+                </label>
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-red-500"
+                    checked={showStderr}
+                    onChange={(e) => setShowStderr(e.target.checked)}
+                  />
+                  stderr
+                </label>
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-purple-500"
+                    checked={showSystem}
+                    onChange={(e) => setShowSystem(e.target.checked)}
+                  />
+                  system
+                </label>
+              </div>
+            </div>
+
+            <div className="font-mono text-xs space-y-1 bg-gray-800/50 rounded-lg p-3">
+              {filteredLogEntries.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No logs yet.</p>
+              ) : (
+                filteredLogEntries.map((entry, i) => (
+                  <div
+                    key={`${entry.seq}-${i}`}
+                    className={cn(
+                      'leading-relaxed whitespace-pre-wrap break-words',
+                      entry.stream === 'stderr'
+                        ? 'text-red-300'
+                        : entry.stream === 'system'
+                          ? 'text-purple-300'
+                          : 'text-gray-300'
+                    )}
+                  >
+                    <span className="text-gray-600 mr-2 select-none">{entry.seq}</span>
+                    <span className="mr-2 select-none text-gray-600">
+                      [{entry.stream}]
+                    </span>
+                    {entry.text}
+                  </div>
+                ))
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </div>
+        )}
+
+        {activeTab !== 'logs' && run.status === 'running' && (
           <div className="flex flex-col items-center justify-center h-full">
             <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
             <p className="text-gray-400 font-medium">Running...</p>
@@ -272,7 +482,7 @@ export function RunDetailPanel({
           </div>
         )}
 
-        {run.status === 'queued' && (
+        {activeTab !== 'logs' && run.status === 'queued' && (
           <div className="flex flex-col items-center justify-center h-full">
             <ClockIcon className="w-10 h-10 text-gray-500 mb-4" />
             <p className="text-gray-400 font-medium">Waiting in queue...</p>
@@ -280,7 +490,7 @@ export function RunDetailPanel({
           </div>
         )}
 
-        {run.status === 'failed' && (
+        {activeTab !== 'logs' && run.status === 'failed' && (
           <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
@@ -290,7 +500,7 @@ export function RunDetailPanel({
           </div>
         )}
 
-        {run.status === 'succeeded' && (
+        {activeTab !== 'logs' && run.status === 'succeeded' && (
           <>
             {activeTab === 'summary' && (
               <div className="space-y-6">
@@ -350,21 +560,6 @@ export function RunDetailPanel({
 
             {activeTab === 'diff' && (
               <DiffViewer patch={run.patch || ''} />
-            )}
-
-            {activeTab === 'logs' && (
-              <div className="font-mono text-xs space-y-1 bg-gray-800/50 rounded-lg p-3">
-                {!run.logs || run.logs.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No logs available.</p>
-                ) : (
-                  run.logs.map((log, i) => (
-                    <div key={i} className="text-gray-400 leading-relaxed">
-                      <span className="text-gray-600 mr-2 select-none">{i + 1}</span>
-                      {log}
-                    </div>
-                  ))
-                )}
-              </div>
             )}
           </>
         )}

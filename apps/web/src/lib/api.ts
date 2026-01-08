@@ -16,6 +16,7 @@ import type {
   Run,
   RunCreate,
   RunsCreated,
+  RunLogEntry,
   PR,
   PRCreate,
   PRCreateAuto,
@@ -148,6 +149,11 @@ export const runsApi = {
   list: (taskId: string) => fetchApi<Run[]>(`/tasks/${taskId}/runs`),
 
   get: (runId: string) => fetchApi<Run>(`/runs/${runId}`),
+
+  listLogs: (runId: string, afterSeq: number = 0, limit: number = 500) =>
+    fetchApi<RunLogEntry[]>(
+      `/runs/${runId}/logs?after_seq=${encodeURIComponent(afterSeq)}&limit=${encodeURIComponent(limit)}`
+    ),
 
   cancel: (runId: string) =>
     fetchApi<void>(`/runs/${runId}/cancel`, { method: 'POST' }),

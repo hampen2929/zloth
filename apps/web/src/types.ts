@@ -7,6 +7,14 @@ export type Provider = 'openai' | 'anthropic' | 'google';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type ExecutorType = 'patch_agent' | 'claude_code' | 'codex_cli' | 'gemini_cli';
+export type RunLogStream = 'stdout' | 'stderr' | 'system';
+
+export interface RunLogEntry {
+  seq: number;
+  ts: string;
+  stream: RunLogStream;
+  text: string;
+}
 
 // Model Profile
 export interface ModelProfile {

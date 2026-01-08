@@ -76,6 +76,17 @@ CREATE INDEX IF NOT EXISTS idx_runs_task ON runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_runs_model ON runs(model_id);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 
+-- Run logs (streamed stdout/stderr per run)
+CREATE TABLE IF NOT EXISTS run_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    ts TEXT NOT NULL DEFAULT (datetime('now')),
+    stream TEXT NOT NULL,            -- stdout, stderr, system
+    text TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_logs_run_id_id ON run_logs(run_id, id);
+
 -- Pull Requests
 CREATE TABLE IF NOT EXISTS prs (
     id TEXT PRIMARY KEY,

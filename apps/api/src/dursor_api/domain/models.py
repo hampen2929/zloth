@@ -1,7 +1,7 @@
 """Pydantic domain models for dursor API."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -190,6 +190,23 @@ class Run(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================
+# Run Logs (streamed CLI stdout/stderr)
+# ============================================================
+
+
+RunLogStream = Literal["stdout", "stderr", "system"]
+
+
+class RunLogEntry(BaseModel):
+    """Single log entry for a run (append-only)."""
+
+    seq: int = Field(..., description="Monotonic sequence within a run (uses DB row id)")
+    ts: datetime
+    stream: RunLogStream
+    text: str
 
 
 # ============================================================
