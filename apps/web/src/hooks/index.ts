@@ -12,3 +12,6 @@ export { useClickOutside, useClickOutsideMultiple } from './useClickOutside';
 
 // Clipboard utilities
 export { useClipboard, type UseClipboardOptions, type UseClipboardResult } from './useClipboard';
+
+// Keyboard shortcuts
+export { useKeyboardShortcuts, getShortcutsList } from './useKeyboardShortcuts';

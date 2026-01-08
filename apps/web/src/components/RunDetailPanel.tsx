@@ -21,12 +21,17 @@ import {
   ArrowTopRightOnSquareIcon,
   DocumentDuplicateIcon,
   ClipboardDocumentIcon,
+  LightBulbIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
+import { getErrorDisplay, type ErrorAction } from '@/lib/error-handling';
 
 interface RunDetailPanelProps {
   run: Run;
   taskId: string;
   onPRCreated: () => void;
+  onRetry?: () => void;
+  onSwitchModel?: () => void;
 }
 
 type Tab = 'summary' | 'diff' | 'logs';
@@ -51,6 +56,8 @@ export function RunDetailPanel({
   run,
   taskId,
   onPRCreated,
+  onRetry,
+  onSwitchModel,
 }: RunDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>(() => getDefaultTab(run.status));
   const [showPRForm, setShowPRForm] = useState(false);
@@ -374,49 +381,14 @@ export function RunDetailPanel({
 
         {/* Failed status */}
         {run.status === 'failed' && (
-          <>
-            {activeTab === 'logs' ? (
-              <div className="space-y-4">
-                {/* Error summary at top */}
-                <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
-                    <h3 className="font-medium text-red-400">Execution Failed</h3>
-                  </div>
-                  <p className="text-sm text-red-300">{run.error}</p>
-                </div>
-                {/* Logs below */}
-                <div className="font-mono text-xs space-y-1 bg-gray-800/50 rounded-lg p-3">
-                  {!run.logs || run.logs.length === 0 ? (
-                    <p className="text-gray-500 text-center py-4">No logs available.</p>
-                  ) : (
-                    run.logs.map((log, i) => (
-                      <div key={i} className="text-gray-400 leading-relaxed">
-                        <span className="text-gray-600 mr-2 select-none">{i + 1}</span>
-                        {log}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
-                  <h3 className="font-medium text-red-400">Execution Failed</h3>
-                </div>
-                <p className="text-sm text-red-300">{run.error}</p>
-                {run.logs && run.logs.length > 0 && (
-                  <button
-                    onClick={() => setActiveTab('logs')}
-                    className="mt-3 text-blue-400 hover:text-blue-300 text-sm underline"
-                  >
-                    View logs ({run.logs.length} lines)
-                  </button>
-                )}
-              </div>
-            )}
-          </>
+          <FailedStatusDisplay
+            error={run.error}
+            logs={run.logs}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            onRetry={onRetry}
+            onSwitchModel={onSwitchModel}
+          />
         )}
 
         {run.status === 'succeeded' && (
@@ -499,5 +471,185 @@ export function RunDetailPanel({
         )}
       </div>
     </div>
+  );
+}
+
+// --- Sub-components ---
+
+interface FailedStatusDisplayProps {
+  error: string | null | undefined;
+  logs: string[] | null | undefined;
+  activeTab: Tab;
+  onTabChange: (tab: Tab) => void;
+  onRetry?: () => void;
+  onSwitchModel?: () => void;
+}
+
+function FailedStatusDisplay({
+  error,
+  logs,
+  activeTab,
+  onTabChange,
+  onRetry,
+  onSwitchModel,
+}: FailedStatusDisplayProps) {
+  const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
+  const errorDisplay = getErrorDisplay(error);
+
+  // Handle delayed retry countdown
+  useEffect(() => {
+    if (retryCountdown === null) return;
+    if (retryCountdown <= 0) {
+      setRetryCountdown(null);
+      onRetry?.();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setRetryCountdown(retryCountdown - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [retryCountdown, onRetry]);
+
+  const handleAction = (action: ErrorAction) => {
+    switch (action.type) {
+      case 'retry':
+        onRetry?.();
+        break;
+      case 'retry_delayed':
+        if (action.delayMs) {
+          setRetryCountdown(Math.ceil(action.delayMs / 1000));
+        }
+        break;
+      case 'switch_model':
+        onSwitchModel?.();
+        break;
+      case 'view_logs':
+        onTabChange('logs');
+        break;
+      case 'settings':
+        if (action.href) {
+          // Navigate to settings via hash - this is intentional external system interaction
+          // eslint-disable-next-line react-hooks/immutability
+          window.location.hash = action.href.replace('#', '');
+        }
+        break;
+    }
+  };
+
+  const ErrorSummary = () => (
+    <div className="p-4 bg-red-900/20 border border-red-800/50 rounded-lg">
+      <div className="flex items-center gap-2 mb-2">
+        <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
+        <h3 className="font-medium text-red-400">{errorDisplay.title}</h3>
+      </div>
+      <p className="text-sm text-red-300 mb-4">{errorDisplay.message}</p>
+
+      {/* Recommended actions */}
+      {errorDisplay.actions.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-amber-400 text-sm">
+            <LightBulbIcon className="w-4 h-4" />
+            <span className="font-medium">推奨アクション</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {errorDisplay.actions.map((action, idx) => (
+              <ActionButton
+                key={idx}
+                action={action}
+                onClick={() => handleAction(action)}
+                disabled={retryCountdown !== null && action.type === 'retry_delayed'}
+                countdown={action.type === 'retry_delayed' ? retryCountdown : null}
+                hasHandler={
+                  (action.type === 'retry' && !!onRetry) ||
+                  (action.type === 'switch_model' && !!onSwitchModel) ||
+                  action.type === 'view_logs' ||
+                  action.type === 'settings'
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* View logs link (if not in logs tab and has actions) */}
+      {logs && logs.length > 0 && activeTab !== 'logs' && !errorDisplay.actions.some(a => a.type === 'view_logs') && (
+        <button
+          onClick={() => onTabChange('logs')}
+          className="mt-3 text-blue-400 hover:text-blue-300 text-sm underline"
+        >
+          ログを確認 ({logs.length} lines)
+        </button>
+      )}
+    </div>
+  );
+
+  if (activeTab === 'logs') {
+    return (
+      <div className="space-y-4">
+        <ErrorSummary />
+        <div className="font-mono text-xs space-y-1 bg-gray-800/50 rounded-lg p-3">
+          {!logs || logs.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">No logs available.</p>
+          ) : (
+            logs.map((log, i) => (
+              <div key={i} className="text-gray-400 leading-relaxed">
+                <span className="text-gray-600 mr-2 select-none">{i + 1}</span>
+                {log}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return <ErrorSummary />;
+}
+
+interface ActionButtonProps {
+  action: ErrorAction;
+  onClick: () => void;
+  disabled?: boolean;
+  countdown: number | null;
+  hasHandler: boolean;
+}
+
+function ActionButton({ action, onClick, disabled, countdown, hasHandler }: ActionButtonProps) {
+  // Don't render if no handler available for retry/switch_model
+  if (!hasHandler && (action.type === 'retry' || action.type === 'switch_model')) {
+    return null;
+  }
+
+  const getIcon = () => {
+    switch (action.type) {
+      case 'retry':
+      case 'retry_delayed':
+        return <ArrowPathIcon className="w-4 h-4" />;
+      case 'settings':
+        return <Cog6ToothIcon className="w-4 h-4" />;
+      default:
+        return null;
+    }
+  };
+
+  const buttonLabel = countdown !== null ? `${countdown}秒後に再試行` : action.label;
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors',
+        'border focus:outline-none focus:ring-2 focus:ring-blue-500',
+        disabled
+          ? 'bg-gray-700 border-gray-600 text-gray-400 cursor-not-allowed'
+          : 'bg-gray-800 border-gray-700 text-gray-200 hover:bg-gray-700 hover:border-gray-600'
+      )}
+    >
+      {getIcon()}
+      {buttonLabel}
+    </button>
   );
 }

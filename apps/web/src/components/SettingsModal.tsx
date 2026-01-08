@@ -42,12 +42,13 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
+type TabType = 'models' | 'github' | 'defaults';
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  defaultTab?: TabType;
 }
-
-type TabType = 'models' | 'github' | 'defaults';
 
 const tabConfig: { id: TabType; label: string; icon: React.ReactNode }[] = [
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
@@ -55,8 +56,17 @@ const tabConfig: { id: TabType; label: string; icon: React.ReactNode }[] = [
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
 ];
 
-export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('models');
+export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<TabType>(defaultTab || 'models');
+
+  // Update active tab when defaultTab changes
+  // This is intentional: we want to switch tabs when externally triggered
+  useEffect(() => {
+    if (defaultTab) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveTab(defaultTab);
+    }
+  }, [defaultTab]);
 
   return (
     <Modal

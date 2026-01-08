@@ -48,8 +48,8 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
 
   return (
     <aside className="w-64 h-screen flex flex-col bg-gray-900 border-r border-gray-800">
-      {/* Logo */}
-      <div className="p-4 border-b border-gray-800">
+      {/* Logo - hidden on mobile since we have mobile header */}
+      <div className="hidden lg:block p-4 border-b border-gray-800">
         <Link
           href="/"
           className="text-xl font-bold text-white hover:text-gray-300 transition-colors inline-flex items-center gap-2"
@@ -57,6 +57,8 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
           <span className="text-blue-500">d</span>ursor
         </Link>
       </div>
+      {/* Mobile spacing to account for mobile header */}
+      <div className="lg:hidden h-14" />
 
       {/* New Task Button */}
       <div className="p-3">
