@@ -93,7 +93,8 @@ class ClaudeCodeExecutor:
             logs.append(f"Continuing session: {resume_session_id}")
 
         # Don't log full instruction - it can be very long
-        cmd_display = [self.options.claude_cli_path, "-p", f"<instruction:{len(instruction)} chars>"]
+        instr_len = len(instruction)
+        cmd_display = [self.options.claude_cli_path, "-p", f"<instruction:{instr_len} chars>"]
         logs.append(f"Executing: {' '.join(cmd_display)}")
         logs.append(f"Working directory: {worktree_path}")
         logs.append(f"Instruction length: {len(instruction)} chars")
@@ -114,14 +115,18 @@ class ClaudeCodeExecutor:
             logger.info(f"Process created successfully with PID: {process.pid}")
 
             # Stream output from CLI
-            async def read_output():
+            async def read_output() -> None:
                 line_count = 0
                 logger.info("Starting to read output lines...")
+                stdout = process.stdout
+                if stdout is None:
+                    logger.error("Process stdout is None")
+                    return
                 while True:
                     # Add timeout per line to detect hanging
                     try:
                         line = await asyncio.wait_for(
-                            process.stdout.readline(),
+                            stdout.readline(),
                             timeout=300.0  # 5 min timeout per line
                         )
                     except TimeoutError:

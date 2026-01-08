@@ -48,8 +48,8 @@ class QueueAdapter:
     Can be replaced with Celery/RQ/Redis in v0.2+.
     """
 
-    def __init__(self):
-        self._tasks: dict[str, asyncio.Task] = {}
+    def __init__(self) -> None:
+        self._tasks: dict[str, asyncio.Task[None]] = {}
 
     def enqueue(
         self,
@@ -62,7 +62,7 @@ class QueueAdapter:
             run_id: Run ID.
             coro: Coroutine to execute.
         """
-        task = asyncio.create_task(coro())
+        task: asyncio.Task[None] = asyncio.create_task(coro())
         self._tasks[run_id] = task
 
     def cancel(self, run_id: str) -> bool:
@@ -237,7 +237,7 @@ class RunService:
                 # Enqueue for execution
                 self.queue.enqueue(
                     run.id,
-                    lambda r=run, rp=repo: self._execute_patch_agent_run(r, rp),
+                    lambda r=run, rp=repo: self._execute_patch_agent_run(r, rp),  # type: ignore[misc]
                 )
 
         return runs
@@ -306,7 +306,7 @@ class RunService:
                     else:
                         worktree_info = WorktreeInfo(
                             path=worktree_path,
-                            branch_name=existing_run.working_branch,
+                            branch_name=existing_run.working_branch or "",
                             base_branch=existing_run.base_ref or base_ref,
                             created_at=existing_run.created_at,
                         )
@@ -315,7 +315,7 @@ class RunService:
                     # Reuse existing worktree (no default-base freshness check)
                     worktree_info = WorktreeInfo(
                         path=worktree_path,
-                        branch_name=existing_run.working_branch,
+                        branch_name=existing_run.working_branch or "",
                         base_branch=existing_run.base_ref or base_ref,
                         created_at=existing_run.created_at,
                     )
@@ -353,17 +353,19 @@ class RunService:
         )
 
         # Update the run object with new info
-        run = await self.run_dao.get(run.id)
+        updated_run = await self.run_dao.get(run.id)
+        if updated_run is None:
+            raise ValueError(f"Run not found after update: {run.id}")
 
         # Enqueue for execution based on executor type
         self.queue.enqueue(
-            run.id,
-            lambda r=run, wt=worktree_info, et=executor_type, ps=previous_session_id, rp=repo: self._execute_cli_run(
+            updated_run.id,
+            lambda r=updated_run, wt=worktree_info, et=executor_type, ps=previous_session_id, rp=repo: self._execute_cli_run(  # type: ignore[misc]
                 r, wt, et, ps, rp
             ),
         )
 
-        return run
+        return updated_run
 
     async def get(self, run_id: str) -> Run | None:
         """Get a run by ID.
@@ -451,6 +453,13 @@ class RunService:
 
             try:
                 # Get API key
+                if not run.model_id:
+                    raise ValueError("Model ID not set for run")
+                if not run.provider:
+                    raise ValueError("Provider not set for run")
+                if not run.model_name:
+                    raise ValueError("Model name not set for run")
+
                 api_key = await self.model_service.get_decrypted_key(run.model_id)
                 if not api_key:
                     raise ValueError("API key not found")

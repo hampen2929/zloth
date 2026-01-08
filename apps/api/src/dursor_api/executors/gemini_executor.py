@@ -85,9 +85,12 @@ class GeminiExecutor:
             )
 
             # Stream output from CLI
-            async def read_output():
+            async def read_output() -> None:
+                stdout = process.stdout
+                if stdout is None:
+                    return
                 while True:
-                    line = await process.stdout.readline()
+                    line = await stdout.readline()
                     if not line:
                         break
                     decoded = line.decode("utf-8", errors="replace").rstrip()

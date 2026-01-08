@@ -15,7 +15,18 @@ from urllib.parse import urlencode, urlparse
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.domain.enums import Provider
-from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRCreateLink, PRCreated, PRSyncResult, PRUpdate, Repo
+from dursor_api.domain.models import (
+    PR,
+    PRCreate,
+    PRCreateAuto,
+    PRCreateLink,
+    PRCreated,
+    PRSyncResult,
+    PRUpdate,
+    Repo,
+    Run,
+    Task,
+)
 from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
 from dursor_api.services.repo_service import RepoService
@@ -461,8 +472,8 @@ class PRService:
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
-                prompt=prompt,
-                system_prompt=(
+                messages=[{"role": "user", "content": prompt}],
+                system=(
                     "You are a helpful assistant that generates clear and concise "
                     "PR titles. Output only the title text."
                 ),
@@ -484,9 +495,9 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         title: str,
-        run,
+        run: Run,
     ) -> str:
         """Generate PR description for new PR using LLM.
 
@@ -513,8 +524,8 @@ class PRService:
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
-                prompt=prompt,
-                system_prompt=(
+                messages=[{"role": "user", "content": prompt}],
+                system=(
                     "You are a helpful assistant that generates clear "
                     "and concise PR descriptions. Follow the provided template exactly."
                 ),
@@ -528,9 +539,9 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         title: str,
-        run,
+        run: Run,
     ) -> str:
         """Build prompt for description generation for new PR.
 
@@ -600,7 +611,7 @@ class PRService:
         return "\n".join(prompt_parts)
 
     def _generate_fallback_description_for_new_pr(
-        self, diff: str, title: str, run, template: str | None = None
+        self, diff: str, title: str, run: Run, template: str | None = None
     ) -> str:
         """Generate a simple fallback description for new PR.
 
@@ -765,7 +776,10 @@ class PRService:
         if run.commit_sha and run.working_branch == pr.branch:
             # Commit is already on the PR branch, just update the database
             await self.pr_dao.update(pr_id, run.commit_sha)
-            return await self.pr_dao.get(pr_id)
+            updated_pr = await self.pr_dao.get(pr_id)
+            if updated_pr is None:
+                raise ValueError(f"PR not found after update: {pr_id}")
+            return updated_pr
 
         # For PatchAgent runs or different branches, we need to apply the patch
         # This is backward compatibility code
@@ -828,7 +842,10 @@ class PRService:
         # Update database
         await self.pr_dao.update(pr_id, commit_sha)
 
-        return await self.pr_dao.get(pr_id)
+        final_pr = await self.pr_dao.get(pr_id)
+        if final_pr is None:
+            raise ValueError(f"PR not found after update: {pr_id}")
+        return final_pr
 
     async def regenerate_description(self, task_id: str, pr_id: str) -> PR:
         """Regenerate PR description from current diff.
@@ -909,7 +926,10 @@ class PRService:
         # Update database
         await self.pr_dao.update_body(pr_id, new_description)
 
-        return await self.pr_dao.get(pr_id)
+        regenerated_pr = await self.pr_dao.get(pr_id)
+        if regenerated_pr is None:
+            raise ValueError(f"PR not found after update: {pr_id}")
+        return regenerated_pr
 
     async def _load_pr_template(self, repo: Repo) -> str | None:
         """Load repository's pull_request_template.
@@ -937,7 +957,7 @@ class PRService:
 
         return None
 
-    async def _log_pr_branch_base_state(self, repo_obj: Repo, run) -> None:
+    async def _log_pr_branch_base_state(self, repo_obj: Repo, run: Run) -> None:
         """Log merge-base diagnostics for PR branches.
 
         This helps confirm whether the PR branch includes the latest default branch.
@@ -1015,7 +1035,7 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         pr: PR,
     ) -> str:
         """Generate PR description using LLM.
@@ -1041,8 +1061,8 @@ class PRService:
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
-                prompt=prompt,
-                system_prompt=(
+                messages=[{"role": "user", "content": prompt}],
+                system=(
                     "You are a helpful assistant that generates clear "
                     "and concise PR descriptions. Follow the provided template exactly."
                 ),
@@ -1056,7 +1076,7 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         pr: PR,
     ) -> str:
         """Build prompt for description generation.

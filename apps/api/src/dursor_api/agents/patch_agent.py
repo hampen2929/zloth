@@ -5,13 +5,14 @@ import os
 from pathlib import Path
 
 from dursor_api.agents.base import BaseAgent
-from dursor_api.agents.llm_router import LLMClient, LLMConfig
+from dursor_api.agents.llm_router import LLMClient
 from dursor_api.domain.models import AgentRequest, AgentResult, FileDiff
 
 
 SYSTEM_PROMPT = """You are a code editing assistant that generates unified diff patches.
 
-Your task is to analyze the provided codebase and instruction, then output ONLY a unified diff patch that implements the requested changes.
+Your task is to analyze the provided codebase and instruction, then output ONLY \
+a unified diff patch that implements the requested changes.
 
 IMPORTANT RULES:
 1. Output ONLY the unified diff patch - no explanations, no markdown code blocks, no other text
@@ -175,10 +176,13 @@ class PatchAgent(BaseAgent):
 
         for root, dirs, files in os.walk(workspace_path):
             # Skip hidden directories and common non-code directories
+            excluded_dirs = {
+                "node_modules", "venv", ".venv", "__pycache__", "dist", "build", "target"
+            }
             dirs[:] = [
                 d for d in dirs
                 if not d.startswith(".")
-                and d not in {"node_modules", "venv", ".venv", "__pycache__", "dist", "build", "target"}
+                and d not in excluded_dirs
             ]
 
             for file in files:
@@ -384,4 +388,7 @@ class PatchAgent(BaseAgent):
         total_added = sum(f.added_lines for f in files_changed)
         total_removed = sum(f.removed_lines for f in files_changed)
 
-        return f"Modified {len(files_changed)} file(s): {file_list}. (+{total_added}/-{total_removed} lines)"
+        return (
+            f"Modified {len(files_changed)} file(s): {file_list}. "
+            f"(+{total_added}/-{total_removed} lines)"
+        )

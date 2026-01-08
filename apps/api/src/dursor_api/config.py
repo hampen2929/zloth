@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -96,7 +96,9 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     # Paths
-    base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent)
+    base_dir: Path = Field(
+        default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent
+    )
     workspaces_dir: Path | None = Field(default=None)
     data_dir: Path | None = Field(default=None)
 
@@ -116,7 +118,7 @@ class Settings(BaseSettings):
     codex_cli_path: str = Field(default="codex")
     gemini_cli_path: str = Field(default="gemini")
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         """Set derived paths after initialization."""
         if self.workspaces_dir is None:
             self.workspaces_dir = self.base_dir / "workspaces"

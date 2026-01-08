@@ -62,7 +62,12 @@ class GitService:
         Args:
             workspaces_dir: Base directory for workspaces. Defaults to settings.
         """
-        self.workspaces_dir = workspaces_dir or settings.workspaces_dir
+        if workspaces_dir is not None:
+            self.workspaces_dir = workspaces_dir
+        elif settings.workspaces_dir is not None:
+            self.workspaces_dir = settings.workspaces_dir
+        else:
+            raise ValueError("workspaces_dir must be configured")
         self.worktrees_dir = self.workspaces_dir / "worktrees"
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 

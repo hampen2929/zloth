@@ -345,8 +345,8 @@ class AgentRequest(BaseModel):
     workspace_path: str = Field(..., description="Path to the cloned workspace")
     base_ref: str = Field(..., description="Base branch/commit")
     instruction: str = Field(..., description="Natural language instruction")
-    context: dict[str, Any] | None = Field(None, description="Additional context")
-    constraints: AgentConstraints = Field(default_factory=AgentConstraints)
+    context: dict[str, Any] | None = Field(default=None, description="Additional context")
+    constraints: AgentConstraints = Field(default_factory=lambda: AgentConstraints())
 
 
 class AgentResult(BaseModel):

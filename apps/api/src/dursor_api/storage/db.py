@@ -12,7 +12,12 @@ class Database:
     """Async SQLite database wrapper."""
 
     def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or settings.data_dir / "dursor.db"
+        if db_path is not None:
+            self.db_path = db_path
+        elif settings.data_dir is not None:
+            self.db_path = settings.data_dir / "dursor.db"
+        else:
+            raise ValueError("data_dir must be configured")
         self._connection: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:

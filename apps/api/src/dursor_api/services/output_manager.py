@@ -180,7 +180,9 @@ class OutputManager:
             while True:
                 try:
                     # Wait with timeout to allow checking completion
-                    output_line = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    output_line: OutputLine | None = await asyncio.wait_for(
+                        queue.get(), timeout=1.0
+                    )
 
                     if output_line is None:
                         # Completion signal
@@ -279,7 +281,7 @@ class OutputManager:
 
         return len(to_cleanup)
 
-    async def get_stats(self) -> dict:
+    async def get_stats(self) -> dict[str, int]:
         """Get statistics about the output manager.
 
         Returns:
