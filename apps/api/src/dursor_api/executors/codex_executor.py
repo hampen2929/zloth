@@ -131,13 +131,11 @@ class CodexExecutor:
 
                 if code == 0:
                     session_id = self._extract_session_id(out)
-                    patch, files_changed = await self._generate_diff(worktree_path)
-                    summary = self._generate_summary(files_changed, out)
                     return ExecutorResult(
                         success=True,
-                        summary=summary,
-                        patch=patch,
-                        files_changed=files_changed,
+                        summary="",
+                        patch="",
+                        files_changed=[],
                         logs=logs,
                         session_id=session_id,
                     )
@@ -222,131 +220,6 @@ class CodexExecutor:
             return m3.group("id")
 
         return None
-
-    async def _generate_diff(self, worktree_path: Path) -> tuple[str, list[FileDiff]]:
-        """Generate diff from git changes in worktree.
-
-        Args:
-            worktree_path: Path to the worktree.
-
-        Returns:
-            Tuple of (unified diff string, list of FileDiff objects).
-        """
-        import git
-
-        def _get_diff():
-            repo = git.Repo(worktree_path)
-
-            # Stage all changes
-            repo.git.add("-A")
-
-            # Get diff against HEAD
-            try:
-                diff_output = repo.git.diff("HEAD", "--cached", "--unified=3")
-            except git.GitCommandError:
-                diff_output = ""
-
-            # Parse diff to get file changes
-            files_changed = self._parse_diff(diff_output)
-
-            return diff_output, files_changed
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _get_diff)
-
-    def _parse_diff(self, diff: str) -> list[FileDiff]:
-        """Parse unified diff to extract file change information.
-
-        Args:
-            diff: Unified diff string.
-
-        Returns:
-            List of FileDiff objects.
-        """
-        files: list[FileDiff] = []
-        current_file: str | None = None
-        current_patch_lines: list[str] = []
-        added_lines = 0
-        removed_lines = 0
-
-        for line in diff.split("\n"):
-            # Match file header: --- a/path or +++ b/path
-            if line.startswith("--- a/"):
-                # Save previous file if exists
-                if current_file:
-                    files.append(FileDiff(
-                        path=current_file,
-                        added_lines=added_lines,
-                        removed_lines=removed_lines,
-                        patch="\n".join(current_patch_lines),
-                    ))
-                # Reset for new file
-                current_patch_lines = [line]
-                added_lines = 0
-                removed_lines = 0
-            elif line.startswith("+++ b/"):
-                current_file = line[6:]
-                current_patch_lines.append(line)
-            elif line.startswith("--- /dev/null"):
-                # New file
-                current_patch_lines = [line]
-                added_lines = 0
-                removed_lines = 0
-            elif line.startswith("+++ b/") and current_file is None:
-                # New file path
-                current_file = line[6:]
-                current_patch_lines.append(line)
-            elif current_file:
-                current_patch_lines.append(line)
-                if line.startswith("+") and not line.startswith("+++"):
-                    added_lines += 1
-                elif line.startswith("-") and not line.startswith("---"):
-                    removed_lines += 1
-
-        # Save last file
-        if current_file:
-            files.append(FileDiff(
-                path=current_file,
-                added_lines=added_lines,
-                removed_lines=removed_lines,
-                patch="\n".join(current_patch_lines),
-            ))
-
-        return files
-
-    def _generate_summary(
-        self,
-        files_changed: list[FileDiff],
-        output_lines: list[str],
-    ) -> str:
-        """Generate a human-readable summary of changes.
-
-        Args:
-            files_changed: List of changed files.
-            output_lines: Output from Codex execution.
-
-        Returns:
-            Summary string.
-        """
-        if not files_changed:
-            return "No files were modified."
-
-        total_added = sum(f.added_lines for f in files_changed)
-        total_removed = sum(f.removed_lines for f in files_changed)
-
-        summary_parts = [
-            f"Modified {len(files_changed)} file(s)",
-            f"+{total_added} -{total_removed} lines",
-        ]
-
-        # List files
-        file_list = ", ".join(f.path for f in files_changed[:5])
-        if len(files_changed) > 5:
-            file_list += f" and {len(files_changed) - 5} more"
-
-        summary_parts.append(f"Files: {file_list}")
-
-        return ". ".join(summary_parts) + "."
 
     async def cancel(self, process: asyncio.subprocess.Process) -> None:
         """Cancel a running Codex process.

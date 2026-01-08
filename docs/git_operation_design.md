@@ -4,36 +4,35 @@
 
 This document defines the design policy for placing git operations (worktree, add, commit, push, etc.) in dursor.
 
-## Current Design
+## Current Design (as implemented)
 
 ```mermaid
 graph TB
     subgraph dursor["dursor (Orchestrator)"]
-        WS[WorktreeService]
+        GS[GitService]
         EX[Executor]
         PR[PRService]
     end
     
-    WS -->|git worktree add| GIT[(Git Repository)]
-    WS -->|git worktree remove| GIT
-    WS -->|git fetch| GIT
+    GS -->|git worktree add/remove| GIT[(Git Repository)]
+    GS -->|git fetch| GIT
+    GS -->|git add -A, git diff| GIT
+    GS -->|git commit, git push| GIT
     
     EX -->|Run CLI| CLI[AI Agent CLI]
-    EX -->|git add -A| GIT
-    
-    PR -->|git checkout -b| GIT
-    PR -->|git add .| GIT
-    PR -->|git commit| GIT
-    PR -->|git push| GIT
+
+    PR -->|GitHub API: create/update PR| GH[GitHub]
 ```
 
-Currently, git operations are distributed across the following components:
+Currently, git operations are centralized in `GitService` and invoked by orchestrator services.
+Executors run agent CLIs and do **not** perform git operations (no staging/commit/push).
 
 | Component | Git Operations |
 |-----------|---------------|
-| `WorktreeService` | `git worktree add/remove`, `git fetch` |
-| Each `Executor` | `git add -A` (for diff generation) |
-| `PRService` | `git checkout -b`, `git add`, `git commit`, `git push` |
+| `GitService` | `git worktree add/remove`, `git fetch`, `git add -A`, `git diff`, `git commit`, `git push` |
+| Each `Executor` | (none) |
+| `RunService` | Calls `GitService` after CLI completes (stage/diff/commit/push) |
+| `PRService` | GitHub API operations (create/update PR). May retry push at PR creation time if needed |
 
 ---
 
@@ -217,9 +216,9 @@ flowchart TD
 
 ## Implementation Design
 
-### 1. New GitService
+### 1. GitService (Centralized)
 
-Unify git operations currently scattered across `WorktreeService` and `PRService`.
+Unify git operations in `GitService` (worktree/stage/diff/commit/push). Executors should not run git commands.
 
 ```python
 # apps/api/src/dursor_api/services/git_service.py
@@ -793,9 +792,9 @@ sequenceDiagram
     D->>G: git push
     D->>U: Show results (diff & commit info)
 
-    Note over U,G: Additional Instruction
+    Note over U,G: Additional Instruction (resume with session_id)
     U->>D: Send instruction 2
-    D->>A: Instruction 2 (session_id: abc123)
+    D->>A: Instruction 2 (resume_session_id: abc123)
     A->>G: Additional file edits
     A->>D: Complete
     D->>G: git add -A
@@ -808,9 +807,9 @@ sequenceDiagram
     D->>G: GitHub API: Create PR
     D->>U: PR URL
 
-    Note over U,G: Additional Instruction after PR Creation
+    Note over U,G: Additional Instruction after PR Creation (resume with session_id)
     U->>D: Send instruction 3
-    D->>A: Instruction 3 (session_id: abc123)
+    D->>A: Instruction 3 (resume_session_id: abc123)
     A->>G: Additional file edits
     A->>D: Complete
     D->>G: git add -A
@@ -845,7 +844,8 @@ class RunService:
         worktree_path = Path(existing_run.worktree_path)
         logs: list[str] = []
 
-        # Execute CLI with additional instruction
+        # Execute CLI with additional instruction (proactively resume conversation).
+        # If the CLI rejects the session (expired/in-use), retry once without it.
         executor = self._get_executor(existing_run.executor_type)
         result = await executor.execute(
             worktree_path=worktree_path,

@@ -502,9 +502,8 @@ class RunService:
 
             logs.append(f"Starting {executor_name} execution in {worktree_info.path}")
             logs.append(f"Working branch: {worktree_info.branch_name}")
-            # Note: Session ID resumption is currently disabled due to Claude Code CLI
-            # returning "Session ID is already in use" errors in -p mode.
-            # TODO: Investigate proper session management for conversation persistence
+            # We proactively attempt to resume conversations via session_id when available.
+            # If the CLI rejects the session (e.g., "already in use"), we retry once without it.
 
             # 2. Build instruction with constraints
             constraints = AgentConstraints()
@@ -513,12 +512,30 @@ class RunService:
 
             # 3. Execute the CLI (file editing only)
             logger.info(f"[{run.id[:8]}] Executing CLI...")
+            attempt_session_id = resume_session_id
             result = await executor.execute(
                 worktree_path=worktree_info.path,
                 instruction=instruction_with_constraints,
                 on_output=lambda line: self._log_output(run.id, line),
-                # Don't pass resume_session_id - see note above
+                resume_session_id=attempt_session_id,
             )
+            if (
+                not result.success
+                and attempt_session_id
+                and result.error
+                and ("session" in result.error.lower())
+                and ("already in use" in result.error.lower() or "in use" in result.error.lower())
+            ):
+                # Retry once without session continuation if the CLI rejects the session.
+                logs.append(
+                    "Session continuation failed (session already in use). Retrying without session_id."
+                )
+                result = await executor.execute(
+                    worktree_path=worktree_info.path,
+                    instruction=instruction_with_constraints,
+                    on_output=lambda line: self._log_output(run.id, line),
+                    resume_session_id=None,
+                )
             logger.info(f"[{run.id[:8]}] CLI execution completed: success={result.success}")
 
             if not result.success:
@@ -527,7 +544,7 @@ class RunService:
                     RunStatus.FAILED,
                     error=result.error,
                     logs=logs + result.logs,
-                    session_id=result.session_id,
+                    session_id=result.session_id or resume_session_id,
                 )
                 return
 
@@ -547,7 +564,7 @@ class RunService:
                     patch="",
                     files_changed=[],
                     logs=logs + result.logs,
-                    session_id=result.session_id,
+                    session_id=result.session_id or resume_session_id,
                 )
                 return
 
@@ -587,7 +604,7 @@ class RunService:
                 files_changed=files_changed,
                 logs=logs + result.logs,
                 warnings=result.warnings,
-                session_id=result.session_id,
+                session_id=result.session_id or resume_session_id,
                 commit_sha=commit_sha,
             )
 
