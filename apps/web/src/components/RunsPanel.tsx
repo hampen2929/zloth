@@ -146,7 +146,7 @@ export function RunsPanel({
                           ? 'bg-blue-900/40 border border-blue-700 shadow-sm'
                           : 'bg-gray-800 hover:bg-gray-750 border border-transparent hover:border-gray-700'
                       )}
-                      aria-selected={isSelected}
+                      aria-pressed={isSelected}
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-sm text-gray-100 flex items-center gap-1.5">

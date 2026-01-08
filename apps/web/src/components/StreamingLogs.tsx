@@ -33,12 +33,15 @@ export function StreamingLogs({
   className,
 }: StreamingLogsProps) {
   const [lines, setLines] = useState<string[]>(initialLogs);
-  const [isConnected, setIsConnected] = useState(false);
+  const [streamActive, setStreamActive] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const linesLengthRef = useRef(initialLogs.length);
+
+  // Derive isConnected from isRunning and streamActive
+  const isConnected = isRunning && streamActive;
 
   // Handle scroll to detect if user manually scrolled up
   const handleScroll = useCallback(() => {
@@ -65,17 +68,19 @@ export function StreamingLogs({
   useEffect(() => {
     // Only connect if running
     if (!isRunning) {
-      setIsConnected(false);
       return;
     }
-
-    setError(null);
-    setIsConnected(true);
 
     // Start streaming from the current line count
     // This avoids duplicate lines if we already have some from initialLogs
     // Using ref to avoid reconnection loops when lines change
     const fromLine = linesLengthRef.current;
+
+    // Use a microtask to set initial state to avoid synchronous setState in effect
+    queueMicrotask(() => {
+      setError(null);
+      setStreamActive(true);
+    });
 
     const cleanup = runsApi.streamLogs(runId, {
       fromLine,
@@ -95,12 +100,12 @@ export function StreamingLogs({
         });
       },
       onComplete: () => {
-        setIsConnected(false);
+        setStreamActive(false);
       },
       onError: (err: Error) => {
         console.error('Stream error:', err);
         setError(err.message);
-        setIsConnected(false);
+        setStreamActive(false);
       },
     });
 
@@ -109,6 +114,7 @@ export function StreamingLogs({
     return () => {
       cleanup();
       cleanupRef.current = null;
+      setStreamActive(false);
     };
   }, [runId, isRunning]);
 

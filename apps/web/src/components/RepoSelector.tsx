@@ -37,24 +37,29 @@ export default function RepoSelector({ onSelect, disabled }: RepoSelectorProps) 
     );
   }, [repos, repoSearch]);
 
-  // Set default branch when repo is selected
-  useEffect(() => {
-    if (selectedRepo && branches && branches.length > 0) {
-      // Prefer the default branch, otherwise first branch
-      if (branches.includes(selectedRepo.default_branch)) {
-        setSelectedBranch(selectedRepo.default_branch);
-      } else {
-        setSelectedBranch(branches[0]);
-      }
+  // Compute the effective branch based on available branches
+  // This is the actual branch that should be used for display and parent notification
+  const effectiveBranch = useMemo(() => {
+    if (!selectedRepo || !branches || branches.length === 0) {
+      return selectedBranch;
     }
-  }, [selectedRepo, branches]);
+    // If user has manually selected a valid branch, use it
+    if (selectedBranch && branches.includes(selectedBranch)) {
+      return selectedBranch;
+    }
+    // Otherwise, prefer the default branch, or first branch
+    if (branches.includes(selectedRepo.default_branch)) {
+      return selectedRepo.default_branch;
+    }
+    return branches[0];
+  }, [selectedRepo, branches, selectedBranch]);
 
   // Notify parent when selection is complete
   useEffect(() => {
-    if (selectedRepo && selectedBranch) {
-      onSelect(selectedRepo.owner, selectedRepo.name, selectedBranch);
+    if (selectedRepo && effectiveBranch) {
+      onSelect(selectedRepo.owner, selectedRepo.name, effectiveBranch);
     }
-  }, [selectedRepo, selectedBranch, onSelect]);
+  }, [selectedRepo, effectiveBranch, onSelect]);
 
   if (reposError) {
     return (
@@ -180,7 +185,7 @@ export default function RepoSelector({ onSelect, disabled }: RepoSelectorProps) 
             Branch
           </label>
           <select
-            value={selectedBranch}
+            value={effectiveBranch}
             onChange={(e) => setSelectedBranch(e.target.value)}
             disabled={disabled || branchesLoading}
             className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white"
