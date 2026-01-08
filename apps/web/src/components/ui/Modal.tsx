@@ -38,14 +38,47 @@ export function Modal({
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<Element | null>(null);
 
-  // Handle escape key
+  // Get all focusable elements within the modal
+  const getFocusableElements = useCallback(() => {
+    if (!modalRef.current) return [];
+    const elements = modalRef.current.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
+    );
+    return Array.from(elements) as HTMLElement[];
+  }, []);
+
+  // Handle keyboard events (Escape and Tab cycling)
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (closeOnEscape && event.key === 'Escape') {
         onClose();
+        return;
+      }
+
+      // Focus trap - Tab cycling
+      if (event.key === 'Tab') {
+        const focusableElements = getFocusableElements();
+        if (focusableElements.length === 0) return;
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (event.shiftKey) {
+          // Shift + Tab: go to last element if at first
+          if (document.activeElement === firstElement) {
+            event.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          // Tab: go to first element if at last
+          if (document.activeElement === lastElement) {
+            event.preventDefault();
+            firstElement.focus();
+          }
+        }
       }
     },
-    [closeOnEscape, onClose]
+    [closeOnEscape, onClose, getFocusableElements]
   );
 
   // Focus trap and body scroll lock
@@ -55,13 +88,11 @@ export function Modal({
       document.body.style.overflow = 'hidden';
       document.addEventListener('keydown', handleKeyDown);
 
-      // Focus the modal
+      // Focus the first focusable element in the modal
       setTimeout(() => {
-        const focusableElements = modalRef.current?.querySelectorAll(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusableElements && focusableElements.length > 0) {
-          (focusableElements[0] as HTMLElement).focus();
+        const focusableElements = getFocusableElements();
+        if (focusableElements.length > 0) {
+          focusableElements[0].focus();
         }
       }, 0);
 
@@ -73,7 +104,7 @@ export function Modal({
         }
       };
     }
-  }, [isOpen, handleKeyDown]);
+  }, [isOpen, handleKeyDown, getFocusableElements]);
 
   if (!isOpen) return null;
 

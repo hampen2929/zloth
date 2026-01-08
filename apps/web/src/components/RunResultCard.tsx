@@ -177,7 +177,7 @@ function SummaryTab({ run }: { run: Run }) {
     <div className="space-y-4">
       <div>
         <h3 className="font-medium text-gray-200 text-sm mb-2 flex items-center gap-2">
-          <span>📋</span>
+          <DocumentTextIcon className="w-5 h-5 text-gray-400" />
           <span>Summary</span>
         </h3>
         <p className="text-gray-300 text-sm leading-relaxed">{run.summary}</p>

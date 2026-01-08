@@ -116,3 +116,52 @@ export const runStatusColors = {
 } as const;
 
 export type RunStatus = keyof typeof runStatusColors;
+
+/**
+ * Typography classes for consistent text styling
+ */
+export const typography = {
+  h1: 'text-2xl font-bold text-gray-100',
+  h2: 'text-xl font-semibold text-gray-100',
+  h3: 'text-lg font-semibold text-gray-100',
+  h4: 'text-base font-medium text-gray-200',
+  body: 'text-sm text-gray-300',
+  bodySmall: 'text-xs text-gray-400',
+  code: 'font-mono text-sm',
+  label: 'text-sm font-medium text-gray-200',
+  hint: 'text-xs text-gray-500',
+  error: 'text-sm text-red-400',
+} as const;
+
+/**
+ * Standardized icon sizes for consistent usage
+ */
+export const iconSizes = {
+  xs: 'w-3 h-3', // Inline, badges
+  sm: 'w-4 h-4', // Buttons, list items
+  md: 'w-5 h-5', // Standalone icon buttons
+  lg: 'w-6 h-6', // Header icons
+  xl: 'w-8 h-8', // Empty state illustrations
+  '2xl': 'w-12 h-12', // Large empty states
+} as const;
+
+export type IconSize = keyof typeof iconSizes;
+
+/**
+ * Button variants with consistent styling
+ */
+export const buttonVariants = {
+  primary: 'bg-blue-600 hover:bg-blue-700 text-white button-press',
+  secondary: 'bg-gray-700 hover:bg-gray-600 text-gray-100 button-press',
+  danger: 'bg-red-600 hover:bg-red-700 text-white button-press',
+  ghost: 'bg-transparent hover:bg-gray-800 text-gray-300 button-press',
+  success: 'bg-green-600 hover:bg-green-700 text-white button-press',
+} as const;
+
+/**
+ * Card interaction classes
+ */
+export const cardInteractions = {
+  selectable: 'card-selectable cursor-pointer',
+  static: '',
+} as const;
