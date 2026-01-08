@@ -15,6 +15,13 @@ import {
   CommandLineIcon,
 } from '@heroicons/react/24/outline';
 
+interface PendingMessage {
+  id: string;
+  content: string;
+  status: 'pending' | 'error';
+  errorMessage?: string;
+}
+
 interface ChatPanelProps {
   taskId: string;
   messages: Message[];
@@ -36,13 +43,27 @@ export function ChatPanel({
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
   const [currentExecutor, setCurrentExecutor] = useState<ExecutorType>(executorType);
   const [loading, setLoading] = useState(false);
+  const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, pendingMessages]);
+
+  // Remove pending message when real message arrives
+  useEffect(() => {
+    if (pendingMessages.length > 0 && messages.length > 0) {
+      const lastPending = pendingMessages[pendingMessages.length - 1];
+      const matchingMessage = messages.find(
+        (m) => m.role === 'user' && m.content === lastPending.content
+      );
+      if (matchingMessage) {
+        setPendingMessages((prev) => prev.filter((p) => p.id !== lastPending.id));
+      }
+    }
+  }, [messages, pendingMessages]);
 
   // Select all models by default if none specified
   useEffect(() => {
@@ -62,16 +83,25 @@ export function ChatPanel({
     const isCLIExecutor = currentExecutor === 'claude_code' || currentExecutor === 'codex_cli' || currentExecutor === 'gemini_cli';
     if (!isCLIExecutor && selectedModels.length === 0) return;
 
+    // Optimistic UI: Clear input and show pending message immediately
+    const pendingId = `pending-${Date.now()}`;
+    const messageContent = input.trim();
+
+    setPendingMessages((prev) => [
+      ...prev,
+      { id: pendingId, content: messageContent, status: 'pending' },
+    ]);
+    setInput('');
     setLoading(true);
 
     try {
-      // Add user message
-      await tasksApi.addMessage(taskId, {
+      // Add user message and get the message ID
+      const message = await tasksApi.addMessage(taskId, {
         role: 'user',
-        content: input.trim(),
+        content: messageContent,
       });
 
-      // Create runs based on executor type
+      // Create runs based on executor type, linking to the message
       const cliExecutorNames: Record<string, string> = {
         'claude_code': 'Claude Code',
         'codex_cli': 'Codex',
@@ -80,27 +110,46 @@ export function ChatPanel({
 
       if (isCLIExecutor) {
         await runsApi.create(taskId, {
-          instruction: input.trim(),
+          instruction: messageContent,
           executor_type: currentExecutor,
+          message_id: message.id,
         });
         success(`Started ${cliExecutorNames[currentExecutor]} run`);
       } else {
         await runsApi.create(taskId, {
-          instruction: input.trim(),
+          instruction: messageContent,
           model_ids: selectedModels,
           executor_type: 'patch_agent',
+          message_id: message.id,
         });
         success(`Started ${selectedModels.length} run${selectedModels.length > 1 ? 's' : ''}`);
       }
 
-      setInput('');
       onRunsCreated();
     } catch (err) {
       console.error('Failed to create runs:', err);
+      // Mark pending message as error and restore input
+      setPendingMessages((prev) =>
+        prev.map((p) =>
+          p.id === pendingId
+            ? { ...p, status: 'error', errorMessage: 'Failed to send. Click to retry.' }
+            : p
+        )
+      );
       error('Failed to create runs. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const retryPendingMessage = (pendingId: string, content: string) => {
+    // Remove the failed message and restore the content to input
+    setPendingMessages((prev) => prev.filter((p) => p.id !== pendingId));
+    setInput(content);
+  };
+
+  const dismissPendingMessage = (pendingId: string) => {
+    setPendingMessages((prev) => prev.filter((p) => p.id !== pendingId));
   };
 
   const toggleModel = (modelId: string) => {
@@ -134,29 +183,77 @@ export function ChatPanel({
             </p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn(
-                'p-3 rounded-lg animate-in fade-in duration-200',
-                msg.role === 'user'
-                  ? 'bg-blue-900/30 border border-blue-800'
-                  : 'bg-gray-800'
-              )}
-            >
-              <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
-                {msg.role === 'user' ? (
-                  <UserIcon className="w-4 h-4" />
-                ) : (
-                  <CpuChipIcon className="w-4 h-4" />
+          <>
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={cn(
+                  'p-3 rounded-lg animate-in fade-in duration-200',
+                  msg.role === 'user'
+                    ? 'bg-blue-900/30 border border-blue-800'
+                    : 'bg-gray-800'
                 )}
-                <span className="capitalize font-medium">{msg.role}</span>
+              >
+                <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                  {msg.role === 'user' ? (
+                    <UserIcon className="w-4 h-4" />
+                  ) : (
+                    <CpuChipIcon className="w-4 h-4" />
+                  )}
+                  <span className="capitalize font-medium">{msg.role}</span>
+                </div>
+                <div className="text-sm whitespace-pre-wrap text-gray-200">
+                  {msg.content}
+                </div>
               </div>
-              <div className="text-sm whitespace-pre-wrap text-gray-200">
-                {msg.content}
+            ))}
+            {/* Pending messages (optimistic UI) */}
+            {pendingMessages.map((pending) => (
+              <div
+                key={pending.id}
+                className={cn(
+                  'p-3 rounded-lg animate-in fade-in duration-200',
+                  pending.status === 'pending'
+                    ? 'bg-blue-900/20 border border-blue-800/50'
+                    : 'bg-red-900/20 border border-red-800/50'
+                )}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <UserIcon className="w-4 h-4" />
+                    <span className="font-medium">User</span>
+                    {pending.status === 'pending' && (
+                      <span className="text-blue-400 animate-pulse">Sending...</span>
+                    )}
+                  </div>
+                  {pending.status === 'error' && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => retryPendingMessage(pending.id, pending.content)}
+                        className="text-xs text-blue-400 hover:text-blue-300 underline"
+                      >
+                        Retry
+                      </button>
+                      <button
+                        onClick={() => dismissPendingMessage(pending.id)}
+                        className="text-xs text-gray-500 hover:text-gray-400"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="text-sm whitespace-pre-wrap text-gray-200">
+                  {pending.content}
+                </div>
+                {pending.status === 'error' && pending.errorMessage && (
+                  <div className="mt-2 text-xs text-red-400">
+                    {pending.errorMessage}
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            ))}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>

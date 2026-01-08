@@ -55,6 +55,7 @@ async def get_task(
     run_summaries = [
         RunSummary(
             id=r.id,
+            message_id=r.message_id,
             model_id=r.model_id,
             model_name=r.model_name,
             provider=r.provider,

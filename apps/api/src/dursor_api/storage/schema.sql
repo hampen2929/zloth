@@ -50,6 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_task ON messages(task_id);
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL REFERENCES tasks(id),
+    message_id TEXT REFERENCES messages(id),  -- links run to triggering message
     model_id TEXT,                   -- can be NULL for claude_code executor
     model_name TEXT,                 -- denormalized for env model support
     provider TEXT,                   -- denormalized for env model support
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_task ON runs(task_id);
+CREATE INDEX IF NOT EXISTS idx_runs_message ON runs(message_id);
 CREATE INDEX IF NOT EXISTS idx_runs_model ON runs(model_id);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 

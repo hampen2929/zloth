@@ -137,12 +137,14 @@ class RunCreate(BaseModel):
         default=ExecutorType.PATCH_AGENT,
         description="Executor type: patch_agent (LLM) or claude_code (CLI)",
     )
+    message_id: str | None = Field(None, description="ID of the triggering message")
 
 
 class RunSummary(BaseModel):
     """Summary of a Run."""
 
     id: str
+    message_id: str | None = None
     model_id: str | None
     model_name: str | None
     provider: Provider | None
@@ -167,6 +169,7 @@ class Run(BaseModel):
 
     id: str
     task_id: str
+    message_id: str | None = None  # Links run to triggering message
     model_id: str | None
     model_name: str | None
     provider: Provider | None

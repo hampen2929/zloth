@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import useSWR from 'swr';
@@ -14,7 +14,12 @@ import {
   Cog6ToothIcon,
   ChevronUpIcon,
   ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
+  ArrowsUpDownIcon,
 } from '@heroicons/react/24/outline';
+
+type SortOption = 'newest' | 'oldest' | 'alphabetical';
 
 interface SidebarProps {
   onSettingsClick: () => void;
@@ -26,25 +31,64 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
     refreshInterval: 5000,
   });
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOption, setSortOption] = useState<SortOption>('newest');
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
 
   const currentTaskId = pathname?.match(/\/tasks\/(.+)/)?.[1];
 
-  // Close menu when clicking outside
+  // Filter and sort tasks
+  const filteredTasks = useMemo(() => {
+    if (!tasks) return [];
+
+    let result = [...tasks];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter((task) =>
+        (task.title || 'Untitled Task').toLowerCase().includes(query)
+      );
+    }
+
+    // Sort
+    switch (sortOption) {
+      case 'newest':
+        result.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        break;
+      case 'oldest':
+        result.sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime());
+        break;
+      case 'alphabetical':
+        result.sort((a, b) =>
+          (a.title || 'Untitled Task').localeCompare(b.title || 'Untitled Task')
+        );
+        break;
+    }
+
+    return result;
+  }, [tasks, searchQuery, sortOption]);
+
+  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setAccountMenuOpen(false);
       }
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setShowSortMenu(false);
+      }
     };
 
-    if (accountMenuOpen) {
+    if (accountMenuOpen || showSortMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [accountMenuOpen]);
+  }, [accountMenuOpen, showSortMenu]);
 
   return (
     <aside className="w-64 h-screen flex flex-col bg-gray-900 border-r border-gray-800">
@@ -76,20 +120,105 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
         </Link>
       </div>
 
+      {/* Search and Filter */}
+      <div className="px-3 py-2 border-b border-gray-800">
+        <div className="relative">
+          <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search tasks..."
+            className={cn(
+              'w-full pl-8 pr-8 py-1.5 bg-gray-800 border border-gray-700 rounded-lg',
+              'text-sm text-gray-100 placeholder:text-gray-500',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'transition-colors'
+            )}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Sort Options */}
+        <div className="flex items-center justify-between mt-2" ref={sortMenuRef}>
+          <span className="text-xs text-gray-500">
+            {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''}
+          </span>
+          <div className="relative">
+            <button
+              onClick={() => setShowSortMenu(!showSortMenu)}
+              className={cn(
+                'flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors',
+                showSortMenu && 'text-gray-300'
+              )}
+            >
+              <ArrowsUpDownIcon className="w-3.5 h-3.5" />
+              <span>
+                {sortOption === 'newest' && 'Newest'}
+                {sortOption === 'oldest' && 'Oldest'}
+                {sortOption === 'alphabetical' && 'A-Z'}
+              </span>
+            </button>
+            {showSortMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 min-w-[120px] animate-in fade-in slide-in-from-top-2 duration-150">
+                <button
+                  onClick={() => {
+                    setSortOption('newest');
+                    setShowSortMenu(false);
+                  }}
+                  className={cn(
+                    'w-full px-3 py-2 text-xs text-left transition-colors',
+                    sortOption === 'newest'
+                      ? 'bg-blue-900/40 text-blue-400'
+                      : 'text-gray-300 hover:bg-gray-700'
+                  )}
+                >
+                  Newest first
+                </button>
+                <button
+                  onClick={() => {
+                    setSortOption('oldest');
+                    setShowSortMenu(false);
+                  }}
+                  className={cn(
+                    'w-full px-3 py-2 text-xs text-left transition-colors',
+                    sortOption === 'oldest'
+                      ? 'bg-blue-900/40 text-blue-400'
+                      : 'text-gray-300 hover:bg-gray-700'
+                  )}
+                >
+                  Oldest first
+                </button>
+                <button
+                  onClick={() => {
+                    setSortOption('alphabetical');
+                    setShowSortMenu(false);
+                  }}
+                  className={cn(
+                    'w-full px-3 py-2 text-xs text-left transition-colors',
+                    sortOption === 'alphabetical'
+                      ? 'bg-blue-900/40 text-blue-400'
+                      : 'text-gray-300 hover:bg-gray-700'
+                  )}
+                >
+                  Alphabetical
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Task History */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-3 py-2">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Recent Tasks
-            </h2>
-            {tasks && tasks.length > 0 && (
-              <span className="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">
-                {tasks.length}
-              </span>
-            )}
-          </div>
-
           {isLoading ? (
             <TaskListSkeleton count={5} />
           ) : !tasks || tasks.length === 0 ? (
@@ -98,9 +227,20 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
               <p className="text-gray-500 text-sm">No tasks yet</p>
               <p className="text-gray-600 text-xs mt-1">Create your first task above</p>
             </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="flex flex-col items-center py-6 text-center">
+              <MagnifyingGlassIcon className="w-8 h-8 text-gray-700 mb-2" />
+              <p className="text-gray-500 text-sm">No matching tasks</p>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-blue-400 hover:text-blue-300 text-xs mt-1 underline"
+              >
+                Clear search
+              </button>
+            </div>
           ) : (
             <div className="space-y-1">
-              {tasks.slice(0, 20).map((task) => (
+              {filteredTasks.slice(0, 50).map((task) => (
                 <Link
                   key={task.id}
                   href={`/tasks/${task.id}`}

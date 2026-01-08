@@ -307,6 +307,7 @@ class RunDAO:
         task_id: str,
         instruction: str,
         executor_type: ExecutorType = ExecutorType.PATCH_AGENT,
+        message_id: str | None = None,
         model_id: str | None = None,
         model_name: str | None = None,
         provider: Provider | None = None,
@@ -321,6 +322,7 @@ class RunDAO:
             task_id: Task ID.
             instruction: Task instruction.
             executor_type: Type of executor (patch_agent or claude_code).
+            message_id: ID of the triggering message.
             model_id: Model profile ID (required for patch_agent).
             model_name: Model name (required for patch_agent).
             provider: Model provider (required for patch_agent).
@@ -338,15 +340,16 @@ class RunDAO:
         await self.db.connection.execute(
             """
             INSERT INTO runs (
-                id, task_id, model_id, model_name, provider, executor_type,
+                id, task_id, message_id, model_id, model_name, provider, executor_type,
                 working_branch, worktree_path, session_id, instruction,
                 base_ref, status, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 id,
                 task_id,
+                message_id,
                 model_id,
                 model_name,
                 provider.value if provider else None,
@@ -365,6 +368,7 @@ class RunDAO:
         return Run(
             id=id,
             task_id=task_id,
+            message_id=message_id,
             model_id=model_id,
             model_name=model_name,
             provider=provider,
@@ -567,9 +571,13 @@ class RunDAO:
             ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
         )
 
+        # Handle message_id for backward compatibility
+        message_id = row["message_id"] if "message_id" in row.keys() else None
+
         return Run(
             id=row["id"],
             task_id=row["task_id"],
+            message_id=message_id,
             model_id=row["model_id"],
             model_name=row["model_name"],
             provider=provider,

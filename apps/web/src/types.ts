@@ -77,6 +77,7 @@ export interface MessageCreate {
 // Run
 export interface RunSummary {
   id: string;
+  message_id: string | null;
   model_id: string | null;
   model_name: string | null;
   provider: Provider | null;
@@ -97,6 +98,7 @@ export interface FileDiff {
 export interface Run {
   id: string;
   task_id: string;
+  message_id: string | null;
   model_id: string | null;
   model_name: string | null;
   provider: Provider | null;
@@ -123,6 +125,7 @@ export interface RunCreate {
   model_ids?: string[];
   base_ref?: string;
   executor_type?: ExecutorType;
+  message_id?: string;
 }
 
 export interface RunsCreated {
