@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { prsApi } from '@/lib/api';
 import type { Run } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
@@ -36,18 +36,33 @@ const tabConfig: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'logs', label: 'Logs', icon: <CommandLineIcon className="w-4 h-4" /> },
 ];
 
+// Determine the default tab based on run status
+function getDefaultTab(status: Run['status']): Tab {
+  // Show logs tab for running/queued runs to see real-time output
+  if (status === 'running' || status === 'queued') {
+    return 'logs';
+  }
+  // Show diff tab for completed runs
+  return 'diff';
+}
+
 export function RunDetailPanel({
   run,
   taskId,
   onPRCreated,
 }: RunDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('diff');
+  const [activeTab, setActiveTab] = useState<Tab>(() => getDefaultTab(run.status));
   const [showPRForm, setShowPRForm] = useState(false);
   const [prTitle, setPRTitle] = useState('');
   const [prBody, setPRBody] = useState('');
   const [creating, setCreating] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Update tab when run changes or status changes
+  useEffect(() => {
+    setActiveTab(getDefaultTab(run.status));
+  }, [run.id, run.status]);
   const { success, error } = useToast();
 
   const handleCreatePR = async (e: React.FormEvent) => {
