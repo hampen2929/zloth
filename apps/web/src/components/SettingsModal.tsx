@@ -518,26 +518,27 @@ function DefaultsTab() {
       if (repos && preferences.default_repo_owner && preferences.default_repo_name) {
         const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
         setSelectedRepo(repoFullName);
+        // Find repository's default branch from repos list
+        const repoInfo = repos.find(r => r.full_name === repoFullName);
+        const repoDefaultBranch = repoInfo?.default_branch;
         // Load branches for the default repo
-        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch);
+        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch, repoDefaultBranch);
       }
     }
   }, [preferences, repos]);
 
-  const loadBranches = async (owner: string, repo: string, defaultBranch?: string | null) => {
+  const loadBranches = async (owner: string, repo: string, defaultBranch?: string | null, repoDefaultBranch?: string | null) => {
     setBranchesLoading(true);
     try {
       const branchList = await githubApi.listBranches(owner, repo);
 
-      // Get repository's default branch from repos list
-      const repoInfo = repos?.find(r => r.owner === owner && r.name === repo);
-      const repoDefaultBranch = repoInfo?.default_branch;
-
       // Sort branches: repository default branch first, then alphabetically
       const sortedBranches = [...branchList].sort((a, b) => {
         // Repository's default branch comes first
-        if (a === repoDefaultBranch) return -1;
-        if (b === repoDefaultBranch) return 1;
+        if (repoDefaultBranch) {
+          if (a === repoDefaultBranch) return -1;
+          if (b === repoDefaultBranch) return 1;
+        }
         // Then alphabetically
         return a.localeCompare(b);
       });
@@ -564,7 +565,10 @@ function DefaultsTab() {
 
     if (fullName) {
       const [owner, repo] = fullName.split('/');
-      await loadBranches(owner, repo);
+      // Find repository's default branch from repos list
+      const repoInfo = repos?.find(r => r.full_name === fullName);
+      const repoDefaultBranch = repoInfo?.default_branch;
+      await loadBranches(owner, repo, null, repoDefaultBranch);
     }
   };
 
