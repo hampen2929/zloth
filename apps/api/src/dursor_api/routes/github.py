@@ -2,12 +2,12 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from dursor_api.dependencies import get_github_service
 from dursor_api.domain.models import (
     GitHubAppConfig,
     GitHubAppConfigSave,
     GitHubRepository,
 )
-from dursor_api.dependencies import get_github_service
 from dursor_api.services.github_service import GitHubService
 
 router = APIRouter(prefix="/github", tags=["github"])

@@ -9,10 +9,10 @@ from typing import Any
 
 from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
 from dursor_api.domain.models import (
+    PR,
     FileDiff,
     Message,
     ModelProfile,
-    PR,
     Repo,
     Run,
     Task,
@@ -50,7 +50,8 @@ class ModelProfileDAO:
 
         await self.db.connection.execute(
             """
-            INSERT INTO model_profiles (id, provider, model_name, display_name, api_key_encrypted, created_at)
+            INSERT INTO model_profiles
+            (id, provider, model_name, display_name, api_key_encrypted, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (id, provider.value, model_name, display_name, api_key_encrypted, created_at),
@@ -85,9 +86,7 @@ class ModelProfileDAO:
 
     async def delete(self, id: str) -> bool:
         """Delete a model profile."""
-        cursor = await self.db.connection.execute(
-            "DELETE FROM model_profiles WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("DELETE FROM model_profiles WHERE id = ?", (id,))
         await self.db.connection.commit()
         return cursor.rowcount > 0
 
@@ -128,7 +127,8 @@ class RepoDAO:
 
         await self.db.connection.execute(
             """
-            INSERT INTO repos (id, repo_url, default_branch, latest_commit, workspace_path, created_at)
+            INSERT INTO repos
+            (id, repo_url, default_branch, latest_commit, workspace_path, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (id, repo_url, default_branch, latest_commit, workspace_path, created_at),
@@ -146,9 +146,7 @@ class RepoDAO:
 
     async def get(self, id: str) -> Repo | None:
         """Get a repo by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM repos WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM repos WHERE id = ?", (id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -206,9 +204,7 @@ class TaskDAO:
 
     async def get(self, id: str) -> Task | None:
         """Get a task by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM tasks WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM tasks WHERE id = ?", (id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -334,14 +330,27 @@ class RunDAO:
 
         await self.db.connection.execute(
             """
-            INSERT INTO runs (id, task_id, model_id, model_name, provider, executor_type, working_branch, worktree_path, session_id, instruction, base_ref, status, created_at)
+            INSERT INTO runs (
+                id, task_id, model_id, model_name, provider, executor_type,
+                working_branch, worktree_path, session_id, instruction,
+                base_ref, status, created_at
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                id, task_id, model_id, model_name,
+                id,
+                task_id,
+                model_id,
+                model_name,
                 provider.value if provider else None,
-                executor_type.value, working_branch, worktree_path, session_id,
-                instruction, base_ref, RunStatus.QUEUED.value, created_at
+                executor_type.value,
+                working_branch,
+                worktree_path,
+                session_id,
+                instruction,
+                base_ref,
+                RunStatus.QUEUED.value,
+                created_at,
             ),
         )
         await self.db.connection.commit()
@@ -547,7 +556,9 @@ class RunDAO:
         provider = Provider(row["provider"]) if row["provider"] else None
 
         # Handle executor_type with default for backward compatibility
-        executor_type = ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
+        executor_type = (
+            ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
+        )
 
         return Run(
             id=row["id"],
@@ -570,8 +581,10 @@ class RunDAO:
             warnings=warnings,
             error=row["error"],
             created_at=datetime.fromisoformat(row["created_at"]),
-            started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
+            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            ),
         )
 
 
@@ -597,7 +610,10 @@ class PRDAO:
 
         await self.db.connection.execute(
             """
-            INSERT INTO prs (id, task_id, number, url, branch, title, body, latest_commit, status, created_at, updated_at)
+            INSERT INTO prs (
+                id, task_id, number, url, branch, title, body,
+                latest_commit, status, created_at, updated_at
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (id, task_id, number, url, branch, title, body, latest_commit, "open", now, now),
@@ -620,9 +636,7 @@ class PRDAO:
 
     async def get(self, id: str) -> PR | None:
         """Get a PR by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM prs WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM prs WHERE id = ?", (id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -688,9 +702,7 @@ class UserPreferencesDAO:
 
     async def get(self) -> UserPreferences | None:
         """Get user preferences."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM user_preferences WHERE id = 1"
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM user_preferences WHERE id = 1")
         row = await cursor.fetchone()
         if not row:
             return None
@@ -708,9 +720,7 @@ class UserPreferencesDAO:
         now = now_iso()
 
         # Try to update first
-        cursor = await self.db.connection.execute(
-            "SELECT id FROM user_preferences WHERE id = 1"
-        )
+        cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")
         exists = await cursor.fetchone()
 
         if exists:

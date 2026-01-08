@@ -165,7 +165,8 @@ class GitService:
             # Create worktree with new branch
             source_repo.git.worktree(
                 "add",
-                "-b", branch_name,
+                "-b",
+                branch_name,
                 str(worktree_path),
                 base_ref,
             )
@@ -287,6 +288,7 @@ class GitService:
             worktree_path: Path to the worktree to remove.
             delete_branch: Whether to also delete the local branch.
         """
+
         def _cleanup():
             if not worktree_path.exists():
                 return
@@ -336,6 +338,7 @@ class GitService:
         Returns:
             List of WorktreeInfo objects.
         """
+
         def _list():
             source_repo = git.Repo(repo.workspace_path)
             worktrees = []
@@ -352,12 +355,14 @@ class GitService:
                         current_branch = line[18:]
                     elif line == "" and current_path and current_branch:
                         if str(current_path).startswith(str(self.worktrees_dir)):
-                            worktrees.append(WorktreeInfo(
-                                path=current_path,
-                                branch_name=current_branch,
-                                base_branch="",
-                                created_at=datetime.utcnow(),
-                            ))
+                            worktrees.append(
+                                WorktreeInfo(
+                                    path=current_path,
+                                    branch_name=current_branch,
+                                    base_branch="",
+                                    created_at=datetime.utcnow(),
+                                )
+                            )
                         current_path = None
                         current_branch = None
 
@@ -383,6 +388,7 @@ class GitService:
         Returns:
             True if valid, False otherwise.
         """
+
         def _check():
             if not worktree_path.exists():
                 return False
@@ -412,6 +418,7 @@ class GitService:
         Returns:
             GitStatus with staged, modified, untracked, and deleted files.
         """
+
         def _get_status():
             repo = git.Repo(worktree_path)
             status = GitStatus()
@@ -445,6 +452,7 @@ class GitService:
         Args:
             worktree_path: Path to the worktree.
         """
+
         def _stage_all():
             repo = git.Repo(worktree_path)
             repo.git.add("-A")
@@ -458,6 +466,7 @@ class GitService:
         Args:
             worktree_path: Path to the worktree.
         """
+
         def _unstage_all():
             repo = git.Repo(worktree_path)
             try:
@@ -479,6 +488,7 @@ class GitService:
         Returns:
             Unified diff string.
         """
+
         def _get_diff():
             repo = git.Repo(worktree_path)
             try:
@@ -506,6 +516,7 @@ class GitService:
         Returns:
             Unified diff string.
         """
+
         def _get_diff_from_base():
             repo = git.Repo(worktree_path)
             try:
@@ -533,6 +544,7 @@ class GitService:
             worktree_path: Path to the worktree.
             hard: If True, discard all changes; otherwise only unstage.
         """
+
         def _reset():
             repo = git.Repo(worktree_path)
             if hard:
@@ -562,6 +574,7 @@ class GitService:
         Returns:
             Commit SHA.
         """
+
         def _commit():
             repo = git.Repo(worktree_path)
             repo.index.commit(message)
@@ -584,6 +597,7 @@ class GitService:
         Returns:
             New commit SHA.
         """
+
         def _amend():
             repo = git.Repo(worktree_path)
             if message:
@@ -612,6 +626,7 @@ class GitService:
             branch_name: Name of the new branch.
             base: Base branch/commit to create from.
         """
+
         def _create_branch():
             repo = git.Repo(repo_path)
             repo.git.checkout("-b", branch_name, base)
@@ -626,6 +641,7 @@ class GitService:
             repo_path: Path to the repository.
             branch_name: Branch name to checkout.
         """
+
         def _checkout():
             repo = git.Repo(repo_path)
             repo.git.checkout(branch_name)
@@ -646,6 +662,7 @@ class GitService:
             branch_name: Branch name to delete.
             force: If True, force delete even if not merged.
         """
+
         def _delete_branch():
             repo = git.Repo(repo_path)
             flag = "-D" if force else "-d"
@@ -673,6 +690,7 @@ class GitService:
             auth_url: Authenticated URL for push (e.g., with token).
             force: If True, force push.
         """
+
         def _push():
             repo = git.Repo(repo_path)
 
@@ -718,6 +736,7 @@ class GitService:
             repo_path: Path to the repository.
             remote: Remote name.
         """
+
         def _fetch():
             repo = git.Repo(repo_path)
             repo.remotes[remote].fetch()
@@ -738,6 +757,7 @@ class GitService:
             branch: Branch name to delete.
             auth_url: Authenticated URL for push (e.g., with token).
         """
+
         def _delete_remote_branch():
             repo = git.Repo(repo_path)
 
@@ -774,6 +794,7 @@ class GitService:
             repo_path: Path to the repository.
             soft: If True, keep changes staged.
         """
+
         def _reset_to_previous():
             repo = git.Repo(repo_path)
             mode = "--soft" if soft else "--mixed"
@@ -795,6 +816,7 @@ class GitService:
         Returns:
             Current branch name.
         """
+
         def _get_current_branch():
             repo = git.Repo(repo_path)
             return repo.active_branch.name
@@ -811,6 +833,7 @@ class GitService:
         Returns:
             HEAD commit SHA.
         """
+
         def _get_head_sha():
             repo = git.Repo(repo_path)
             return repo.head.commit.hexsha
@@ -827,6 +850,7 @@ class GitService:
         Returns:
             List of changed file paths.
         """
+
         def _get_changed_files():
             repo = git.Repo(worktree_path)
             changed_files = []

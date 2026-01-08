@@ -2,13 +2,13 @@
 
 import json
 import logging
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from dursor_api.domain.models import Run, RunCreate, RunsCreated
 from dursor_api.dependencies import get_output_manager, get_run_service
+from dursor_api.domain.models import Run, RunCreate, RunsCreated
 from dursor_api.services.output_manager import OutputManager
 from dursor_api.services.run_service import RunService
 
@@ -105,7 +105,14 @@ async def get_run_logs(
     # If we have output logs, use them
     if output_logs:
         return {
-            "logs": [{"line_number": ol.line_number, "content": ol.content, "timestamp": ol.timestamp} for ol in output_logs],
+            "logs": [
+                {
+                    "line_number": ol.line_number,
+                    "content": ol.content,
+                    "timestamp": ol.timestamp,
+                }
+                for ol in output_logs
+            ],
             "is_complete": is_complete or run.status in ("succeeded", "failed", "canceled"),
             "total_lines": from_line + len(output_logs),
             "run_status": run.status,
@@ -114,7 +121,10 @@ async def get_run_logs(
     # Fallback to run.logs (for completed runs or when OutputManager has no data)
     run_logs = run.logs[from_line:] if run.logs else []
     return {
-        "logs": [{"line_number": from_line + i, "content": log, "timestamp": 0} for i, log in enumerate(run_logs)],
+        "logs": [
+            {"line_number": from_line + i, "content": log, "timestamp": 0}
+            for i, log in enumerate(run_logs)
+        ],
         "is_complete": run.status in ("succeeded", "failed", "canceled"),
         "total_lines": len(run.logs) if run.logs else 0,
         "run_status": run.status,
@@ -144,17 +154,19 @@ async def stream_run_logs(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    async def generate_sse() -> AsyncGenerator[str, None]:
+    async def generate_sse() -> AsyncGenerator[str]:
         """Generate SSE events from output stream."""
         logger.info(f"SSE stream started for run {run_id}, from_line={from_line}")
         line_count = 0
         try:
             async for output_line in output_manager.subscribe(run_id, from_line):
-                data = json.dumps({
-                    "line_number": output_line.line_number,
-                    "content": output_line.content,
-                    "timestamp": output_line.timestamp,
-                })
+                data = json.dumps(
+                    {
+                        "line_number": output_line.line_number,
+                        "content": output_line.content,
+                        "timestamp": output_line.timestamp,
+                    }
+                )
                 yield f"data: {data}\n\n"
                 line_count += 1
                 if line_count % 10 == 0:

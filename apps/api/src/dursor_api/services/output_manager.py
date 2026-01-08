@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,9 @@ class OutputManager:
 
             # Notify all subscribers
             subscriber_count = len(self._subscribers[run_id])
-            logger.debug(f"Publishing line {line_number} to {subscriber_count} subscribers for run {run_id}")
+            logger.debug(
+                f"Publishing line {line_number} to {subscriber_count} subscribers for run {run_id}"
+            )
             for queue in self._subscribers[run_id]:
                 try:
                     queue.put_nowait(output_line)
@@ -160,12 +162,17 @@ class OutputManager:
 
             # Register subscriber
             self._subscribers[run_id].append(queue)
-            logger.info(f"Subscriber registered for run {run_id}, total subscribers: {len(self._subscribers[run_id])}")
+            logger.info(
+                f"Subscriber registered for run {run_id}, "
+                f"total subscribers: {len(self._subscribers[run_id])}"
+            )
 
             # Get existing history
             history = self._streams[run_id][from_line:]
             is_completed = self._completed[run_id] is not None
-            logger.info(f"Subscribe to run {run_id}: history={len(history)} lines, completed={is_completed}")
+            logger.info(
+                f"Subscribe to run {run_id}: history={len(history)} lines, completed={is_completed}"
+            )
 
         try:
             # Yield historical lines
@@ -188,7 +195,7 @@ class OutputManager:
 
                     yield output_line
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Check if completed while waiting
                     async with self._lock:
                         if self._completed.get(run_id) is not None:
@@ -286,16 +293,12 @@ class OutputManager:
             Dict with stats.
         """
         async with self._lock:
-            active_runs = sum(
-                1 for completed in self._completed.values() if completed is None
-            )
+            active_runs = sum(1 for completed in self._completed.values() if completed is None)
             completed_runs = sum(
                 1 for completed in self._completed.values() if completed is not None
             )
             total_lines = sum(len(lines) for lines in self._streams.values())
-            total_subscribers = sum(
-                len(subs) for subs in self._subscribers.values()
-            )
+            total_subscribers = sum(len(subs) for subs in self._subscribers.values())
 
             return {
                 "active_runs": active_runs,

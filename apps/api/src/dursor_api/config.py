@@ -96,7 +96,9 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     # Paths
-    base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent)
+    base_dir: Path = Field(
+        default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent
+    )
     workspaces_dir: Path | None = Field(default=None)
     data_dir: Path | None = Field(default=None)
 

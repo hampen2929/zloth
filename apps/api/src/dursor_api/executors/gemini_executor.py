@@ -6,7 +6,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dursor_api.domain.models import FileDiff
 from dursor_api.executors.claude_code_executor import ExecutorResult
 
 
@@ -69,7 +68,11 @@ class GeminiExecutor:
         ]
 
         # Don't log full instruction - it can be very long
-        cmd_display = [self.options.gemini_cli_path, f"<instruction:{len(instruction)} chars>", "--yolo"]
+        cmd_display = [
+            self.options.gemini_cli_path,
+            f"<instruction:{len(instruction)} chars>",
+            "--yolo",
+        ]
         logs.append(f"Executing: {' '.join(cmd_display)}")
         logs.append(f"Working directory: {worktree_path}")
         logs.append(f"Instruction length: {len(instruction)} chars")
@@ -127,7 +130,9 @@ class GeminiExecutor:
                     patch="",
                     files_changed=[],
                     logs=logs,
-                    error=f"Gemini CLI exited with code {process.returncode}\n\nLast output:\n{tail}",
+                    error=(
+                        f"Gemini CLI exited with code {process.returncode}\n\nLast output:\n{tail}"
+                    ),
                 )
 
             return ExecutorResult(

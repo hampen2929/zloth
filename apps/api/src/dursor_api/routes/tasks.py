@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.domain.enums import MessageRole
+from dursor_api.dependencies import get_message_dao, get_pr_dao, get_run_dao, get_task_dao
 from dursor_api.domain.models import (
     Message,
     MessageCreate,
@@ -12,8 +12,7 @@ from dursor_api.domain.models import (
     TaskCreate,
     TaskDetail,
 )
-from dursor_api.dependencies import get_task_dao, get_message_dao, get_run_dao, get_pr_dao
-from dursor_api.storage.dao import MessageDAO, PRDAO, RunDAO, TaskDAO
+from dursor_api.storage.dao import PRDAO, MessageDAO, RunDAO, TaskDAO
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 

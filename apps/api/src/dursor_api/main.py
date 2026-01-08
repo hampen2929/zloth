@@ -10,10 +10,10 @@ from dursor_api.routes import (
     github_router,
     models_router,
     preferences_router,
-    repos_router,
-    tasks_router,
-    runs_router,
     prs_router,
+    repos_router,
+    runs_router,
+    tasks_router,
 )
 from dursor_api.storage.db import get_db
 

@@ -14,8 +14,6 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-logger = logging.getLogger(__name__)
-
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.agents.patch_agent import PatchAgent
 from dursor_api.config import settings
@@ -31,11 +29,13 @@ from dursor_api.domain.models import (
 from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
-from dursor_api.services.git_service import GitService
 from dursor_api.services.commit_message import ensure_english_commit_message
+from dursor_api.services.git_service import GitService
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
 from dursor_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from dursor_api.services.github_service import GitHubService
@@ -111,8 +111,8 @@ class RunService:
         repo_service: RepoService,
         git_service: GitService | None = None,
         user_preferences_dao: UserPreferencesDAO | None = None,
-        github_service: "GitHubService | None" = None,
-        output_manager: "OutputManager | None" = None,
+        github_service: GitHubService | None = None,
+        output_manager: OutputManager | None = None,
     ):
         self.run_dao = run_dao
         self.task_dao = task_dao
@@ -127,9 +127,7 @@ class RunService:
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
         )
-        self.codex_executor = CodexExecutor(
-            CodexOptions(codex_cli_path=settings.codex_cli_path)
-        )
+        self.codex_executor = CodexExecutor(CodexOptions(codex_cli_path=settings.codex_cli_path))
         self.gemini_executor = GeminiExecutor(
             GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
         )
@@ -202,7 +200,9 @@ class RunService:
             if not model_ids:
                 # If the task is already locked to patch_agent, reuse the most recent
                 # model set (grouped by latest patch_agent instruction).
-                patch_runs = [r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT]
+                patch_runs = [
+                    r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT
+                ]
                 if patch_runs:
                     latest_instruction = patch_runs[0].instruction  # newest-first
                     model_ids = []
@@ -290,7 +290,9 @@ class RunService:
                 # If we're working from the repo's default branch, ensure the existing worktree
                 # still contains the latest origin/<default>. Otherwise, create a fresh worktree
                 # from the latest default to avoid PRs being based on a stale main.
-                should_check_default = (base_ref == repo.default_branch) and bool(repo.default_branch)
+                should_check_default = (base_ref == repo.default_branch) and bool(
+                    repo.default_branch
+                )
                 if should_check_default:
                     default_ref = f"origin/{repo.default_branch}"
                     up_to_date = await self.git_service.is_ancestor(
@@ -356,11 +358,12 @@ class RunService:
         run = await self.run_dao.get(run.id)
 
         # Enqueue for execution based on executor type
+        def make_coro(r, wt, et, ps, rp):
+            return lambda: self._execute_cli_run(r, wt, et, ps, rp)
+
         self.queue.enqueue(
             run.id,
-            lambda r=run, wt=worktree_info, et=executor_type, ps=previous_session_id, rp=repo: self._execute_cli_run(
-                r, wt, et, ps, rp
-            ),
+            make_coro(run, worktree_info, executor_type, previous_session_id, repo),
         )
 
         return run
@@ -551,8 +554,12 @@ class RunService:
 
             # 2. Build instruction with constraints
             constraints = AgentConstraints()
-            instruction_with_constraints = f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
-            logger.info(f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars")
+            instruction_with_constraints = (
+                f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
+            )
+            logger.info(
+                f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars"
+            )
 
             # 3. Execute the CLI (file editing only)
             logger.info(f"[{run.id[:8]}] Executing CLI...")
@@ -572,7 +579,8 @@ class RunService:
             ):
                 # Retry once without session continuation if the CLI rejects the session.
                 logs.append(
-                    "Session continuation failed (session already in use). Retrying without session_id."
+                    "Session continuation failed (session already in use). "
+                    "Retrying without session_id."
                 )
                 result = await executor.execute(
                     worktree_path=worktree_info.path,
@@ -593,9 +601,7 @@ class RunService:
                 return
 
             # 4. Read and remove summary file (before staging)
-            summary_from_file = await self._read_and_remove_summary_file(
-                worktree_info.path, logs
-            )
+            summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
 
             # 5. Stage all changes
             await self.git_service.stage_all(worktree_info.path)
@@ -623,9 +629,7 @@ class RunService:
 
             # Determine final summary (priority: file > CLI output > generated)
             final_summary = (
-                summary_from_file
-                or result.summary
-                or self._generate_summary(files_changed)
+                summary_from_file or result.summary or self._generate_summary(files_changed)
             )
 
             # 7. Commit (automatic)
@@ -777,12 +781,14 @@ class RunService:
             if line.startswith("--- a/"):
                 # Save previous file if exists
                 if current_file:
-                    files.append(FileDiff(
-                        path=current_file,
-                        added_lines=added_lines,
-                        removed_lines=removed_lines,
-                        patch="\n".join(current_patch_lines),
-                    ))
+                    files.append(
+                        FileDiff(
+                            path=current_file,
+                            added_lines=added_lines,
+                            removed_lines=removed_lines,
+                            patch="\n".join(current_patch_lines),
+                        )
+                    )
                 # Reset for new file
                 current_patch_lines = [line]
                 added_lines = 0
@@ -808,12 +814,14 @@ class RunService:
 
         # Save last file
         if current_file:
-            files.append(FileDiff(
-                path=current_file,
-                added_lines=added_lines,
-                removed_lines=removed_lines,
-                patch="\n".join(current_patch_lines),
-            ))
+            files.append(
+                FileDiff(
+                    path=current_file,
+                    added_lines=added_lines,
+                    removed_lines=removed_lines,
+                    patch="\n".join(current_patch_lines),
+                )
+            )
 
         return files
 

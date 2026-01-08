@@ -7,7 +7,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dursor_api.domain.models import FileDiff
 from dursor_api.executors.claude_code_executor import ExecutorResult
 
 
@@ -196,8 +195,7 @@ class CodexExecutor:
 
         # Prefer scanning line-by-line for the common hint.
         hint_re = re.compile(
-            r"To continue this session,\s*run\s*codex\s+resume\s+"
-            + uuid_re,
+            r"To continue this session,\s*run\s*codex\s+resume\s+" + uuid_re,
             re.IGNORECASE,
         )
         session_line_re = re.compile(r"\bsession id:\s*" + uuid_re + r"\b", re.IGNORECASE)

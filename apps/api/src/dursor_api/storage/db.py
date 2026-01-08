@@ -1,9 +1,10 @@
 """Database connection and initialization."""
 
-import aiosqlite
-from pathlib import Path
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from pathlib import Path
+
+import aiosqlite
 
 from dursor_api.config import settings
 
@@ -49,16 +50,12 @@ class Database:
 
         # Migration: Add session_id column to runs table if it doesn't exist
         if "session_id" not in column_names:
-            await self._connection.execute(
-                "ALTER TABLE runs ADD COLUMN session_id TEXT"
-            )
+            await self._connection.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
             await self._connection.commit()
 
         # Migration: Add commit_sha column to runs table if it doesn't exist
         if "commit_sha" not in column_names:
-            await self._connection.execute(
-                "ALTER TABLE runs ADD COLUMN commit_sha TEXT"
-            )
+            await self._connection.execute("ALTER TABLE runs ADD COLUMN commit_sha TEXT")
             await self._connection.commit()
 
         # Migration: Add default_branch_prefix column to user_preferences table if it doesn't exist
@@ -72,7 +69,7 @@ class Database:
             )
             await self._connection.commit()
 
-        # Migration: Add default_pr_creation_mode column to user_preferences table if it doesn't exist
+        # Migration: Add default_pr_creation_mode column if it doesn't exist
         if "default_pr_creation_mode" not in pref_column_names:
             await self._connection.execute(
                 "ALTER TABLE user_preferences ADD COLUMN default_pr_creation_mode TEXT"
@@ -102,7 +99,7 @@ async def get_db() -> Database:
 
 
 @asynccontextmanager
-async def get_db_context() -> AsyncGenerator[Database, None]:
+async def get_db_context() -> AsyncGenerator[Database]:
     """Get database as async context manager."""
     db = await get_db()
     try:

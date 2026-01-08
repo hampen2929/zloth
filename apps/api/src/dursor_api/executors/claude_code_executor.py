@@ -82,7 +82,8 @@ class ClaudeCodeExecutor:
         # Note: We do NOT use --output-format json as it suppresses streaming output
         cmd = [
             self.options.claude_cli_path,
-            "-p", instruction,  # Pass instruction directly as argument
+            "-p",
+            instruction,  # Pass instruction directly as argument
             "--dangerously-skip-permissions",  # Allow file edits without permission prompts
         ]
 
@@ -93,7 +94,11 @@ class ClaudeCodeExecutor:
             logs.append(f"Continuing session: {resume_session_id}")
 
         # Don't log full instruction - it can be very long
-        cmd_display = [self.options.claude_cli_path, "-p", f"<instruction:{len(instruction)} chars>"]
+        cmd_display = [
+            self.options.claude_cli_path,
+            "-p",
+            f"<instruction:{len(instruction)} chars>",
+        ]
         logs.append(f"Executing: {' '.join(cmd_display)}")
         logs.append(f"Working directory: {worktree_path}")
         logs.append(f"Instruction length: {len(instruction)} chars")
@@ -122,12 +127,14 @@ class ClaudeCodeExecutor:
                     try:
                         line = await asyncio.wait_for(
                             process.stdout.readline(),
-                            timeout=300.0  # 5 min timeout per line
+                            timeout=300.0,  # 5 min timeout per line
                         )
                     except TimeoutError:
-                        logger.warning(f"No output for 5 minutes, checking if process is alive...")
+                        logger.warning("No output for 5 minutes, checking if process is alive...")
                         if process.returncode is None:
-                            logger.warning(f"Process still running (PID: {process.pid}), continuing to wait...")
+                            logger.warning(
+                                f"Process still running (PID: {process.pid}), continuing to wait..."
+                            )
                             continue
                         else:
                             logger.info(f"Process has exited with code: {process.returncode}")
@@ -184,7 +191,9 @@ class ClaudeCodeExecutor:
                     patch="",
                     files_changed=[],
                     logs=logs,
-                    error=f"Claude Code exited with code {process.returncode}\n\nLast output:\n{tail}",
+                    error=(
+                        f"Claude Code exited with code {process.returncode}\n\nLast output:\n{tail}"
+                    ),
                 )
 
             # Extract session ID from JSON output
