@@ -1,8 +1,8 @@
-# dursor
+# cursor
 
 > BYO API Key / Multi-model Parallel Execution / Conversation-driven PR Development
 
-**dursor** is a self-hostable cloud coding agent that lets you:
+**cursor** is a self-hostable cloud coding agent that lets you:
 - Use your own API keys (OpenAI, Anthropic, Google)
 - Run multiple models in parallel on the same task
 - Compare outputs side-by-side and choose the best
@@ -30,8 +30,8 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-org/dursor.git
-   cd dursor
+   git clone https://github.com/your-org/cursor.git
+   cd cursor
    ```
 
 2. **Set up the API server**
@@ -90,10 +90,10 @@ docker-compose up -d
 ## Project Structure
 
 ```
-dursor/
+cursor/
 ├── apps/
 │   ├── api/                    # FastAPI backend
-│   │   └── src/dursor_api/
+│   │   └── src/cursor_api/
 │   │       ├── agents/         # LLM agents (PatchAgent)
 │   │       ├── domain/         # Pydantic models
 │   │       ├── routes/         # API endpoints
