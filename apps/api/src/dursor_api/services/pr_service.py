@@ -8,6 +8,7 @@ pushed by RunService, so this service only handles GitHub API operations.
 from __future__ import annotations
 
 import logging
+import json
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -245,27 +246,30 @@ class PRService:
         title = await self._generate_title(diff, task, run)
         template = await self._load_pr_template(repo_obj)
         if template:
-            # Generate the full PR body in the repository's template format.
-            # If LLM fails, fall back to deterministic injection without duplicating headings.
             try:
-                description = await self._generate_pr_body_from_template_for_new_pr(
+                fields = await self._generate_pr_fields_from_template(
                     diff=diff,
                     template=template,
-                    task=task,
-                    title=title,
-                    run=run,
+                    task_title=task.title or "",
+                    pr_title=title,
+                    run_summary=run.summary or "",
                 )
             except Exception:
-                summary_text = (run.summary or title).strip()
-                changes_text = self._build_changes_section_from_diff(diff)
-                test_plan_text = self._default_test_plan_section()
-                description = self._render_pr_body_from_template(
-                    template=template,
-                    title=title,
-                    description=summary_text,
-                    changes=changes_text,
-                    test_plan=test_plan_text,
-                )
+                fields = {
+                    "summary": (run.summary or title).strip(),
+                    "changes": self._build_changes_section_from_diff(diff),
+                    "review_notes": "",
+                    "test_plan": self._default_test_plan_section(),
+                }
+
+            description = self._render_pr_body_from_template(
+                template=template,
+                title=title,
+                description=fields.get("summary", "").strip(),
+                changes=fields.get("changes", "").strip() or None,
+                review_notes=fields.get("review_notes", "").strip() or None,
+                test_plan=fields.get("test_plan", "").strip() or None,
+            )
         else:
             description = await self._generate_description_for_new_pr(
                 diff=diff,
@@ -668,33 +672,32 @@ class PRService:
 
         if template:
             # Regenerate the full PR body in the repository's template format.
-            # Prefer LLM generation; fall back to deterministic injection.
             try:
                 run_summary = (latest_run.summary or "") if latest_run else ""
-                new_description = await self._generate_pr_body_from_template_for_existing_pr(
+                fields = await self._generate_pr_fields_from_template(
                     diff=cumulative_diff,
                     template=template,
-                    task=task,
-                    pr=pr,
+                    task_title=task.title or "",
+                    pr_title=pr.title,
                     run_summary=run_summary,
                 )
             except Exception:
-                generated = await self._generate_description(
-                    diff=cumulative_diff,
-                    template=None,
-                    task=task,
-                    pr=pr,
-                )
-                summary_text = self._extract_summary_text(generated) or pr.title
-                changes_text = self._build_changes_section_from_diff(cumulative_diff)
-                test_plan_text = self._default_test_plan_section()
-                new_description = self._render_pr_body_from_template(
-                    template=template,
-                    title=pr.title,
-                    description=summary_text,
-                    changes=changes_text,
-                    test_plan=test_plan_text,
-                )
+                # Fall back to deterministic content injection.
+                fields = {
+                    "summary": (latest_run.summary if latest_run else "") or pr.title,
+                    "changes": self._build_changes_section_from_diff(cumulative_diff),
+                    "review_notes": "",
+                    "test_plan": self._default_test_plan_section(),
+                }
+
+            new_description = self._render_pr_body_from_template(
+                template=template,
+                title=pr.title,
+                description=(fields.get("summary", "") or pr.title).strip(),
+                changes=fields.get("changes", "").strip() or None,
+                review_notes=fields.get("review_notes", "").strip() or None,
+                test_plan=fields.get("test_plan", "").strip() or None,
+            )
         else:
             # Generate description with LLM (or fallback) in the default format.
             new_description = await self._generate_description(
@@ -800,6 +803,7 @@ class PRService:
         description: str,
         *,
         changes: str | None = None,
+        review_notes: str | None = None,
         test_plan: str | None = None,
     ) -> str:
         """Render PR body using pull_request_template.
@@ -837,6 +841,13 @@ class PRService:
                 new_body=changes,
             )
 
+        if review_notes:
+            body, _ = self._replace_markdown_section(
+                body,
+                section_names=["review notes", "review", "notes"],
+                new_body=review_notes,
+            )
+
         if test_plan:
             body, _ = self._replace_markdown_section(
                 body,
@@ -863,7 +874,7 @@ class PRService:
         names_pat = "|".join(re.escape(n) for n in section_names)
         heading_re = re.compile(
             # Match headings like "## Summary" and allow trailing text/comments on the same line.
-            rf"^(#{1,6})\s+({names_pat})\b.*$",
+            rf"^\s*(#{1,6})\s+({names_pat})\b.*$",
             re.IGNORECASE | re.MULTILINE,
         )
         m = heading_re.search(text)
@@ -872,7 +883,7 @@ class PRService:
 
         level = len(m.group(1))
         start = m.end()
-        next_heading_re = re.compile(rf"^#{{1,{level}}}\s+\S.*$", re.MULTILINE)
+        next_heading_re = re.compile(rf"^\s*#{{1,{level}}}\s+\S.*$", re.MULTILINE)
         m2 = next_heading_re.search(text, pos=start)
         end = m2.start() if m2 else len(text)
 
@@ -886,7 +897,7 @@ class PRService:
         text = (markdown or "").replace("\r\n", "\n")
         names_pat = "|".join(re.escape(n) for n in section_names)
         heading_re = re.compile(
-            rf"^#{1,6}\s+({names_pat})\b.*$",
+            rf"^\s*#{1,6}\s+({names_pat})\b.*$",
             re.IGNORECASE | re.MULTILINE,
         )
         return heading_re.search(text) is not None
@@ -917,7 +928,7 @@ class PRService:
         """Extract a markdown section body by heading name."""
         text = (markdown or "").replace("\r\n", "\n")
         heading_re = re.compile(
-            rf"^(#{1,6})\s+{re.escape(section_name)}\b.*$",
+            rf"^\s*(#{1,6})\s+{re.escape(section_name)}\b.*$",
             re.IGNORECASE | re.MULTILINE,
         )
         m = heading_re.search(text)
@@ -925,7 +936,7 @@ class PRService:
             return ""
         level = len(m.group(1))
         start = m.end()
-        next_heading_re = re.compile(rf"^#{{1,{level}}}\s+\S.*$", re.MULTILINE)
+        next_heading_re = re.compile(rf"^\s*#{{1,{level}}}\s+\S.*$", re.MULTILINE)
         m2 = next_heading_re.search(text, pos=start)
         end = m2.start() if m2 else len(text)
         return text[start:end].strip()
@@ -956,71 +967,7 @@ class PRService:
             ]
         ).strip()
 
-    async def _generate_pr_body_from_template_for_new_pr(
-        self,
-        *,
-        diff: str,
-        template: str,
-        task,
-        title: str,
-        run,
-    ) -> str:
-        """Generate a PR body that follows the repository PR template (new PR)."""
-        prompt = self._build_pr_body_from_template_prompt(
-            diff=diff,
-            template=template,
-            task_title=task.title or "",
-            pr_title=title,
-            run_summary=run.summary or "",
-        )
-        config = LLMConfig(
-            provider=Provider.ANTHROPIC,
-            model_name="claude-3-haiku-20240307",
-            api_key="",  # Will be loaded from environment
-        )
-        llm_client = self.llm_router.get_client(config)
-        body = await llm_client.generate(
-            prompt=prompt,
-            system_prompt=(
-                "You write high-quality GitHub Pull Request descriptions. "
-                "You must follow the provided PR template structure exactly."
-            ),
-        )
-        return (body or "").strip()
-
-    async def _generate_pr_body_from_template_for_existing_pr(
-        self,
-        *,
-        diff: str,
-        template: str,
-        task,
-        pr: PR,
-        run_summary: str,
-    ) -> str:
-        """Generate a PR body that follows the repository PR template (existing PR)."""
-        prompt = self._build_pr_body_from_template_prompt(
-            diff=diff,
-            template=template,
-            task_title=task.title or "",
-            pr_title=pr.title,
-            run_summary=run_summary or "",
-        )
-        config = LLMConfig(
-            provider=Provider.ANTHROPIC,
-            model_name="claude-3-haiku-20240307",
-            api_key="",  # Will be loaded from environment
-        )
-        llm_client = self.llm_router.get_client(config)
-        body = await llm_client.generate(
-            prompt=prompt,
-            system_prompt=(
-                "You write high-quality GitHub Pull Request descriptions. "
-                "You must follow the provided PR template structure exactly."
-            ),
-        )
-        return (body or "").strip()
-
-    def _build_pr_body_from_template_prompt(
+    async def _generate_pr_fields_from_template(
         self,
         *,
         diff: str,
@@ -1028,44 +975,67 @@ class PRService:
         task_title: str,
         pr_title: str,
         run_summary: str,
-    ) -> str:
-        """Build an LLM prompt to produce a PR body that strictly follows the template."""
+    ) -> dict[str, str]:
+        """Generate section contents to be injected into the repository PR template.
+
+        Returns a dict with keys: summary, changes, review_notes, test_plan.
+        """
         truncated_diff = diff[:10000] if diff and len(diff) > 10000 else (diff or "")
         template_text = (template or "").replace("\r\n", "\n").strip()
 
-        return "\n".join(
+        prompt = "\n".join(
             [
-                "Create a GitHub Pull Request description.",
+                "Generate content for a GitHub Pull Request description.",
                 "",
-                "## Requirements",
-                "- Follow the PR template structure EXACTLY (do not add extra headings).",
-                "- Do NOT duplicate sections (e.g., do not output two 'Summary' sections).",
-                "- Keep any existing HTML comments in the template unless you replace them with real content.",
-                "- Replace placeholder bullet markers like '-' with meaningful bullet points.",
-                "- Be concise and specific. Use English.",
-                "- Output ONLY the final PR description markdown.",
-                "",
-                "## PR Title",
+                "## Inputs",
+                "### PR Title",
                 pr_title or "(None)",
                 "",
-                "## Task Context",
+                "### Task Context",
                 task_title or "(None)",
                 "",
-                "## Run Summary",
+                "### Run Summary",
                 run_summary or "(None)",
                 "",
-                "## Diff (truncated)",
+                "### Diff (truncated)",
                 "```diff",
                 truncated_diff,
                 "```",
                 "",
-                "## PR Template",
+                "### Repository PR Template",
                 template_text,
                 "",
-                "## Output",
-                "Return the completed PR description that uses the template above.",
+                "## Output Rules",
+                "- Output ONLY valid JSON (no markdown fences).",
+                "- JSON must have these keys: summary, changes, review_notes, test_plan.",
+                "- Values must NOT include headings like '## Summary'. Provide section BODY only.",
+                "- summary: 1-2 sentences.",
+                "- changes: bullet list lines starting with '- '. Replace placeholder '-' with real bullets.",
+                "- review_notes: 0-3 bullets or short paragraph (empty string if none).",
+                "- test_plan: checklist lines starting with '- [ ] '.",
             ]
         ).strip()
+
+        config = LLMConfig(
+            provider=Provider.ANTHROPIC,
+            model_name="claude-3-haiku-20240307",
+            api_key="",  # Will be loaded from environment
+        )
+        llm_client = self.llm_router.get_client(config)
+        raw = await llm_client.generate(
+            prompt=prompt,
+            system_prompt=(
+                "You are a helpful assistant that writes PR description content. "
+                "Return JSON only."
+            ),
+        )
+        data = json.loads((raw or "").strip())
+        return {
+            "summary": str(data.get("summary", "")).strip(),
+            "changes": str(data.get("changes", "")).strip(),
+            "review_notes": str(data.get("review_notes", "")).strip(),
+            "test_plan": str(data.get("test_plan", "")).strip(),
+        }
 
     async def _generate_description(
         self,
