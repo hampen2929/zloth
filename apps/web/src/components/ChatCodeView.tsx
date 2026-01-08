@@ -71,6 +71,9 @@ export function ChatCodeView({
   const { success, error } = useToast();
 
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
+  const { data: prs } = useSWR(`prs-${taskId}`, () => prsApi.list(taskId), {
+    refreshInterval: prLinkResult ? 2000 : 0,
+  });
 
   // Determine the locked executor:
   // - If we already have runs, lock to the earliest run's executor_type.
@@ -85,6 +88,15 @@ export function ChatCodeView({
 
   // Get the latest successful run for PR creation
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
+  const latestPR = prs && prs.length > 0 ? prs[0] : null;
+
+  // If we discover an existing PR (e.g., after manual creation), prefer it.
+  useEffect(() => {
+    if (latestPR && !prResult) {
+      setPRResult({ url: latestPR.url, number: latestPR.number });
+      setPRLinkResult(null);
+    }
+  }, [latestPR, prResult]);
 
   // Copy branch name to clipboard
   const copyBranchToClipboard = async () => {
@@ -133,6 +145,34 @@ export function ChatCodeView({
       setCreatingPR(false);
     }
   };
+
+  // When using "Open PR link" mode, poll GitHub/DB sync until the PR is created.
+  useEffect(() => {
+    if (!prLinkResult) return;
+    if (!latestSuccessfulRun) return;
+    if (prResult) return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const synced = await prsApi.sync(taskId, latestSuccessfulRun.id);
+        if (synced.found && synced.pr) {
+          setPRResult({ url: synced.pr.url, number: synced.pr.number });
+          setPRLinkResult(null);
+          onPRCreated();
+          success('PR detected. Opening PR link.');
+        }
+      } catch {
+        // Ignore transient errors while user is still creating the PR.
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [prLinkResult, latestSuccessfulRun, prResult, taskId, onPRCreated, success]);
 
   // Auto-scroll to bottom
   useEffect(() => {

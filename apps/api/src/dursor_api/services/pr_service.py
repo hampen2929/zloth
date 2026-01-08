@@ -15,7 +15,7 @@ from urllib.parse import urlencode, urlparse
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.domain.enums import Provider
-from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRCreateLink, PRUpdate, Repo
+from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRCreateLink, PRCreated, PRSyncResult, PRUpdate, Repo
 from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
 from dursor_api.services.repo_service import RepoService
@@ -355,6 +355,69 @@ class PRService:
             head=run.working_branch,
         )
         return PRCreateLink(url=url, branch=run.working_branch, base=base)
+
+    async def sync_manual_pr(self, task_id: str, selected_run_id: str) -> PRSyncResult:
+        """Sync a PR that may have been created manually via GitHub UI."""
+        task = await self.task_dao.get(task_id)
+        if not task:
+            raise ValueError(f"Task not found: {task_id}")
+
+        repo_obj = await self.repo_service.get(task.repo_id)
+        if not repo_obj:
+            raise ValueError(f"Repo not found: {task.repo_id}")
+
+        run = await self.run_dao.get(selected_run_id)
+        if not run:
+            raise ValueError(f"Run not found: {selected_run_id}")
+
+        if not run.working_branch:
+            raise ValueError(f"Run has no working branch: {selected_run_id}")
+
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+        base = repo_obj.default_branch
+        head = f"{owner}:{run.working_branch}"
+
+        pr_data = await self.github_service.find_pull_request_by_head(
+            owner=owner,
+            repo=repo_name,
+            head=head,
+            base=base,
+            state="all",
+        )
+        if not pr_data:
+            return PRSyncResult(found=False, pr=None)
+
+        number = pr_data["number"]
+        existing = await self.pr_dao.get_by_task_and_number(task_id, number)
+        if existing:
+            return PRSyncResult(
+                found=True,
+                pr=PRCreated(
+                    pr_id=existing.id,
+                    url=existing.url,
+                    branch=existing.branch,
+                    number=existing.number,
+                ),
+            )
+
+        created = await self.pr_dao.create(
+            task_id=task_id,
+            number=number,
+            url=pr_data["html_url"],
+            branch=pr_data["head"]["ref"],
+            title=pr_data["title"],
+            body=pr_data.get("body"),
+            latest_commit=pr_data.get("head", {}).get("sha") or run.commit_sha or "",
+        )
+        return PRSyncResult(
+            found=True,
+            pr=PRCreated(
+                pr_id=created.id,
+                url=created.url,
+                branch=created.branch,
+                number=created.number,
+            ),
+        )
 
     async def _generate_title(self, diff: str, task, run) -> str:
         """Generate PR title using LLM.

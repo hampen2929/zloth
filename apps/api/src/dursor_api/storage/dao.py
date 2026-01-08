@@ -628,6 +628,17 @@ class PRDAO:
             return None
         return self._row_to_model(row)
 
+    async def get_by_task_and_number(self, task_id: str, number: int) -> PR | None:
+        """Get a PR by task and PR number."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM prs WHERE task_id = ? AND number = ? LIMIT 1",
+            (task_id, number),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
     async def list(self, task_id: str) -> list[PR]:
         """List PRs for a task."""
         cursor = await self.db.connection.execute(

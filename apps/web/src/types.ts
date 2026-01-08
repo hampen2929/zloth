@@ -187,6 +187,15 @@ export interface PRCreateLink {
   base: string;
 }
 
+export interface PRSyncRequest {
+  selected_run_id: string;
+}
+
+export interface PRSyncResult {
+  found: boolean;
+  pr: PRCreated | null;
+}
+
 export interface PRUpdated {
   url: string;
   latest_commit: string;

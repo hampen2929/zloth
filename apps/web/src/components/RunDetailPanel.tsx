@@ -59,6 +59,7 @@ export function RunDetailPanel({
   const [creating, setCreating] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string } | null>(null);
   const [prResultMode, setPRResultMode] = useState<'created' | 'link' | null>(null);
+  const [pendingSyncRunId, setPendingSyncRunId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Update tab when run changes or status changes
@@ -68,6 +69,34 @@ export function RunDetailPanel({
   const { success, error } = useToast();
 
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
+
+  // If a PR was created manually (link mode), poll sync until found, then switch to the PR URL.
+  useEffect(() => {
+    if (!pendingSyncRunId) return;
+    if (prResultMode === 'created') return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const synced = await prsApi.sync(taskId, pendingSyncRunId);
+        if (synced.found && synced.pr) {
+          setPRResult({ url: synced.pr.url });
+          setPRResultMode('created');
+          setPendingSyncRunId(null);
+          onPRCreated();
+          success('PR detected. Opening PR.');
+        }
+      } catch {
+        // Ignore transient errors while user is still creating the PR.
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pendingSyncRunId, prResultMode, taskId, onPRCreated, success]);
 
   const handleCreatePR = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,6 +114,7 @@ export function RunDetailPanel({
         });
         setPRResult({ url: result.url });
         setPRResultMode('link');
+        setPendingSyncRunId(run.id);
         success('PR link generated. Create the PR on GitHub.');
       } else {
         const result = await prsApi.create(taskId, {

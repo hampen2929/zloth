@@ -461,3 +461,16 @@ class PRCreateLink(BaseModel):
     url: str
     branch: str
     base: str
+
+
+class PRSyncRequest(BaseModel):
+    """Request for syncing a PR created manually on GitHub."""
+
+    selected_run_id: str = Field(..., description="ID of the run to use for syncing PR")
+
+
+class PRSyncResult(BaseModel):
+    """Result of attempting to sync a manually created PR."""
+
+    found: bool
+    pr: "PRCreated | None" = None
