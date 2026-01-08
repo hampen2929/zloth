@@ -40,7 +40,7 @@ export function RunDetailPanel({
   taskId,
   onPRCreated,
 }: RunDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('diff');
+  const [activeTab, setActiveTab] = useState<Tab>('summary');
   const [showPRForm, setShowPRForm] = useState(false);
   const [prTitle, setPRTitle] = useState('');
   const [prBody, setPRBody] = useState('');

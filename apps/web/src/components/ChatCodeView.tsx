@@ -258,7 +258,7 @@ export function ChatCodeView({
     });
   };
 
-  const getRunTab = (runId: string): RunTab => runTabs[runId] || 'diff';
+  const getRunTab = (runId: string): RunTab => runTabs[runId] || 'summary';
   const setRunTab = (runId: string, tab: RunTab) => {
     setRunTabs((prev) => ({ ...prev, [runId]: tab }));
   };
