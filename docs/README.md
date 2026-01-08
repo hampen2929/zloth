@@ -1,6 +1,6 @@
-# dursor Documentation
+# cursor Documentation
 
-Welcome to the dursor documentation. This guide will help you understand, develop, and contribute to the project.
+Welcome to the cursor documentation. This guide will help you understand, develop, and contribute to the project.
 
 ## Documentation Index
 
@@ -26,8 +26,8 @@ Welcome to the dursor documentation. This guide will help you understand, develo
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/dursor.git
-cd dursor
+git clone https://github.com/your-org/cursor.git
+cd cursor
 
 # Backend setup
 cd apps/api
@@ -58,7 +58,7 @@ flowchart LR
 ### Project Structure
 
 ```
-dursor/
+cursor/
 ├── apps/
 │   ├── api/          # FastAPI backend
 │   └── web/          # Next.js frontend
@@ -78,5 +78,5 @@ dursor/
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-org/dursor/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/dursor/discussions)
+- **Issues**: [GitHub Issues](https://github.com/your-org/cursor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/your-org/cursor/discussions)
