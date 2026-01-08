@@ -7,7 +7,7 @@ Thank you for your interest in contributing to dursor! Please follow this guide 
 1. Fork & clone the repository
 
 ```bash
-git clone https://github.com/your-username/dursor.git
+git clone https://github.com/hampen2929/dursor.git
 cd dursor
 ```
 
