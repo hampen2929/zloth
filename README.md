@@ -37,10 +37,15 @@ dursor is designed for:
   - Choose the best implementation from multiple options
   - Not locked into a single AI provider
 
-- **Organizations that can use AI APIs but cannot install local tools**
-  - Your company allows API access but restricts local tool installations
-  - Self-hosted solution that runs on your own infrastructure
-  - Works with your existing API keys without additional software on developer machines
+- **Organizations that cannot use SaaS AI tools (like Cursor)**
+  - Your company restricts SaaS tool installations but allows API access
+  - Self-hosted solution that runs entirely on your own infrastructure
+  - Keep your code and data within your network
+
+- **People who want to run AI agents on localhost**
+  - Full control over your development environment
+  - No dependency on external services beyond the LLM APIs
+  - Works with your existing API keys
 
 ## Quick Start
 
