@@ -23,6 +23,7 @@ import {
 export default function HomePage() {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const defaultsAppliedRef = useRef(false);
   const { error: toastError } = useToast();
   const submitShortcut = useShortcutText('Enter');
 
@@ -75,6 +76,7 @@ export default function HomePage() {
 
   // Apply default preferences when repos are loaded
   useEffect(() => {
+    if (defaultsAppliedRef.current) return;
     if (repos && preferences && !selectedRepo) {
       if (preferences.default_repo_owner && preferences.default_repo_name) {
         const defaultRepo = repos.find(
@@ -83,6 +85,7 @@ export default function HomePage() {
         if (defaultRepo) {
           setSelectedRepo(defaultRepo);
           setSelectedBranch(preferences.default_branch || defaultRepo.default_branch);
+          defaultsAppliedRef.current = true;
         }
       }
     }
@@ -90,6 +93,7 @@ export default function HomePage() {
 
   // Set default branch when repo changes
   const handleRepoSelect = useCallback((repo: GitHubRepository) => {
+    defaultsAppliedRef.current = true;
     setSelectedRepo(repo);
     setSelectedBranch(repo.default_branch);
     setShowRepoDropdown(false);

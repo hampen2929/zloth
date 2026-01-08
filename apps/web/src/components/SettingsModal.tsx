@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useSWR, { mutate } from 'swr';
 import { modelsApi, githubApi, preferencesApi } from '@/lib/api';
-import type { Provider, ModelProfileCreate, GitHubAppConfig, GitHubRepository, UserPreferences } from '@/types';
+import type { Provider, ModelProfileCreate } from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
@@ -112,7 +112,7 @@ function ModelsTab() {
         await modelsApi.delete(modelId);
         mutate('models');
         success('Model deleted successfully');
-      } catch (err) {
+      } catch {
         toastError('Failed to delete model');
       }
     }
@@ -323,7 +323,7 @@ function AddModelForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 function GitHubAppTab() {
-  const { data: config, error, isLoading } = useSWR('github-config', githubApi.getConfig);
+  const { data: config, isLoading } = useSWR('github-config', githubApi.getConfig);
   const [appId, setAppId] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [installationId, setInstallationId] = useState('');
@@ -494,7 +494,7 @@ function GitHubAppTab() {
 }
 
 function DefaultsTab() {
-  const { data: preferences, isLoading: prefsLoading } = useSWR('preferences', preferencesApi.get);
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: githubConfig } = useSWR('github-config', githubApi.getConfig);
   const { data: repos, isLoading: reposLoading } = useSWR(
     githubConfig?.is_configured ? 'github-repos' : null,
@@ -508,18 +508,6 @@ function DefaultsTab() {
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
-
-  // Initialize from saved preferences
-  useEffect(() => {
-    if (preferences && repos) {
-      if (preferences.default_repo_owner && preferences.default_repo_name) {
-        const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
-        setSelectedRepo(repoFullName);
-        // Load branches for the default repo
-        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch);
-      }
-    }
-  }, [preferences, repos]);
 
   // Initialize branch prefix from preferences
   useEffect(() => {
@@ -560,13 +548,20 @@ function DefaultsTab() {
     try {
       const branchList = await githubApi.listBranches(owner, repo);
       setBranches(branchList);
-      if (defaultBranch && branchList.includes(defaultBranch)) {
-        setSelectedBranch(defaultBranch);
-      } else if (branchList.length > 0) {
-        // Try to select 'main' or 'master' or the first branch
-        const mainBranch = branchList.find(b => b === 'main') || branchList.find(b => b === 'master') || branchList[0];
-        setSelectedBranch(mainBranch);
-      }
+      // Only auto-select when nothing is selected yet (prevents unexpected switching on re-load)
+      setSelectedBranch((prev) => {
+        if (prev) return prev;
+        if (defaultBranch && branchList.includes(defaultBranch)) return defaultBranch;
+        if (branchList.length > 0) {
+          // Try to select 'main' or 'master' or the first branch
+          return (
+            branchList.find((b) => b === 'main') ||
+            branchList.find((b) => b === 'master') ||
+            branchList[0]
+          );
+        }
+        return prev;
+      });
     } catch (err) {
       console.error('Failed to load branches:', err);
       setBranches([]);
@@ -574,6 +569,23 @@ function DefaultsTab() {
       setBranchesLoading(false);
     }
   };
+
+  // Initialize from saved preferences (only once per preference value)
+  const lastInitKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!preferences || !repos) return;
+    if (selectedRepo) return; // Don't override in-progress edits
+    if (!preferences.default_repo_owner || !preferences.default_repo_name) return;
+
+    const key = `${preferences.default_repo_owner}/${preferences.default_repo_name}:${preferences.default_branch ?? ''}`;
+    if (lastInitKeyRef.current === key) return;
+    lastInitKeyRef.current = key;
+
+    const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
+    setSelectedRepo(repoFullName);
+    // Load branches for the default repo
+    loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch);
+  }, [preferences, repos, selectedRepo]);
 
   const handleRepoChange = async (fullName: string) => {
     setSelectedRepo(fullName);
@@ -598,7 +610,7 @@ function DefaultsTab() {
       });
       mutate('preferences');
       success('Default settings saved successfully');
-    } catch (err) {
+    } catch {
       toastError('Failed to save settings');
     } finally {
       setLoading(false);
@@ -620,7 +632,7 @@ function DefaultsTab() {
       setBranchPrefix('');
       mutate('preferences');
       success('Default settings cleared');
-    } catch (err) {
+    } catch {
       toastError('Failed to clear settings');
     } finally {
       setLoading(false);
