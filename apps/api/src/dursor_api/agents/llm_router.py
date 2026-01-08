@@ -1,11 +1,13 @@
 """LLM Router for multi-provider support."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from anthropic import AsyncAnthropic
+from anthropic.types import MessageParam
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from dursor_api.domain.enums import Provider
 
@@ -67,16 +69,17 @@ class LLMClient:
         all_messages.extend(messages)
 
         # gpt-5-mini uses max_completion_tokens and doesn't support temperature
+        typed_messages = cast(list[ChatCompletionMessageParam], all_messages)
         if self.config.model_name == "gpt-5-mini":
             response = await self._openai_client.chat.completions.create(
                 model=self.config.model_name,
-                messages=all_messages,
+                messages=typed_messages,
                 max_completion_tokens=self.config.max_tokens,
             )
         else:
             response = await self._openai_client.chat.completions.create(
                 model=self.config.model_name,
-                messages=all_messages,
+                messages=typed_messages,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
             )
@@ -92,11 +95,12 @@ class LLMClient:
         if self._anthropic_client is None:
             self._anthropic_client = AsyncAnthropic(api_key=self.config.api_key)
 
+        typed_messages = cast(list[MessageParam], messages)
         response = await self._anthropic_client.messages.create(
             model=self.config.model_name,
             max_tokens=self.config.max_tokens,
             system=system or "",
-            messages=messages,
+            messages=typed_messages,
         )
 
         # Extract text from content blocks
@@ -160,7 +164,7 @@ class LLMClient:
 class LLMRouter:
     """Router for managing multiple LLM clients."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._clients: dict[str, LLMClient] = {}
 
     def get_client(self, config: LLMConfig) -> LLMClient:

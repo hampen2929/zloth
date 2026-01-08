@@ -8,6 +8,7 @@ operations while AI Agents only edit files.
 from __future__ import annotations
 
 import asyncio
+import builtins
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -48,8 +49,8 @@ class QueueAdapter:
     Can be replaced with Celery/RQ/Redis in v0.2+.
     """
 
-    def __init__(self):
-        self._tasks: dict[str, asyncio.Task] = {}
+    def __init__(self) -> None:
+        self._tasks: dict[str, asyncio.Task[None]] = {}
 
     def enqueue(
         self,
@@ -62,7 +63,7 @@ class QueueAdapter:
             run_id: Run ID.
             coro: Coroutine to execute.
         """
-        task = asyncio.create_task(coro())
+        task: asyncio.Task[None] = asyncio.create_task(coro())
         self._tasks[run_id] = task
 
     def cancel(self, run_id: str) -> bool:
@@ -308,7 +309,7 @@ class RunService:
                     else:
                         worktree_info = WorktreeInfo(
                             path=worktree_path,
-                            branch_name=existing_run.working_branch,
+                            branch_name=existing_run.working_branch or "",
                             base_branch=existing_run.base_ref or base_ref,
                             created_at=existing_run.created_at,
                         )
@@ -317,7 +318,7 @@ class RunService:
                     # Reuse existing worktree (no default-base freshness check)
                     worktree_info = WorktreeInfo(
                         path=worktree_path,
-                        branch_name=existing_run.working_branch,
+                        branch_name=existing_run.working_branch or "",
                         base_branch=existing_run.base_ref or base_ref,
                         created_at=existing_run.created_at,
                     )
@@ -691,7 +692,7 @@ class RunService:
     async def _read_and_remove_summary_file(
         self,
         worktree_path: Path,
-        logs: list[str],
+        logs: builtins.list[str],
     ) -> str | None:
         """Read summary from the agent-generated summary file and remove it.
 
@@ -762,7 +763,7 @@ class RunService:
             return f"{first_line}\n\n{summary}"
         return first_line
 
-    def _parse_diff(self, diff: str) -> list[FileDiff]:
+    def _parse_diff(self, diff: str) -> builtins.list[FileDiff]:
         """Parse unified diff to extract file change information.
 
         Args:
@@ -771,9 +772,9 @@ class RunService:
         Returns:
             List of FileDiff objects.
         """
-        files: list[FileDiff] = []
+        files: builtins.list[FileDiff] = []
         current_file: str | None = None
-        current_patch_lines: list[str] = []
+        current_patch_lines: builtins.list[str] = []
         added_lines = 0
         removed_lines = 0
 
@@ -850,7 +851,7 @@ class RunService:
                 return match.group(1), match.group(2)
         raise ValueError(f"Could not parse GitHub URL: {repo_url}")
 
-    def _generate_summary(self, files_changed: list[FileDiff]) -> str:
+    def _generate_summary(self, files_changed: builtins.list[FileDiff]) -> str:
         """Generate a human-readable summary of changes.
 
         Args:

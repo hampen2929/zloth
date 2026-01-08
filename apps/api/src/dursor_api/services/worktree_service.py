@@ -31,7 +31,12 @@ class WorktreeService:
         Args:
             workspaces_dir: Base directory for worktrees. Defaults to settings.
         """
-        self.workspaces_dir = workspaces_dir or settings.workspaces_dir
+        if workspaces_dir:
+            self.workspaces_dir = workspaces_dir
+        elif settings.workspaces_dir:
+            self.workspaces_dir = settings.workspaces_dir
+        else:
+            raise ValueError("workspaces_dir must be provided or set in settings")
         self.worktrees_dir = self.workspaces_dir / "worktrees"
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
@@ -70,7 +75,7 @@ class WorktreeService:
         worktree_path = self.worktrees_dir / f"run_{run_id}"
 
         # Run git commands in a thread pool to avoid blocking
-        def _create_worktree():
+        def _create_worktree() -> WorktreeInfo:
             source_repo = git.Repo(repo.workspace_path)
 
             # Fetch to ensure we have latest refs
@@ -120,7 +125,7 @@ class WorktreeService:
             delete_branch: Whether to also delete the branch.
         """
 
-        def _cleanup():
+        def _cleanup() -> None:
             if not worktree_path.exists():
                 return
 
@@ -175,9 +180,9 @@ class WorktreeService:
             List of WorktreeInfo objects.
         """
 
-        def _list():
+        def _list() -> list[WorktreeInfo]:
             source_repo = git.Repo(repo.workspace_path)
-            worktrees = []
+            worktrees: list[WorktreeInfo] = []
 
             # Parse git worktree list --porcelain output
             try:
@@ -222,24 +227,25 @@ class WorktreeService:
             Tuple of (unified diff string, list of changed file paths).
         """
 
-        def _get_changes():
+        def _get_changes() -> tuple[str, list[str]]:
             repo = git.Repo(worktree_path)
 
             # Get list of changed files
-            changed_files = []
+            changed_files: list[str] = []
 
             # Untracked files
             for item in repo.untracked_files:
                 changed_files.append(item)
 
             # Modified and deleted files
-            for item in repo.index.diff(None):
-                changed_files.append(item.a_path)
+            for diff_item in repo.index.diff(None):
+                if diff_item.a_path:
+                    changed_files.append(diff_item.a_path)
 
             # Staged files
-            for item in repo.index.diff("HEAD"):
-                if item.a_path not in changed_files:
-                    changed_files.append(item.a_path)
+            for diff_item in repo.index.diff("HEAD"):
+                if diff_item.a_path and diff_item.a_path not in changed_files:
+                    changed_files.append(diff_item.a_path)
 
             # Generate diff
             # First, stage all changes
@@ -271,7 +277,7 @@ class WorktreeService:
             Commit SHA.
         """
 
-        def _commit():
+        def _commit() -> str:
             repo = git.Repo(worktree_path)
             repo.git.add("-A")
             repo.index.commit(message)

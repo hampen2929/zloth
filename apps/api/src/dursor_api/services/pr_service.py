@@ -24,6 +24,8 @@ from dursor_api.domain.models import (
     PRSyncResult,
     PRUpdate,
     Repo,
+    Run,
+    Task,
 )
 from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
@@ -91,7 +93,9 @@ class PRService:
 
         return parts[0], parts[1]
 
-    async def _ensure_branch_pushed(self, *, owner: str, repo: str, repo_obj: Repo, run) -> None:
+    async def _ensure_branch_pushed(
+        self, *, owner: str, repo: str, repo_obj: Repo, run: Run
+    ) -> None:
         """Ensure the run's working branch exists on the remote.
 
         For CLI runs, we usually have a worktree and can push from it.
@@ -428,7 +432,7 @@ class PRService:
             ),
         )
 
-    async def _generate_title(self, diff: str, task, run) -> str:
+    async def _generate_title(self, diff: str, task: Task, run: Run) -> str:
         """Generate PR title using LLM.
 
         Args:
@@ -470,8 +474,8 @@ class PRService:
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
-                prompt=prompt,
-                system_prompt=(
+                messages=[{"role": "user", "content": prompt}],
+                system=(
                     "You are a helpful assistant that generates clear and concise "
                     "PR titles. Output only the title text."
                 ),
@@ -493,9 +497,9 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         title: str,
-        run,
+        run: Run,
     ) -> str:
         """Generate PR description for new PR using LLM.
 
@@ -522,8 +526,8 @@ class PRService:
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
-                prompt=prompt,
-                system_prompt=(
+                messages=[{"role": "user", "content": prompt}],
+                system=(
                     "You are a helpful assistant that generates clear "
                     "and concise PR descriptions. Follow the provided template exactly."
                 ),
@@ -537,9 +541,9 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         title: str,
-        run,
+        run: Run,
     ) -> str:
         """Build prompt for description generation for new PR.
 
@@ -613,7 +617,7 @@ class PRService:
         return "\n".join(prompt_parts)
 
     def _generate_fallback_description_for_new_pr(
-        self, diff: str, title: str, run, template: str | None = None
+        self, diff: str, title: str, run: Run, template: str | None = None
     ) -> str:
         """Generate a simple fallback description for new PR.
 
@@ -949,7 +953,7 @@ class PRService:
 
         return None
 
-    async def _log_pr_branch_base_state(self, repo_obj: Repo, run) -> None:
+    async def _log_pr_branch_base_state(self, repo_obj: Repo, run: Run) -> None:
         """Log merge-base diagnostics for PR branches.
 
         This helps confirm whether the PR branch includes the latest default branch.
@@ -1027,7 +1031,7 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         pr: PR,
     ) -> str:
         """Generate PR description using LLM.
@@ -1053,8 +1057,8 @@ class PRService:
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
-                prompt=prompt,
-                system_prompt=(
+                messages=[{"role": "user", "content": prompt}],
+                system=(
                     "You are a helpful assistant that generates clear "
                     "and concise PR descriptions. Follow the provided template exactly."
                 ),
@@ -1068,7 +1072,7 @@ class PRService:
         self,
         diff: str,
         template: str | None,
-        task,
+        task: Task,
         pr: PR,
     ) -> str:
         """Build prompt for description generation.

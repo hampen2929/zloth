@@ -93,8 +93,8 @@ async def ensure_english_commit_message(
         )
         llm_client = router.get_client(config)
         rewritten = await llm_client.generate(
-            prompt=prompt,
-            system_prompt=(
+            messages=[{"role": "user", "content": prompt}],
+            system=(
                 "You rewrite git commit messages into clear, idiomatic English. "
                 "Output only the commit message text."
             ),
