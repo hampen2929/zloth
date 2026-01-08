@@ -93,18 +93,52 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
     }
   }, [logs]);
 
+  // Get the default branch for the selected repository
+  const selectedRepoDefaultBranch = (() => {
+    if (!repos || !selectedRepo) return null;
+    return repos.find((r) => r.full_name === selectedRepo)?.default_branch ?? null;
+  })();
+
+  // Build branch options with default branch on top
+  const branchOptions: { value: string; label: string }[] = (() => {
+    const list = branches || [];
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+
+    if (selectedRepoDefaultBranch) {
+      seen.add(selectedRepoDefaultBranch);
+      opts.push({
+        value: selectedRepoDefaultBranch,
+        label: `Default (${selectedRepoDefaultBranch})`,
+      });
+    }
+
+    for (const b of list) {
+      if (seen.has(b)) continue;
+      seen.add(b);
+      opts.push({ value: b, label: b });
+    }
+
+    return opts;
+  })();
+
   // Load branches when repo changes
-  const loadBranches = useCallback(async (owner: string, repo: string) => {
+  const loadBranches = useCallback(async (owner: string, repo: string, defaultBranch?: string | null) => {
     setBranchesLoading(true);
     try {
       const branchList = await githubApi.listBranches(owner, repo);
       setBranches(branchList);
       if (branchList.length > 0) {
-        const mainBranch =
-          branchList.find((b) => b === 'main') ||
-          branchList.find((b) => b === 'master') ||
-          branchList[0];
-        setSelectedBranch(mainBranch);
+        // Prefer the repository's default branch
+        if (defaultBranch && branchList.includes(defaultBranch)) {
+          setSelectedBranch(defaultBranch);
+        } else {
+          const mainBranch =
+            branchList.find((b) => b === 'main') ||
+            branchList.find((b) => b === 'master') ||
+            branchList[0];
+          setSelectedBranch(mainBranch);
+        }
       }
     } catch (err) {
       console.error('Failed to load branches:', err);
@@ -121,7 +155,9 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
 
     if (fullName) {
       const [owner, repo] = fullName.split('/');
-      await loadBranches(owner, repo);
+      // Get the default branch for this repository
+      const repoData = repos?.find((r) => r.full_name === fullName);
+      await loadBranches(owner, repo, repoData?.default_branch);
     }
   };
 
@@ -323,9 +359,9 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
                   <option value="">
                     {branchesLoading ? 'Loading...' : 'Select a branch'}
                   </option>
-                  {branches.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
+                  {branchOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
@@ -334,10 +370,10 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
 
             {/* Content Input */}
             <Textarea
-              label="Hearing Content"
+              label="Content"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={`Paste your hearing content here...
+              placeholder={`Enter the content to analyze...
 
 Example:
 - Login screen doesn't show error message when password is wrong
