@@ -244,6 +244,71 @@ docker compose down
 - **Linter**: ESLint
 - **Types**: Use strict type definitions
 
+### mypy Best Practices
+
+This project uses mypy in strict mode. Follow these patterns to avoid common type errors:
+
+#### DAO Return Types
+DAO `get()` methods return `T | None`. Always handle the None case explicitly:
+```python
+# Bad - mypy error
+pr = await self.pr_dao.get(pr_id)
+return pr  # Error: Incompatible return type "PR | None", expected "PR"
+
+# Good
+pr = await self.pr_dao.get(pr_id)
+if not pr:
+    raise ValueError(f"PR not found: {pr_id}")
+return pr
+```
+
+#### Lambda Type Inference
+Lambda expressions with default arguments cause type inference issues. Use typed helper functions:
+```python
+# Bad - mypy error: Cannot infer type of lambda
+self.queue.enqueue(run.id, lambda r=run: self._execute(r))
+
+# Good
+def make_coro(r: Run) -> Callable[[], Coroutine[Any, Any, None]]:
+    return lambda: self._execute(r)
+self.queue.enqueue(run.id, make_coro(run))
+```
+
+#### Dict with Union Value Types
+When dict values have different but related types, add explicit type annotations:
+```python
+# Bad - mypy infers tuple[object, str]
+executor_map = {
+    ExecutorType.CLAUDE: (self.claude_executor, "Claude"),
+    ExecutorType.CODEX: (self.codex_executor, "Codex"),
+}
+
+# Good
+executor_map: dict[ExecutorType, tuple[ClaudeExecutor | CodexExecutor, str]] = {
+    ExecutorType.CLAUDE: (self.claude_executor, "Claude"),
+    ExecutorType.CODEX: (self.codex_executor, "Codex"),
+}
+```
+
+#### aiosqlite Row Access
+`aiosqlite.Row` uses bracket notation, not `.get()`:
+```python
+# Bad - Row has no attribute 'get'
+has_key = bool(row.get("private_key"))
+
+# Good
+has_key = bool(row["private_key"])
+```
+
+#### Optional Field Validation
+When using fields that may be None, validate early and use type narrowing:
+```python
+# Validate at function entry for required optional fields
+if not run.model_id or not run.provider:
+    raise ValueError(f"Missing required fields: {run.model_id=}, {run.provider=}")
+# After this check, mypy knows these are not None
+```
+
 ## Important Design Decisions
 
 ### v0.1 Scope Limitations
