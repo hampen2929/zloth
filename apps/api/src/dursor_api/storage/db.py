@@ -72,9 +72,7 @@ class Database:
         pref_column_names = [col["name"] for col in pref_columns]
 
         if "default_branch_prefix" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN default_branch_prefix TEXT"
-            )
+            await conn.execute("ALTER TABLE user_preferences ADD COLUMN default_branch_prefix TEXT")
             await conn.commit()
 
         # Migration: Add default_pr_creation_mode column if it doesn't exist
@@ -99,9 +97,7 @@ class Database:
         cursor = await conn.execute(query, params or ())
         return await cursor.fetchone()
 
-    async def execute(
-        self, query: str, params: tuple[Any, ...] | None = None
-    ) -> aiosqlite.Cursor:
+    async def execute(self, query: str, params: tuple[Any, ...] | None = None) -> aiosqlite.Cursor:
         """Execute a query and return the cursor."""
         conn = self.connection
         cursor = await conn.execute(query, params or ())
