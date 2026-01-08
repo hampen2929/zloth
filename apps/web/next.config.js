@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
+  turbopack: {
+    root: __dirname,
+  },
   async rewrites() {
     const apiUrl = process.env.API_URL || 'http://localhost:8000';
     return [
