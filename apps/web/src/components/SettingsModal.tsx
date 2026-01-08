@@ -22,7 +22,10 @@ import {
   TrashIcon,
   PlusIcon,
   Cog6ToothIcon,
+  ArrowPathIcon,
+  LanguageIcon,
 } from '@heroicons/react/24/outline';
+import { useTranslation, localeNames, type Locale } from '@/i18n';
 
 const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   {
@@ -42,7 +45,7 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
-type TabType = 'models' | 'github' | 'defaults';
+type TabType = 'models' | 'github' | 'defaults' | 'language';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -50,14 +53,16 @@ interface SettingsModalProps {
   defaultTab?: TabType;
 }
 
-const tabConfig: { id: TabType; label: string; icon: React.ReactNode }[] = [
-  { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
-  { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
-  { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
+const tabConfig: { id: TabType; labelKey: string; icon: React.ReactNode }[] = [
+  { id: 'models', labelKey: 'settings.tabs.models', icon: <CpuChipIcon className="w-4 h-4" /> },
+  { id: 'github', labelKey: 'settings.tabs.github', icon: <KeyIcon className="w-4 h-4" /> },
+  { id: 'defaults', labelKey: 'settings.tabs.defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
+  { id: 'language', labelKey: 'settings.tabs.language', icon: <LanguageIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(defaultTab || 'models');
+  const { t } = useTranslation();
 
   // Update active tab when defaultTab changes
   // This is intentional: we want to switch tabs when externally triggered
@@ -72,11 +77,11 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Settings"
+      title={t('settings.title')}
       size="xl"
     >
       {/* Tabs */}
-      <div className="flex border-b border-gray-800" role="tablist">
+      <div className="flex border-b border-gray-800 overflow-x-auto" role="tablist">
         {tabConfig.map((tab) => (
           <button
             key={tab.id}
@@ -84,7 +89,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
             role="tab"
             aria-selected={activeTab === tab.id}
             className={cn(
-              'flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors',
+              'flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap',
               'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset',
               activeTab === tab.id
                 ? 'text-blue-400 border-b-2 border-blue-500 -mb-[1px]'
@@ -92,7 +97,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
             )}
           >
             {tab.icon}
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
@@ -102,6 +107,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
         {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
+        {activeTab === 'language' && <LanguageTab />}
       </ModalBody>
     </Modal>
   );
@@ -110,6 +116,8 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
 function ModelsTab() {
   const { data: models, error } = useSWR('models', modelsApi.list);
   const [showForm, setShowForm] = useState(false);
+  const [validatingId, setValidatingId] = useState<string | null>(null);
+  const [validationResults, setValidationResults] = useState<Record<string, { valid: boolean; error: string | null }>>({});
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const { success, error: toastError } = useToast();
 
@@ -129,6 +137,38 @@ function ModelsTab() {
       } catch {
         toastError('Failed to delete model');
       }
+    }
+  };
+
+  const handleValidate = async (modelId: string) => {
+    setValidatingId(modelId);
+    // Clear previous result for this model
+    setValidationResults((prev) => {
+      const updated = { ...prev };
+      delete updated[modelId];
+      return updated;
+    });
+
+    try {
+      const result = await modelsApi.validate(modelId);
+      setValidationResults((prev) => ({
+        ...prev,
+        [modelId]: { valid: result.valid, error: result.error },
+      }));
+      if (result.valid) {
+        success('API key is valid');
+      } else {
+        toastError(result.error || 'API key validation failed');
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Validation failed';
+      setValidationResults((prev) => ({
+        ...prev,
+        [modelId]: { valid: false, error: errorMsg },
+      }));
+      toastError(errorMsg);
+    } finally {
+      setValidatingId(null);
     }
   };
 
@@ -174,12 +214,14 @@ function ModelsTab() {
         <div className="space-y-2 mt-4">
           {models.map((model) => {
             const isEnvModel = model.id.startsWith('env-');
+            const isValidating = validatingId === model.id;
+            const validationResult = validationResults[model.id];
             return (
               <div
                 key={model.id}
                 className="flex items-center justify-between p-4 bg-gray-800/30 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
               >
-                <div>
+                <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-100 flex items-center gap-2">
                     {model.display_name || model.model_name}
                     {isEnvModel && (
@@ -187,25 +229,55 @@ function ModelsTab() {
                         .env
                       </span>
                     )}
+                    {validationResult && (
+                      validationResult.valid ? (
+                        <span className="flex items-center gap-1 text-xs text-green-400">
+                          <CheckCircleIcon className="w-4 h-4" />
+                          Valid
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-red-400">
+                          <ExclamationTriangleIcon className="w-4 h-4" />
+                          Invalid
+                        </span>
+                      )
+                    )}
                   </div>
                   <div className="text-sm text-gray-500">
                     {model.provider} / {model.model_name}
                   </div>
+                  {validationResult && !validationResult.valid && validationResult.error && (
+                    <div className="text-xs text-red-400 mt-1">
+                      {validationResult.error}
+                    </div>
+                  )}
                 </div>
-                {isEnvModel ? (
-                  <span className="text-xs text-gray-500">
-                    Configured via .env
-                  </span>
-                ) : (
+                <div className="flex items-center gap-2 ml-4">
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(model.id, model.display_name || model.model_name)}
-                    className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                    onClick={() => handleValidate(model.id)}
+                    disabled={isValidating}
+                    className="text-gray-400 hover:text-gray-300 hover:bg-gray-700"
+                    title="Test API key connection"
                   >
-                    <TrashIcon className="w-4 h-4" />
+                    <ArrowPathIcon className={cn('w-4 h-4', isValidating && 'animate-spin')} />
                   </Button>
-                )}
+                  {isEnvModel ? (
+                    <span className="text-xs text-gray-500">
+                      via .env
+                    </span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(model.id, model.display_name || model.model_name)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -791,6 +863,47 @@ function DefaultsTab() {
           >
             Clear
           </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LanguageTab() {
+  const { locale, setLocale, t } = useTranslation();
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-100">{t('settings.language.title')}</h3>
+        <p className="text-sm text-gray-400 mt-1">
+          {t('settings.language.description')}
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            {t('settings.language.selectLanguage')}
+          </label>
+          <select
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as Locale)}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors'
+            )}
+          >
+            {(Object.keys(localeNames) as Locale[]).map((loc) => (
+              <option key={loc} value={loc}>
+                {localeNames[loc]}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500">
+            {t('settings.language.languageHint')}
+          </p>
         </div>
       </div>
     </div>

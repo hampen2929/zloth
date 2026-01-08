@@ -1,0 +1,190 @@
+{
+  "common": {
+    "loading": "読み込み中...",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "confirm": "確認",
+    "clear": "クリア",
+    "close": "閉じる",
+    "add": "追加",
+    "edit": "編集",
+    "retry": "再試行",
+    "success": "成功",
+    "error": "エラー",
+    "warning": "警告",
+    "info": "情報"
+  },
+  "settings": {
+    "title": "設定",
+    "tabs": {
+      "models": "モデル",
+      "github": "GitHub App",
+      "defaults": "デフォルト設定",
+      "language": "言語"
+    },
+    "models": {
+      "title": "モデルプロファイル",
+      "description": "並列実行用のLLMプロバイダーとAPIキーを設定します",
+      "addModel": "モデルを追加",
+      "noModels": "モデルが設定されていません。APIキーを追加して開始してください。",
+      "deleteConfirm": "「{name}」を削除してもよろしいですか？この操作は取り消せません。",
+      "deleteTitle": "モデルを削除",
+      "deleteSuccess": "モデルを削除しました",
+      "deleteFailed": "モデルの削除に失敗しました",
+      "addSuccess": "モデルを追加しました",
+      "addFailed": "モデルの追加に失敗しました",
+      "provider": "プロバイダー",
+      "model": "モデル",
+      "selectModel": "モデルを選択",
+      "displayName": "表示名（オプション）",
+      "displayNamePlaceholder": "例: GPT-4o (高速)",
+      "displayNameHint": "このモデルを識別するための名前",
+      "apiKey": "APIキー",
+      "apiKeyPlaceholder": "sk-...",
+      "configuredViaEnv": ".envで設定済み",
+      "viaEnv": ".env経由",
+      "testConnection": "APIキー接続をテスト",
+      "valid": "有効",
+      "invalid": "無効",
+      "validationSuccess": "APIキーは有効です",
+      "validationFailed": "APIキーの検証に失敗しました"
+    },
+    "github": {
+      "title": "GitHub App設定",
+      "description": "GitHub Appを接続して、プルリクエストの作成とリポジトリへのアクセスを有効にします。",
+      "configured": "GitHub Appは設定済みです",
+      "notConfigured": "GitHub Appが未設定です",
+      "appId": "App ID",
+      "appIdHint": "GitHub Appの設定ページで確認できます",
+      "privateKey": "秘密鍵",
+      "privateKeyPlaceholder": "-----BEGIN RSA PRIVATE KEY-----",
+      "privateKeyHintExisting": "空白のままにすると既存のキーを保持します。新しいキーを貼り付けて更新します。",
+      "privateKeyHintNew": "GitHub Appから生成した秘密鍵を貼り付けてください",
+      "installationId": "Installation ID",
+      "installationIdHint": "組織のインストール済みアプリ設定で確認できます",
+      "saveConfig": "設定を保存",
+      "saveSuccess": "GitHub App設定を保存しました",
+      "saveFailed": "設定の保存に失敗しました",
+      "envVars": "環境変数",
+      "envVarsDesc": "環境変数を使用してGitHub Appを設定することもできます:",
+      "envConfigTitle": "環境変数からの設定",
+      "envConfigHint": "これらの値を変更するには、.envファイルを更新してアプリケーションを再起動してください。"
+    },
+    "defaults": {
+      "title": "デフォルトのリポジトリとブランチ",
+      "description": "新しいタスクを作成する際に使用するデフォルトのリポジトリとブランチを設定します。",
+      "configureGitHubFirst": "デフォルトリポジトリを選択するには、まずGitHub Appを設定してください。",
+      "repository": "リポジトリ",
+      "repositoryHint": "新しいタスクを作成する際に事前選択されるリポジトリを選択します。",
+      "selectRepo": "リポジトリを選択",
+      "branch": "ブランチ",
+      "branchHint": "新しいタスクを作成する際に事前選択されるブランチを選択します。",
+      "selectBranch": "ブランチを選択",
+      "loadingBranches": "ブランチを読み込み中...",
+      "branchPrefix": "ブランチのプレフィックス",
+      "branchPrefixHint": "新しい作業ブランチに使用するプレフィックス（例: dursor/abcd1234）。空白の場合はデフォルトを使用します。",
+      "prCreationBehavior": "PR作成の動作",
+      "prCreationAuto": "PRを自動作成（現在の動作）",
+      "prCreationLink": "PRリンクを開く（手動作成）",
+      "prCreationHint": "「PRを作成」をクリックしたときにPRを即座に作成するか、GitHubのPR作成ページを開くかを選択します。",
+      "saveDefaults": "デフォルト設定を保存",
+      "saveSuccess": "デフォルト設定を保存しました",
+      "saveFailed": "設定の保存に失敗しました",
+      "clearSuccess": "デフォルト設定をクリアしました",
+      "clearFailed": "設定のクリアに失敗しました",
+      "default": "デフォルト"
+    },
+    "language": {
+      "title": "言語設定",
+      "description": "インターフェースの言語を選択してください。",
+      "selectLanguage": "言語",
+      "languageHint": "ユーザーインターフェースの言語を選択します。"
+    }
+  },
+  "home": {
+    "githubNotConfigured": "GitHub Appが未設定です",
+    "goToSettings": "設定へ移動",
+    "selectRepository": "リポジトリを選択してください",
+    "selectBranch": "ブランチを選択してください",
+    "modelsNotRegistered": "モデルが未登録です",
+    "addModels": "モデルを追加",
+    "instructionPlaceholder": "AIへの指示を入力してください...",
+    "send": "送信"
+  },
+  "task": {
+    "runs": {
+      "all": "すべて",
+      "succeeded": "成功",
+      "failed": "失敗",
+      "running": "実行中",
+      "noRuns": "実行がありません",
+      "enterInstructions": "指示を入力して開始してください",
+      "noSucceeded": "成功した実行はありません",
+      "noFailed": "失敗した実行はありません",
+      "noRunning": "実行中のタスクはありません",
+      "showAll": "すべて表示"
+    }
+  },
+  "timeline": {
+    "queued": "キュー待ち",
+    "started": "開始",
+    "processing": "処理中",
+    "completed": "完了",
+    "failed": "失敗",
+    "canceled": "キャンセル",
+    "changedFiles": "変更されたファイル",
+    "moreFiles": "+{count}個のファイル"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "ようこそ",
+      "heading": "dursor へようこそ！",
+      "description": "セルフホスト可能なマルチモデル並列コーディングエージェントです。セットアップを完了して開始しましょう。",
+      "step1": "GitHub App を接続",
+      "step1Desc": "リポジトリにアクセスしてPRを作成",
+      "step2": "LLMモデルを追加",
+      "step2Desc": "OpenAI、Anthropic、または Google の APIキー",
+      "step3": "最初のタスクを作成",
+      "step3Desc": "並列AIエージェントをコードで実行"
+    },
+    "github": {
+      "title": "GitHub App",
+      "heading": "GitHub App を接続",
+      "description": "リポジトリへのアクセスとプルリクエストの作成には GitHub App が必要です。",
+      "configured": "GitHub App は設定済みです",
+      "notConfigured": "GitHub App はまだ設定されていません",
+      "configure": "GitHub App を設定"
+    },
+    "models": {
+      "title": "モデル",
+      "heading": "LLMモデルを追加",
+      "description": "AIエージェントを実行するためにOpenAI、Anthropic、または Google の APIキーを追加してください。",
+      "oneConfigured": "1個のモデルが設定済み",
+      "multipleConfigured": "{count}個のモデルが設定済み",
+      "noModels": "モデルがまだ設定されていません",
+      "addModel": "モデルを追加"
+    },
+    "ready": {
+      "title": "準備完了！",
+      "heading": "準備が整いました！",
+      "description": "タスクを作成してコードでAIエージェントを実行しましょう。",
+      "githubReady": "GitHub App が接続されています",
+      "githubNotReady": "GitHub App が未設定です",
+      "modelsReady": "{count}個のモデルが設定済み",
+      "modelsNotReady": "モデルが未設定です"
+    },
+    "nav": {
+      "back": "戻る",
+      "next": "次へ",
+      "skip": "スキップ",
+      "getStarted": "始める"
+    }
+  },
+  "errors": {
+    "loadFailed": "読み込みに失敗しました",
+    "saveFailed": "保存に失敗しました",
+    "networkError": "ネットワークエラーです。接続を確認してください。",
+    "unknownError": "不明なエラーが発生しました。"
+  }
+}

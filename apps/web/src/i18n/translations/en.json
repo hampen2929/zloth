@@ -1,0 +1,190 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "clear": "Clear",
+    "close": "Close",
+    "add": "Add",
+    "edit": "Edit",
+    "retry": "Retry",
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "models": "Models",
+      "github": "GitHub App",
+      "defaults": "Defaults",
+      "language": "Language"
+    },
+    "models": {
+      "title": "Model Profiles",
+      "description": "Configure LLM providers and API keys for parallel execution",
+      "addModel": "Add Model",
+      "noModels": "No models configured. Add your API keys to get started.",
+      "deleteConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+      "deleteTitle": "Delete Model",
+      "deleteSuccess": "Model deleted successfully",
+      "deleteFailed": "Failed to delete model",
+      "addSuccess": "Model added successfully",
+      "addFailed": "Failed to add model",
+      "provider": "Provider",
+      "model": "Model",
+      "selectModel": "Select a model",
+      "displayName": "Display Name (optional)",
+      "displayNamePlaceholder": "e.g., GPT-4o (fast)",
+      "displayNameHint": "A friendly name to identify this model",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "sk-...",
+      "configuredViaEnv": "Configured via .env",
+      "viaEnv": "via .env",
+      "testConnection": "Test API key connection",
+      "valid": "Valid",
+      "invalid": "Invalid",
+      "validationSuccess": "API key is valid",
+      "validationFailed": "API key validation failed"
+    },
+    "github": {
+      "title": "GitHub App Configuration",
+      "description": "Connect a GitHub App to create pull requests and access repositories.",
+      "configured": "GitHub App is configured",
+      "notConfigured": "GitHub App not configured",
+      "appId": "App ID",
+      "appIdHint": "Find this in your GitHub App settings page",
+      "privateKey": "Private Key",
+      "privateKeyPlaceholder": "-----BEGIN RSA PRIVATE KEY-----",
+      "privateKeyHintExisting": "Leave blank to keep existing key. Paste new key to update.",
+      "privateKeyHintNew": "Paste the private key generated from your GitHub App",
+      "installationId": "Installation ID",
+      "installationIdHint": "Find this in your organization's installed apps settings",
+      "saveConfig": "Save Configuration",
+      "saveSuccess": "GitHub App configuration saved successfully",
+      "saveFailed": "Failed to save configuration",
+      "envVars": "Environment Variables",
+      "envVarsDesc": "You can also configure the GitHub App via environment variables:",
+      "envConfigTitle": "Configuration from Environment Variables",
+      "envConfigHint": "To modify these values, update your .env file and restart the application."
+    },
+    "defaults": {
+      "title": "Default Repository & Branch",
+      "description": "Set default repository and branch to use when creating new tasks.",
+      "configureGitHubFirst": "Configure GitHub App first to select default repository.",
+      "repository": "Repository",
+      "repositoryHint": "Select the repository that will be pre-selected when creating new tasks.",
+      "selectRepo": "Select a repository",
+      "branch": "Branch",
+      "branchHint": "Select the branch that will be pre-selected when creating new tasks.",
+      "selectBranch": "Select a branch",
+      "loadingBranches": "Loading branches...",
+      "branchPrefix": "Branch Prefix",
+      "branchPrefixHint": "Prefix used for new work branches (e.g., dursor/abcd1234). Leave blank to use the default.",
+      "prCreationBehavior": "Create PR behavior",
+      "prCreationAuto": "Create PR automatically (current behavior)",
+      "prCreationLink": "Open PR link (manual creation)",
+      "prCreationHint": "Choose whether \"Create PR\" creates the PR immediately or opens the GitHub PR creation page.",
+      "saveDefaults": "Save Defaults",
+      "saveSuccess": "Default settings saved successfully",
+      "saveFailed": "Failed to save settings",
+      "clearSuccess": "Default settings cleared",
+      "clearFailed": "Failed to clear settings",
+      "default": "Default"
+    },
+    "language": {
+      "title": "Language Settings",
+      "description": "Choose your preferred language for the interface.",
+      "selectLanguage": "Language",
+      "languageHint": "Select the language for the user interface."
+    }
+  },
+  "home": {
+    "githubNotConfigured": "GitHub App is not configured",
+    "goToSettings": "Go to Settings",
+    "selectRepository": "Select a repository",
+    "selectBranch": "Select a branch",
+    "modelsNotRegistered": "Models are not registered",
+    "addModels": "Add models",
+    "instructionPlaceholder": "Enter instructions for the AI...",
+    "send": "Send"
+  },
+  "task": {
+    "runs": {
+      "all": "All",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "running": "Running",
+      "noRuns": "No runs yet",
+      "enterInstructions": "Enter instructions to start",
+      "noSucceeded": "No succeeded runs",
+      "noFailed": "No failed runs",
+      "noRunning": "No running tasks",
+      "showAll": "Show all"
+    }
+  },
+  "timeline": {
+    "queued": "Queued",
+    "started": "Started",
+    "processing": "Processing",
+    "completed": "Completed",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "changedFiles": "Changed Files",
+    "moreFiles": "+{count} more files"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Welcome",
+      "heading": "Welcome to dursor!",
+      "description": "A self-hostable multi-model parallel coding agent. Complete the setup to get started.",
+      "step1": "Connect GitHub App",
+      "step1Desc": "Access repositories and create PRs",
+      "step2": "Add LLM Models",
+      "step2Desc": "OpenAI, Anthropic, or Google API keys",
+      "step3": "Create Your First Task",
+      "step3Desc": "Run parallel AI agents on your code"
+    },
+    "github": {
+      "title": "GitHub App",
+      "heading": "Connect GitHub App",
+      "description": "A GitHub App is needed to access your repositories and create pull requests.",
+      "configured": "GitHub App is configured",
+      "notConfigured": "GitHub App is not configured yet",
+      "configure": "Configure GitHub App"
+    },
+    "models": {
+      "title": "Models",
+      "heading": "Add LLM Models",
+      "description": "Add your API keys for OpenAI, Anthropic, or Google to run AI agents.",
+      "oneConfigured": "1 model configured",
+      "multipleConfigured": "{count} models configured",
+      "noModels": "No models configured yet",
+      "addModel": "Add Model"
+    },
+    "ready": {
+      "title": "Ready!",
+      "heading": "You're All Set!",
+      "description": "Start creating tasks to run AI agents on your code.",
+      "githubReady": "GitHub App connected",
+      "githubNotReady": "GitHub App not configured",
+      "modelsReady": "{count} model(s) configured",
+      "modelsNotReady": "No models configured"
+    },
+    "nav": {
+      "back": "Back",
+      "next": "Next",
+      "skip": "Skip",
+      "getStarted": "Get Started"
+    }
+  },
+  "errors": {
+    "loadFailed": "Failed to load",
+    "saveFailed": "Failed to save",
+    "networkError": "Network error. Please check your connection.",
+    "unknownError": "An unknown error occurred."
+  }
+}

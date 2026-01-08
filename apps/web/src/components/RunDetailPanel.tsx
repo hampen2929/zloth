@@ -7,6 +7,7 @@ import type { Run } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { StreamingLogs } from '@/components/StreamingLogs';
 import { ProgressDisplay } from '@/components/ProgressDisplay';
+import { RunTimeline } from '@/components/RunTimeline';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
@@ -36,12 +37,13 @@ interface RunDetailPanelProps {
   onCancel?: () => void;
 }
 
-type Tab = 'summary' | 'diff' | 'logs';
+type Tab = 'summary' | 'diff' | 'logs' | 'timeline';
 
 const tabConfig: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'summary', label: 'Summary', icon: <DocumentTextIcon className="w-4 h-4" /> },
   { id: 'diff', label: 'Diff', icon: <CodeBracketIcon className="w-4 h-4" /> },
   { id: 'logs', label: 'Logs', icon: <CommandLineIcon className="w-4 h-4" /> },
+  { id: 'timeline', label: 'Timeline', icon: <ClockIcon className="w-4 h-4" /> },
 ];
 
 // Determine the default tab based on run status
@@ -466,6 +468,16 @@ export function RunDetailPanel({
                   ))
                 )}
               </div>
+            )}
+
+            {activeTab === 'timeline' && (
+              <RunTimeline
+                run={run}
+                onFileClick={() => {
+                  // Switch to diff tab when file is clicked
+                  setActiveTab('diff');
+                }}
+              />
             )}
           </>
         )}

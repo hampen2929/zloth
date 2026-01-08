@@ -5,6 +5,7 @@ import type { Run, RunStatus } from '@/types';
 import { cn } from '@/lib/utils';
 import { truncate } from '@/lib/utils';
 import { RunListSkeleton } from './ui/Skeleton';
+import { useTranslation } from '@/i18n';
 import {
   CheckCircleIcon,
   ExclamationCircleIcon,
@@ -56,11 +57,11 @@ const STATUS_CONFIG: Record<
 
 type FilterType = 'all' | 'succeeded' | 'failed' | 'running';
 
-const FILTER_OPTIONS: { id: FilterType; label: string; icon?: React.ReactNode }[] = [
-  { id: 'all', label: 'すべて' },
-  { id: 'succeeded', label: '成功', icon: <CheckCircleIcon className="w-3.5 h-3.5" /> },
-  { id: 'failed', label: '失敗', icon: <ExclamationCircleIcon className="w-3.5 h-3.5" /> },
-  { id: 'running', label: '実行中', icon: <ArrowPathIcon className="w-3.5 h-3.5" /> },
+const FILTER_OPTIONS: { id: FilterType; labelKey: string; icon?: React.ReactNode }[] = [
+  { id: 'all', labelKey: 'task.runs.all' },
+  { id: 'succeeded', labelKey: 'task.runs.succeeded', icon: <CheckCircleIcon className="w-3.5 h-3.5" /> },
+  { id: 'failed', labelKey: 'task.runs.failed', icon: <ExclamationCircleIcon className="w-3.5 h-3.5" /> },
+  { id: 'running', labelKey: 'task.runs.running', icon: <ArrowPathIcon className="w-3.5 h-3.5" /> },
 ];
 
 export function RunsPanel({
@@ -70,6 +71,7 @@ export function RunsPanel({
   isLoading = false,
 }: RunsPanelProps) {
   const [filter, setFilter] = useState<FilterType>('all');
+  const { t } = useTranslation();
 
   // Filter runs based on selected filter
   const filteredRuns = useMemo(() => {
@@ -169,7 +171,7 @@ export function RunsPanel({
                   )}
                 >
                   {option.icon}
-                  <span>{option.label}</span>
+                  <span>{t(option.labelKey)}</span>
                   <span
                     className={cn(
                       'ml-0.5 px-1 rounded text-xs',
@@ -191,24 +193,24 @@ export function RunsPanel({
             {filter === 'all' ? (
               <>
                 <InboxIcon className="w-10 h-10 text-gray-700 mb-3" />
-                <p className="text-gray-500 text-sm">No runs yet</p>
+                <p className="text-gray-500 text-sm">{t('task.runs.noRuns')}</p>
                 <p className="text-gray-600 text-xs mt-1">
-                  Enter instructions to start
+                  {t('task.runs.enterInstructions')}
                 </p>
               </>
             ) : (
               <>
                 <FunnelIcon className="w-10 h-10 text-gray-700 mb-3" />
                 <p className="text-gray-500 text-sm">
-                  {filter === 'succeeded' && '成功した実行はありません'}
-                  {filter === 'failed' && '失敗した実行はありません'}
-                  {filter === 'running' && '実行中のタスクはありません'}
+                  {filter === 'succeeded' && t('task.runs.noSucceeded')}
+                  {filter === 'failed' && t('task.runs.noFailed')}
+                  {filter === 'running' && t('task.runs.noRunning')}
                 </p>
                 <button
                   onClick={() => setFilter('all')}
                   className="mt-2 text-blue-400 hover:text-blue-300 text-xs underline"
                 >
-                  すべて表示
+                  {t('task.runs.showAll')}
                 </button>
               </>
             )}

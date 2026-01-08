@@ -477,3 +477,17 @@ class PRSyncResult(BaseModel):
 
     found: bool
     pr: "PRCreated | None" = None
+
+
+# ============================================================
+# Model Validation
+# ============================================================
+
+
+class ModelValidationResponse(BaseModel):
+    """Response from API key validation."""
+
+    valid: bool
+    error: str | None = None
+    provider: Provider
+    model_name: str

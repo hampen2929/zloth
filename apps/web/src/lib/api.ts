@@ -5,6 +5,7 @@
 import type {
   ModelProfile,
   ModelProfileCreate,
+  ModelValidationResponse,
   Repo,
   RepoCloneRequest,
   RepoSelectRequest,
@@ -80,6 +81,11 @@ export const modelsApi = {
 
   delete: (id: string) =>
     fetchApi<void>(`/models/${id}`, { method: 'DELETE' }),
+
+  validate: (id: string) =>
+    fetchApi<ModelValidationResponse>(`/models/${id}/validate`, {
+      method: 'POST',
+    }),
 };
 
 // Repos

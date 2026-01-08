@@ -25,6 +25,13 @@ export interface ModelProfileCreate {
   api_key: string;
 }
 
+export interface ModelValidationResponse {
+  valid: boolean;
+  error: string | null;
+  provider: Provider;
+  model_name: string;
+}
+
 // Repository
 export interface Repo {
   id: string;

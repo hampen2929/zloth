@@ -31,6 +31,82 @@ class LLMClient:
         self._openai_client: AsyncOpenAI | None = None
         self._anthropic_client: AsyncAnthropic | None = None
 
+    async def test_connection(self) -> tuple[bool, str | None]:
+        """Test if the API key is valid by making a minimal API call.
+
+        Returns:
+            Tuple of (success, error_message). Error message is None on success.
+        """
+        try:
+            if self.config.provider == Provider.OPENAI:
+                return await self._test_openai()
+            elif self.config.provider == Provider.ANTHROPIC:
+                return await self._test_anthropic()
+            elif self.config.provider == Provider.GOOGLE:
+                return await self._test_google()
+            else:
+                return False, f"Unsupported provider: {self.config.provider}"
+        except Exception as e:
+            return False, str(e)
+
+    async def _test_openai(self) -> tuple[bool, str | None]:
+        """Test OpenAI API connection."""
+        if self._openai_client is None:
+            self._openai_client = AsyncOpenAI(api_key=self.config.api_key)
+        try:
+            # List models to verify API key
+            await self._openai_client.models.list()
+            return True, None
+        except Exception as e:
+            error_msg = str(e)
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                return False, "Invalid API key"
+            elif "429" in error_msg:
+                return False, "Rate limit exceeded"
+            return False, error_msg
+
+    async def _test_anthropic(self) -> tuple[bool, str | None]:
+        """Test Anthropic API connection."""
+        if self._anthropic_client is None:
+            self._anthropic_client = AsyncAnthropic(api_key=self.config.api_key)
+        try:
+            # Make a minimal API call to verify the key
+            await self._anthropic_client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=1,
+                messages=[{"role": "user", "content": "Hi"}],
+            )
+            return True, None
+        except Exception as e:
+            error_msg = str(e)
+            if "401" in error_msg or "authentication" in error_msg.lower():
+                return False, "Invalid API key"
+            elif "429" in error_msg:
+                return False, "Rate limit exceeded"
+            return False, error_msg
+
+    async def _test_google(self) -> tuple[bool, str | None]:
+        """Test Google Generative AI API connection."""
+        # Use a lightweight call to verify the key
+        url = "https://generativelanguage.googleapis.com/v1beta/models"
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url,
+                    params={"key": self.config.api_key},
+                    timeout=30.0,
+                )
+                if response.status_code == 200:
+                    return True, None
+                elif response.status_code == 401 or response.status_code == 403:
+                    return False, "Invalid API key"
+                elif response.status_code == 429:
+                    return False, "Rate limit exceeded"
+                else:
+                    return False, f"API error: {response.status_code}"
+        except Exception as e:
+            return False, str(e)
+
     async def generate(
         self,
         messages: list[dict[str, str]],

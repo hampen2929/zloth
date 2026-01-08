@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from dursor_api.dependencies import get_model_service
-from dursor_api.domain.models import ModelProfile, ModelProfileCreate
+from dursor_api.domain.models import ModelProfile, ModelProfileCreate, ModelValidationResponse
 from dursor_api.services.model_service import ModelService
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -50,3 +50,19 @@ async def delete_model(
             raise HTTPException(status_code=404, detail="Model not found")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{model_id}/validate", response_model=ModelValidationResponse)
+async def validate_model_key(
+    model_id: str,
+    model_service: ModelService = Depends(get_model_service),
+) -> ModelValidationResponse:
+    """Validate an API key by making a test API call.
+
+    This endpoint tests if the stored API key for a model is valid
+    by making a minimal API call to the provider.
+    """
+    result = await model_service.validate_key(model_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return result

@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import SettingsModal from './SettingsModal';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
+import { OnboardingWizard, isOnboardingCompleted } from './OnboardingWizard';
 import { ToastProvider } from './ui/Toast';
+import { I18nProvider } from '@/i18n';
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 import { useKeyboardShortcuts } from '@/hooks';
@@ -19,7 +21,17 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
-  const [settingsDefaultTab, setSettingsDefaultTab] = useState<'models' | 'github' | 'defaults' | undefined>(undefined);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<'models' | 'github' | 'defaults' | 'language' | undefined>(undefined);
+
+  // Check if onboarding should be shown on mount
+  // This is intentional: we want to show onboarding on first visit
+  useEffect(() => {
+    if (!isOnboardingCompleted()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOnboardingOpen(true);
+    }
+  }, []);
 
   // Register keyboard shortcuts
   useKeyboardShortcuts({
@@ -74,6 +86,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         setSettingsDefaultTab('defaults');
         setSettingsOpen(true);
         window.history.replaceState(null, '', window.location.pathname);
+      } else if (hash === '#settings-language') {
+        setSettingsDefaultTab('language');
+        setSettingsOpen(true);
+        window.history.replaceState(null, '', window.location.pathname);
       }
     };
 
@@ -90,8 +106,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   };
 
   return (
-    <ToastProvider>
-      <div className="flex h-screen bg-gray-950">
+    <I18nProvider>
+      <ToastProvider>
+        <div className="flex h-screen bg-gray-950">
         {/* Mobile header bar */}
         <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-gray-900 border-b border-gray-800 flex items-center px-4">
           <button
@@ -152,7 +169,17 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           isOpen={shortcutsHelpOpen}
           onClose={() => setShortcutsHelpOpen(false)}
         />
-      </div>
-    </ToastProvider>
+
+        <OnboardingWizard
+          isOpen={onboardingOpen}
+          onClose={() => setOnboardingOpen(false)}
+          onGoToSettings={(tab) => {
+            setSettingsDefaultTab(tab);
+            setSettingsOpen(true);
+          }}
+        />
+        </div>
+      </ToastProvider>
+    </I18nProvider>
   );
 }

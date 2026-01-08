@@ -2,9 +2,10 @@
 
 from datetime import UTC, datetime
 
+from dursor_api.agents.llm_router import LLMClient, LLMConfig
 from dursor_api.config import EnvModelConfig, settings
 from dursor_api.domain.enums import Provider
-from dursor_api.domain.models import ModelProfile, ModelProfileCreate
+from dursor_api.domain.models import ModelProfile, ModelProfileCreate, ModelValidationResponse
 from dursor_api.services.crypto_service import CryptoService
 from dursor_api.storage.dao import ModelProfileDAO
 
@@ -135,3 +136,40 @@ class ModelService:
         if not encrypted:
             return None
         return self.crypto.decrypt(encrypted)
+
+    async def validate_key(self, model_id: str) -> ModelValidationResponse | None:
+        """Validate an API key by making a test API call.
+
+        Args:
+            model_id: Model profile ID.
+
+        Returns:
+            Validation response or None if model not found.
+        """
+        model = await self.get(model_id)
+        if not model:
+            return None
+
+        api_key = await self.get_decrypted_key(model_id)
+        if not api_key:
+            return ModelValidationResponse(
+                valid=False,
+                error="Failed to retrieve API key",
+                provider=model.provider,
+                model_name=model.model_name,
+            )
+
+        config = LLMConfig(
+            provider=model.provider,
+            model_name=model.model_name,
+            api_key=api_key,
+        )
+        client = LLMClient(config)
+        valid, error = await client.test_connection()
+
+        return ModelValidationResponse(
+            valid=valid,
+            error=error,
+            provider=model.provider,
+            model_name=model.model_name,
+        )
