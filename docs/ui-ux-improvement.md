@@ -2,28 +2,33 @@
 
 This document outlines the current state of dursor's UI/UX, identifies issues and opportunities for improvement, and provides actionable recommendations with implementation guidelines.
 
+**Last Updated**: 2026-01-08
+
 ## Table of Contents
 
 1. [Executive Summary](#executive-summary)
 2. [Current State Analysis](#current-state-analysis)
-3. [Identified Issues](#identified-issues)
-4. [Improvement Roadmap](#improvement-roadmap)
-5. [Design System Proposal](#design-system-proposal)
-6. [Implementation Guidelines](#implementation-guidelines)
-7. [Accessibility Considerations](#accessibility-considerations)
-8. [Success Metrics](#success-metrics)
+3. [Identified Issues by Priority](#identified-issues-by-priority)
+4. [Quick Wins](#quick-wins)
+5. [Component-Specific Improvements](#component-specific-improvements)
+6. [Improvement Roadmap](#improvement-roadmap)
+7. [Design System Proposal](#design-system-proposal)
+8. [Implementation Guidelines](#implementation-guidelines)
+9. [Accessibility Considerations](#accessibility-considerations)
+10. [Success Metrics](#success-metrics)
 
 ---
 
 ## Executive Summary
 
-dursor is a self-hostable multi-model parallel coding agent with a Next.js 14 frontend. The current UI features a dark theme with a functional but inconsistent design. This document proposes improvements across responsiveness, consistency, accessibility, and user experience to create a more polished and professional interface.
+dursor is a self-hostable multi-model parallel coding agent with a Next.js 15 frontend. The current UI features a responsive dark theme with mobile-first design, reusable components, and consistent styling. This document proposes improvements across feedback mechanisms, error handling, accessibility, and user experience polish.
 
 ### Key Focus Areas
-- **Mobile Responsiveness**: Currently broken, needs complete overhaul
-- **Component Consistency**: Button, form, and spacing patterns need standardization
-- **Loading & Feedback States**: Missing skeleton loaders and toast notifications
-- **Accessibility**: Color contrast and keyboard navigation improvements needed
+- **Error Handling & Stability**: Add error boundaries, improve error messaging
+- **User Feedback**: Enhance loading states, validation feedback, and status updates
+- **Accessibility**: Improve screen reader support, keyboard navigation, and color contrast
+- **Performance**: Virtualize large lists and diffs for better performance
+- **User Experience**: Reduce friction, add helpful features like retry and notifications
 
 ---
 
@@ -32,11 +37,20 @@ dursor is a self-hostable multi-model parallel coding agent with a Next.js 14 fr
 ### Tech Stack
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Next.js | 14.1.0 | React framework |
-| React | 18.2.0 | UI library |
-| Tailwind CSS | 3.4.1 | Utility-first styling |
-| SWR | 2.2.4 | Data fetching |
+| Next.js | 15.x | React framework |
+| React | 19.x | UI library |
+| Tailwind CSS | 3.4.x | Utility-first styling |
+| SWR | 2.x | Data fetching with caching |
 | TypeScript | Strict | Type safety |
+
+### Current Strengths
+- Mobile-first responsive design with hamburger menu overlay
+- Clean separation of concerns with reusable UI components (Button, Modal, Input, Toast, Card)
+- Consistent dark theme (gray-950 to gray-100 palette)
+- Keyboard shortcuts support (Cmd/Ctrl + Enter)
+- Real-time repo/branch filtering with search
+- Auto-resizing textarea for comfortable input
+- Skeleton loaders for initial page load
 
 ### Component Architecture
 
@@ -89,109 +103,248 @@ flowchart TD
 
 ---
 
-## Identified Issues
+## Identified Issues by Priority
 
-### Critical (P0) - Blocks Core Functionality
+### P0 - Critical (Stability & Core UX)
 
-| Issue | Location | Impact |
-|-------|----------|--------|
-| **Mobile layout broken** | `tasks/[taskId]/page.tsx` | App unusable on mobile |
-| **Fixed 50/50 split layout** | Task detail page | No responsive adaptation |
-| **No loading states** | ChatPanel, RunsPanel | Users don't know data is loading |
+| Issue | Location | Impact | Effort |
+|-------|----------|--------|--------|
+| **No Error Boundaries** | All pages | Component crash breaks entire page | Medium |
+| **No retry mechanism** | API calls | Users stuck on network failures | Medium |
+| **Form validation only on submit** | `page.tsx` | Poor feedback, user confusion | Low |
 
-#### Mobile Responsiveness Problem
+### P1 - High (User Experience)
 
-Current implementation uses fixed widths:
+| Issue | Location | Impact | Effort |
+|-------|----------|--------|--------|
+| **No data refresh indicator** | Task page | Users don't know data is live | Low |
+| **Truncated error messages** | `RunsPanel.tsx` | Can't see full error details | Low |
+| **Failed runs can't be retried** | `RunsPanel.tsx` | Must create new message | Medium |
+| **Tab state resets between runs** | `RunDetailPanel.tsx` | Loses user context | Low |
+| **No run duration display** | `RunsPanel.tsx` | Can't gauge performance | Low |
+| **Missing badge on Runs tab** | Task page | Unaware of new/updated runs | Low |
+
+### P2 - Medium (Accessibility & Usability)
+
+| Issue | Location | Impact | Effort |
+|-------|----------|--------|--------|
+| **Color-only status indicators** | Status icons | Accessibility issue | Low |
+| **Missing ARIA labels** | Buttons, dropdowns | Screen reader issues | Medium |
+| **No keyboard nav in dropdowns** | Model/repo/branch | Keyboard users excluded | Medium |
+| **Large diffs not virtualized** | `DiffViewer.tsx` | Performance issues | High |
+| **No shortcuts help modal** | Global | Users unaware of shortcuts | Medium |
+| **Task list limited to 20** | `Sidebar.tsx` | Can't access older tasks | Medium |
+| **No Markdown in chat** | `ChatPanel.tsx` | Poor code readability | Medium |
+| **No copy button for diff** | `DiffViewer.tsx` | Friction for sharing | Low |
+
+### P3 - Low (Polish & Nice-to-Have)
+
+| Issue | Location | Impact | Effort |
+|-------|----------|--------|--------|
+| **No light mode** | Global | User preference ignored | High |
+| **No desktop notifications** | Global | Misses run completion | Medium |
+| **No task search/filter** | `Sidebar.tsx` | Hard to find old tasks | Medium |
+| **No model comparison view** | Task page | Can't compare outputs | High |
+| **No onboarding tour** | Global | First-time user confusion | High |
+| **No task favorites/pinning** | `Sidebar.tsx` | No organization | Medium |
+
+---
+
+## Quick Wins
+
+High-impact, low-effort improvements to implement first:
+
+### 1. Add Error Boundary Component
 ```tsx
-// tasks/[taskId]/page.tsx
-<div className="w-1/2">  {/* Fixed 50% - breaks on mobile */}
-  <ChatPanel />
-</div>
-<div className="w-1/2">  {/* Fixed 50% */}
-  <RunDetailPanel />
+// components/ErrorBoundary.tsx
+class ErrorBoundary extends React.Component {
+  state = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 text-center">
+          <h2>Something went wrong</h2>
+          <button onClick={() => this.setState({ hasError: false })}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+```
+
+### 2. Add "Last Updated" Indicator
+```tsx
+// In task page
+<span className="text-gray-500 text-xs">
+  Last updated: {formatDistanceToNow(lastUpdated)} ago
+</span>
+```
+
+### 3. Add Status Text to Icons
+```tsx
+// Before: color only
+<span className="w-2 h-2 rounded-full bg-green-500" />
+
+// After: icon + text
+<span className="flex items-center gap-1.5">
+  <CheckCircleIcon className="w-4 h-4 text-green-500" />
+  <span className="text-xs text-green-400">Succeeded</span>
+</span>
+```
+
+### 4. Expandable Error Messages
+```tsx
+// In RunsPanel.tsx
+const [expanded, setExpanded] = useState(false);
+<div
+  className={expanded ? '' : 'line-clamp-2'}
+  onClick={() => setExpanded(!expanded)}
+>
+  {error}
 </div>
 ```
 
-### High (P1) - Degrades User Experience
-
-| Issue | Location | Impact |
-|-------|----------|--------|
-| **Inconsistent button styles** | Multiple components | Visual inconsistency |
-| **No toast notifications** | All forms | Users miss success/error feedback |
-| **Missing confirmation dialogs** | Delete actions | Accidental deletions possible |
-| **Inconsistent spacing** | All components | Unprofessional appearance |
-
-#### Button Style Inconsistencies
-
+### 5. Real-time Form Validation
 ```tsx
-// ChatPanel.tsx - Style A
-<button className="bg-blue-600 hover:bg-blue-700 px-4 py-2">
-
-// RunDetailPanel.tsx - Style B
-<button className="px-3 py-1.5 text-sm bg-green-600">
-
-// SettingsModal.tsx - Style C
-<button className="flex-1 py-2 rounded bg-blue-600">
+// In page.tsx
+{selectedModels.length === 0 && instruction.length > 0 && (
+  <span className="text-amber-400 text-sm">
+    Select at least one model
+  </span>
+)}
 ```
 
-### Medium (P2) - Affects Usability
+---
 
-| Issue | Location | Impact |
-|-------|----------|--------|
-| **Low color contrast** | Dark text on dark bg | Accessibility concern |
-| **No keyboard navigation** | Modal dialogs | Keyboard users excluded |
-| **Hardcoded text truncation** | RunsPanel (50 chars) | Arbitrary content cutoff |
-| **OS-specific hints** | "Cmd+Enter" placeholder | Confusing on non-Mac |
-| **Inconsistent tab styling** | Panels | Disorienting navigation |
+## Component-Specific Improvements
 
-### Low (P3) - Polish Items
+### Home Page (`app/page.tsx`)
 
-| Issue | Location | Impact |
-|-------|----------|--------|
-| **Inline SVG icons** | All components | Maintenance burden |
-| **No light mode** | Global | User preference ignored |
-| **Unused dependencies** | `react-diff-viewer-continued` | Bundle size |
-| **No skeleton loaders** | List components | Jarring load experience |
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Real-time validation | P0 | Show validation state as user fills form |
+| Progress steps | P1 | Show "Cloning repo → Creating task → Starting runs" |
+| Empty state CTA | P1 | Link to Settings when no models configured |
+| Loading overlay | P2 | Show detailed progress during task creation |
+
+### Task Detail Page (`app/tasks/[taskId]/page.tsx`)
+
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Refresh indicator | P1 | Show "Updated X seconds ago" |
+| Tab badges | P1 | Show count of new/updated runs |
+| Error boundary | P0 | Wrap in ErrorBoundary component |
+| Mobile tab persistence | P2 | Remember last viewed tab |
+
+### ChatPanel (`components/ChatPanel.tsx`)
+
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Markdown rendering | P2 | Use react-markdown for messages |
+| Role badges | P2 | Add "User" / "Assistant" labels with icons |
+| Original request header | P2 | Sticky or collapsible section showing first message |
+| Model selection ARIA | P2 | Add aria-label with selection count |
+
+### RunsPanel (`components/RunsPanel.tsx`)
+
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Expandable errors | P1 | Click to expand truncated error messages |
+| Run duration | P1 | Show "Completed in X seconds" |
+| Retry button | P1 | Add retry for failed runs |
+| Selection highlight | P2 | More prominent selected run indicator |
+| Status change animation | P2 | Highlight when status changes |
+
+### RunDetailPanel (`components/RunDetailPanel.tsx`)
+
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Tab persistence | P1 | Remember last viewed tab per run |
+| Copy buttons | P2 | Copy diff, copy logs buttons |
+| Log syntax highlighting | P2 | Color-code log levels |
+| Large diff handling | P2 | Collapse/expand hunks |
+
+### DiffViewer (`components/DiffViewer.tsx`)
+
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Virtualization | P2 | Use react-window for large diffs |
+| File navigation | P2 | Add file index sidebar |
+| Line numbers | P3 | Optional line number display |
+| Stats header | P2 | Show "X files, +Y/-Z lines" |
+| Horizontal scroll hint | P2 | Mobile scroll indicator |
+
+### SettingsModal (`components/SettingsModal.tsx`)
+
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Help tooltips | P2 | Explain each field with tooltips |
+| Setup link | P2 | Link to GitHub App documentation |
+| Env model explanation | P2 | Explain why env models can't be deleted |
+| Save loading state | P2 | Show loading during save operation |
+
+### Sidebar (`components/Sidebar.tsx`)
+
+| Improvement | Priority | Description |
+|------------|----------|-------------|
+| Task status badges | P3 | Show running/completed/failed status |
+| Search/filter | P2 | Add task search functionality |
+| Infinite scroll | P2 | Load more than 20 tasks |
+| Favorites | P3 | Pin important tasks |
 
 ---
 
 ## Improvement Roadmap
 
-### Phase 1: Foundation (Week 1-2)
+### Phase 1: Stability & Core Feedback
 
-**Goal**: Establish design system and fix critical issues
+**Goal**: Ensure app stability and basic user feedback
 
-- [ ] Create design token system (colors, spacing, typography)
-- [ ] Implement responsive breakpoints
-- [ ] Add base component library (Button, Input, Card)
-- [ ] Fix mobile layout in TaskPage
+- [ ] Add ErrorBoundary component and wrap all pages/panels
+- [ ] Add real-time form validation on home page
+- [ ] Add "Last updated X seconds ago" on task page
+- [ ] Make error messages expandable in RunsPanel
+- [ ] Add status text labels alongside status colors
 
-### Phase 2: Consistency (Week 3-4)
+### Phase 2: Enhanced User Experience
 
-**Goal**: Standardize UI patterns across components
+**Goal**: Reduce friction and improve interactions
 
-- [ ] Migrate all buttons to component library
-- [ ] Standardize form inputs and validation
-- [ ] Implement consistent modal pattern
-- [ ] Add loading states (skeletons, spinners)
+- [ ] Add retry button for failed runs
+- [ ] Show run duration/elapsed time
+- [ ] Add badge on Runs tab for new/updated runs
+- [ ] Remember tab state per run in RunDetailPanel
+- [ ] Add copy buttons for diff and logs
+- [ ] Add keyboard shortcuts help modal (`?` key)
 
-### Phase 3: Feedback & Polish (Week 5-6)
-
-**Goal**: Enhance user feedback and interactions
-
-- [ ] Implement toast notification system
-- [ ] Add confirmation dialogs for destructive actions
-- [ ] Improve error messaging UX
-- [ ] Add micro-animations and transitions
-
-### Phase 4: Accessibility (Week 7-8)
+### Phase 3: Accessibility
 
 **Goal**: Achieve WCAG 2.1 AA compliance
 
-- [ ] Audit and fix color contrast
-- [ ] Implement keyboard navigation
-- [ ] Add ARIA labels and roles
+- [ ] Add ARIA labels to all interactive elements
+- [ ] Implement keyboard navigation for dropdowns
+- [ ] Add focus management in modals
+- [ ] Ensure all states have non-color indicators
 - [ ] Test with screen readers
+
+### Phase 4: Performance & Polish
+
+**Goal**: Optimize performance and add polish features
+
+- [ ] Virtualize DiffViewer for large diffs
+- [ ] Add infinite scroll for task history
+- [ ] Implement Markdown rendering in chat
+- [ ] Add task search/filter functionality
+- [ ] Add desktop notifications (optional)
+- [ ] Consider light mode theme
 
 ---
 
@@ -469,40 +622,12 @@ export function useToast() {
 
 ## Implementation Guidelines
 
-### Responsive Breakpoints
+### Responsive Design (Already Implemented)
 
-Use Tailwind's default breakpoints consistently:
-
-```css
-/* Mobile first approach */
-sm: 640px   /* Tablet portrait */
-md: 768px   /* Tablet landscape */
-lg: 1024px  /* Desktop */
-xl: 1280px  /* Large desktop */
-2xl: 1536px /* Extra large desktop */
-```
-
-#### TaskPage Responsive Layout
-
-```tsx
-// Before (broken)
-<div className="flex h-screen">
-  <div className="w-1/2">...</div>
-  <div className="w-1/2">...</div>
-</div>
-
-// After (responsive)
-<div className="flex flex-col lg:flex-row h-screen">
-  {/* Mobile: Full width, stacked */}
-  {/* Desktop: Side by side */}
-  <div className="w-full lg:w-1/2 h-1/2 lg:h-full overflow-hidden">
-    <ChatPanel />
-  </div>
-  <div className="w-full lg:w-1/2 h-1/2 lg:h-full overflow-hidden">
-    {selectedRun ? <RunDetailPanel /> : <RunsPanel />}
-  </div>
-</div>
-```
+The app already uses Tailwind's responsive breakpoints with mobile-first design:
+- Hamburger menu overlay on mobile
+- Tab-based switching for mobile view on task page
+- Desktop shows side-by-side panels
 
 ### Loading States
 
@@ -741,13 +866,34 @@ function Modal({ isOpen, onClose, children }) {
 }
 ```
 
-### Dependencies to Remove
+### Dependencies to Consider Adding
 
 ```json
 {
-  "react-diff-viewer-continued": "^3.4.0"  // Unused
+  "react-window": "^1.x.x",        // For virtualizing large lists/diffs
+  "react-markdown": "^9.x.x",      // For Markdown in chat messages
+  "date-fns": "^3.x.x"             // For "X seconds ago" formatting (if not already)
 }
 ```
+
+---
+
+## Summary Table
+
+| Priority | Category | Count | Example Items |
+|----------|----------|-------|---------------|
+| P0 | Critical | 3 | Error boundaries, retry mechanism, form validation |
+| P1 | High | 6 | Refresh indicator, expandable errors, retry button |
+| P2 | Medium | 8 | ARIA labels, virtualization, shortcuts help |
+| P3 | Low | 6 | Light mode, notifications, model comparison |
+
+**Recommended Implementation Order:**
+1. Error boundaries (immediate stability)
+2. Real-time validation and "last updated" indicator
+3. Expandable errors and retry button
+4. Accessibility improvements
+5. Performance optimizations
+6. Nice-to-have features
 
 ---
 
@@ -755,6 +901,7 @@ function Modal({ isOpen, onClose, children }) {
 
 - [Tailwind CSS Documentation](https://tailwindcss.com/docs)
 - [WCAG 2.1 Guidelines](https://www.w3.org/WAI/WCAG21/quickref/)
-- [React Accessibility Guide](https://react.dev/reference/react-dom/components#form-components)
+- [React Error Boundaries](https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary)
+- [react-window](https://github.com/bvaughn/react-window)
 - [Heroicons](https://heroicons.com/)
 - [Web Vitals](https://web.dev/vitals/)
