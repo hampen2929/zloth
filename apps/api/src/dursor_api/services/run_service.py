@@ -286,10 +286,20 @@ class RunService:
             # Verify worktree is still valid (exists and is a valid git repo)
             worktree_path = Path(existing_run.worktree_path)
             if await self.git_service.is_valid_worktree(worktree_path):
+                # Get authenticated URL for fetching (required for private repos)
+                sync_auth_url: str | None = None
+                if self.github_service and repo.repo_url:
+                    try:
+                        owner, repo_name = self._parse_github_url(repo.repo_url)
+                        sync_auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                    except Exception:
+                        pass
+
                 # Sync worktree with the latest base branch before reusing
                 sync_success = await self.git_service.sync_worktree_with_base(
                     worktree_path,
                     base_ref,
+                    auth_url=sync_auth_url,
                 )
                 if sync_success:
                     logger.info(f"Synced worktree with latest {base_ref}: {worktree_path}")
@@ -321,12 +331,23 @@ class RunService:
                 prefs = await self.user_preferences_dao.get()
                 branch_prefix = prefs.default_branch_prefix if prefs else None
 
+            # Get authenticated URL for fetching (required for private repos)
+            auth_url: str | None = None
+            if self.github_service and repo.repo_url:
+                try:
+                    owner, repo_name = self._parse_github_url(repo.repo_url)
+                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                except Exception:
+                    # Continue without auth URL if GitHub service fails
+                    pass
+
             # Create new worktree for this run
             worktree_info = await self.git_service.create_worktree(
                 repo=repo,
                 base_branch=base_ref,
                 run_id=run.id,
                 branch_prefix=branch_prefix,
+                auth_url=auth_url,
             )
 
         # Update run with worktree info

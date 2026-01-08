@@ -105,6 +105,7 @@ class GitService:
         base_branch: str,
         run_id: str,
         branch_prefix: str | None = None,
+        auth_url: str | None = None,
     ) -> WorktreeInfo:
         """Create a new git worktree for the run.
 
@@ -113,6 +114,7 @@ class GitService:
             base_branch: Base branch to create worktree from.
             run_id: Run ID for naming.
             branch_prefix: Optional branch prefix for the new work branch.
+            auth_url: Optional authenticated URL for fetching (required for private repos).
 
         Returns:
             WorktreeInfo with path and branch information.
@@ -127,20 +129,35 @@ class GitService:
             source_repo = git.Repo(repo.workspace_path)
             remote_ref = f"origin/{base_branch}"
 
-            # Fetch the latest state of the base branch from remote
-            # This is critical for shallow clones (depth=1) which don't have full history
-            try:
-                # First, try to unshallow the repository if it's a shallow clone
-                # This ensures we have access to the full remote state
+            # Save original remote URL to restore later
+            original_url = None
+            if auth_url:
                 try:
-                    source_repo.git.fetch("--unshallow", "origin", base_branch)
-                except git.GitCommandError:
-                    # Not a shallow clone or already unshallowed, do a normal fetch
-                    # Explicitly fetch the base branch to ensure we have the latest
-                    source_repo.git.fetch("origin", base_branch)
-            except Exception:
-                # Ignore fetch errors (might be offline)
-                pass
+                    original_url = source_repo.remotes.origin.url
+                    source_repo.remotes.origin.set_url(auth_url)
+                except Exception:
+                    pass
+
+            try:
+                # Fetch the latest state of the base branch from remote
+                # This is critical for shallow clones (depth=1)
+                try:
+                    # First, try to unshallow the repository if it's a shallow clone
+                    try:
+                        source_repo.git.fetch("--unshallow", "origin", base_branch)
+                    except git.GitCommandError:
+                        # Not a shallow clone or already unshallowed
+                        source_repo.git.fetch("origin", base_branch)
+                except Exception:
+                    # Fetch failed - might be offline or auth issue
+                    pass
+            finally:
+                # Restore original remote URL
+                if original_url:
+                    try:
+                        source_repo.remotes.origin.set_url(original_url)
+                    except Exception:
+                        pass
 
             # Verify remote ref exists and use it for worktree creation
             base_ref_to_use = base_branch  # fallback
@@ -298,6 +315,7 @@ class GitService:
         self,
         worktree_path: Path,
         base_branch: str,
+        auth_url: str | None = None,
     ) -> bool:
         """Sync a worktree with the latest state of the base branch.
 
@@ -307,6 +325,7 @@ class GitService:
         Args:
             worktree_path: Path to the worktree.
             base_branch: Base branch to sync with.
+            auth_url: Optional authenticated URL for fetching (required for private repos).
 
         Returns:
             True if sync was successful, False otherwise.
@@ -315,17 +334,34 @@ class GitService:
             try:
                 repo = git.Repo(worktree_path)
 
-                # Fetch the latest state of the base branch from remote
-                # Handle shallow clones by unshallowing first
-                try:
+                # Save original remote URL to restore later
+                original_url = None
+                if auth_url:
                     try:
-                        repo.git.fetch("--unshallow", "origin", base_branch)
-                    except git.GitCommandError:
-                        # Not a shallow clone or already unshallowed
-                        repo.git.fetch("origin", base_branch)
-                except Exception:
-                    # Ignore fetch errors (might be offline)
-                    pass
+                        original_url = repo.remotes.origin.url
+                        repo.remotes.origin.set_url(auth_url)
+                    except Exception:
+                        pass
+
+                try:
+                    # Fetch the latest state of the base branch from remote
+                    # Handle shallow clones by unshallowing first
+                    try:
+                        try:
+                            repo.git.fetch("--unshallow", "origin", base_branch)
+                        except git.GitCommandError:
+                            # Not a shallow clone or already unshallowed
+                            repo.git.fetch("origin", base_branch)
+                    except Exception:
+                        # Fetch failed - might be offline or auth issue
+                        pass
+                finally:
+                    # Restore original remote URL
+                    if original_url:
+                        try:
+                            repo.remotes.origin.set_url(original_url)
+                        except Exception:
+                            pass
 
                 # Determine the remote ref
                 remote_ref = f"origin/{base_branch}"
