@@ -3,7 +3,7 @@ version: '3.8'
 services:
   api:
     build:
-      context: ./apps/api
+      context: ./api
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -23,7 +23,7 @@ services:
 
   web:
     build:
-      context: ./apps/web
+      context: ./web
       dockerfile: Dockerfile
       args:
         - API_URL=http://api:8000

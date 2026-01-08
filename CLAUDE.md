@@ -21,12 +21,11 @@ This file provides context for Claude Code to understand the project.
 
 ```
 dursor/
-├── apps/
-│   ├── api/                    # FastAPI backend
-│   │   ├── pyproject.toml
-│   │   ├── Dockerfile
-│   │   └── src/dursor_api/
-│   │       ├── main.py         # FastAPI entrypoint
+├── api/                        # FastAPI backend
+│   ├── pyproject.toml
+│   ├── Dockerfile
+│   └── dursor_api/             # Application package
+│       ├── main.py             # FastAPI entrypoint
 │   │       ├── config.py       # Configuration (env vars)
 │   │       ├── dependencies.py # Dependency Injection
 │   │       ├── agents/         # Agent implementations
@@ -148,7 +147,7 @@ class AgentResult:
 
 ### Backend
 ```bash
-cd apps/api
+cd api
 
 # Install uv (if not installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -163,13 +162,13 @@ uv run python -m dursor_api.main
 uv run pytest
 
 # Lint
-uv run ruff check src/
-uv run mypy src/
+uv run ruff check dursor_api/
+uv run mypy dursor_api/
 ```
 
 ### Frontend
 ```bash
-cd apps/web
+cd web
 npm install
 
 # Start dev server

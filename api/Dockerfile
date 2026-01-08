@@ -13,13 +13,13 @@ COPY pyproject.toml .
 RUN uv pip install --system --no-cache .
 
 # Copy source code
-COPY src/ src/
+COPY dursor_api/ dursor_api/
 
 # Create necessary directories
 RUN mkdir -p /app/workspaces /app/data
 
 # Set environment variables
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app
 ENV DURSOR_BASE_DIR=/app
 ENV DURSOR_WORKSPACES_DIR=/app/workspaces
 ENV DURSOR_DATA_DIR=/app/data
