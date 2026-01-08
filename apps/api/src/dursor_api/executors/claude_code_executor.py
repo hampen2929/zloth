@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 from collections.abc import Awaitable, Callable
@@ -9,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dursor_api.domain.models import FileDiff
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -91,6 +94,9 @@ class ClaudeCodeExecutor:
         logs.append(f"Executing: {' '.join(cmd)}")
         logs.append(f"Working directory: {worktree_path}")
         logs.append(f"Instruction length: {len(instruction)} chars")
+        logger.info(f"Starting Claude Code CLI: {' '.join(cmd)}")
+        logger.info(f"Working directory: {worktree_path}")
+        logger.info(f"Instruction length: {len(instruction)} chars")
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -101,15 +107,11 @@ class ClaudeCodeExecutor:
                 cwd=str(worktree_path),
                 env=env,
             )
+            logger.info(f"Process started with PID: {process.pid}")
 
-            # Write instruction to stdin
-            process.stdin.write(instruction.encode("utf-8"))
-            await process.stdin.drain()
-            process.stdin.close()
-            await process.stdin.wait_closed()
-
-            # Stream output
+            # Stream output - must run concurrently with stdin write to avoid deadlock
             async def read_output():
+                line_count = 0
                 while True:
                     line = await process.stdout.readline()
                     if not line:
@@ -117,17 +119,34 @@ class ClaudeCodeExecutor:
                     decoded = line.decode("utf-8", errors="replace").rstrip()
                     output_lines.append(decoded)
                     logs.append(decoded)
+                    line_count += 1
 
                     if len(output_lines) <= self.options.max_output_lines:
                         if on_output:
                             await on_output(decoded)
+                logger.info(f"Read {line_count} lines of output")
+
+            async def write_stdin():
+                # Write instruction to stdin with newline to signal end of input
+                logger.info("Writing instruction to stdin...")
+                process.stdin.write(instruction.encode("utf-8"))
+                process.stdin.write(b"\n")
+                await process.stdin.drain()
+                process.stdin.close()
+                await process.stdin.wait_closed()
+                logger.info("Stdin closed")
 
             try:
+                # Run stdin write and stdout read concurrently to avoid deadlock
+                # If output buffer fills while waiting for stdin, it would block
+                logger.info("Starting concurrent stdin/stdout handling...")
                 await asyncio.wait_for(
-                    read_output(),
+                    asyncio.gather(write_stdin(), read_output()),
                     timeout=self.options.timeout_seconds,
                 )
+                logger.info("Concurrent handling completed")
             except TimeoutError:
+                logger.error(f"Execution timed out after {self.options.timeout_seconds} seconds")
                 process.kill()
                 await process.wait()
                 return ExecutorResult(
@@ -140,6 +159,7 @@ class ClaudeCodeExecutor:
                 )
 
             await process.wait()
+            logger.info(f"Process exited with code: {process.returncode}")
 
             if process.returncode != 0:
                 # Include last few lines of output for debugging

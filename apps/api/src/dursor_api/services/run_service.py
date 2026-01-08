@@ -8,10 +8,13 @@ operations while AI Agents only edit files.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.agents.patch_agent import PatchAgent
@@ -488,6 +491,7 @@ class RunService:
         try:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
+            logger.info(f"[{run.id[:8]}] Starting {executor_name} run")
 
             # 1. Record pre-execution status
             pre_status = await self.git_service.get_status(worktree_info.path)
@@ -502,14 +506,17 @@ class RunService:
             # 2. Build instruction with constraints
             constraints = AgentConstraints()
             instruction_with_constraints = f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
+            logger.info(f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars")
 
             # 3. Execute the CLI (file editing only)
+            logger.info(f"[{run.id[:8]}] Executing CLI...")
             result = await executor.execute(
                 worktree_path=worktree_info.path,
                 instruction=instruction_with_constraints,
                 on_output=lambda line: self._log_output(run.id, line),
                 # Don't pass resume_session_id - see note above
             )
+            logger.info(f"[{run.id[:8]}] CLI execution completed: success={result.success}")
 
             if not result.success:
                 await self.run_dao.update_status(
@@ -594,16 +601,16 @@ class RunService:
     async def _log_output(self, run_id: str, line: str) -> None:
         """Log output from CLI execution.
 
-        This is a placeholder for streaming support.
-        In the future, this could emit SSE events.
+        This logs output to console for debugging and could be extended
+        for SSE streaming in the future.
 
         Args:
             run_id: Run ID.
             line: Output line.
         """
-        # For now, just log to console
+        # Log to console for debugging
+        logger.info(f"[{run_id[:8]}] {line}")
         # TODO: Implement SSE streaming for real-time output
-        pass
 
     def _generate_commit_message(self, instruction: str, summary: str | None) -> str:
         """Generate a commit message from instruction and summary.

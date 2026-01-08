@@ -81,13 +81,7 @@ class GeminiExecutor:
                 env=env,
             )
 
-            # Write instruction to stdin
-            process.stdin.write(instruction.encode("utf-8"))
-            await process.stdin.drain()
-            process.stdin.close()
-            await process.stdin.wait_closed()
-
-            # Stream output
+            # Stream output - must run concurrently with stdin write to avoid deadlock
             async def read_output():
                 while True:
                     line = await process.stdout.readline()
@@ -101,9 +95,18 @@ class GeminiExecutor:
                         if on_output:
                             await on_output(decoded)
 
+            async def write_stdin():
+                # Write instruction to stdin with newline to signal end of input
+                process.stdin.write(instruction.encode("utf-8"))
+                process.stdin.write(b"\n")
+                await process.stdin.drain()
+                process.stdin.close()
+                await process.stdin.wait_closed()
+
             try:
+                # Run stdin write and stdout read concurrently to avoid deadlock
                 await asyncio.wait_for(
-                    read_output(),
+                    asyncio.gather(write_stdin(), read_output()),
                     timeout=self.options.timeout_seconds,
                 )
             except TimeoutError:
