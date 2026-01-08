@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
 
-
 # ============================================================
 # Model Profile
 # ============================================================
@@ -130,7 +129,9 @@ class RunCreate(BaseModel):
     """Request for creating Runs."""
 
     instruction: str = Field(..., description="Natural language instruction")
-    model_ids: list[str] | None = Field(None, description="List of model profile IDs to run (required for patch_agent)")
+    model_ids: list[str] | None = Field(
+        None, description="List of model profile IDs to run (required for patch_agent)"
+    )
     base_ref: str | None = Field(None, description="Base branch/commit")
     executor_type: ExecutorType = Field(
         default=ExecutorType.PATCH_AGENT,
@@ -202,6 +203,12 @@ class PRCreate(BaseModel):
     selected_run_id: str = Field(..., description="ID of the run to use for PR")
     title: str
     body: str | None = None
+
+
+class PRCreateAuto(BaseModel):
+    """Request for auto-generating PR title and body using AI."""
+
+    selected_run_id: str = Field(..., description="ID of the run to use for PR")
 
 
 class PRUpdate(BaseModel):

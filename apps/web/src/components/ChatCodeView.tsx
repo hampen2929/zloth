@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from 'react';
 import { tasksApi, runsApi, prsApi } from '@/lib/api';
 import type { Message, ModelProfile, ExecutorType, Run, RunStatus } from '@/types';
 import { Button } from './ui/Button';
-import { Input, Textarea } from './ui/Input';
 import { DiffViewer } from './DiffViewer';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -25,6 +24,8 @@ import {
   DocumentDuplicateIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ClipboardDocumentIcon,
+  CodeBracketSquareIcon,
 } from '@heroicons/react/24/outline';
 
 interface ChatCodeViewProps {
@@ -61,6 +62,8 @@ export function ChatCodeView({
   const [loading, setLoading] = useState(false);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const [runTabs, setRunTabs] = useState<Record<string, RunTab>>({});
+  const [creatingPR, setCreatingPR] = useState(false);
+  const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
 
@@ -71,6 +74,52 @@ export function ChatCodeView({
   const lockedExecutor: ExecutorType = (sortedRuns[0]?.executor_type || executorType) as ExecutorType;
   const isCLIExecutor =
     lockedExecutor === 'claude_code' || lockedExecutor === 'codex_cli' || lockedExecutor === 'gemini_cli';
+
+  // Get session-level branch name (from the first run with a working_branch)
+  const sessionBranch = sortedRuns.find((r) => r.working_branch)?.working_branch || null;
+
+  // Get the latest successful run for PR creation
+  const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
+
+  // Copy branch name to clipboard
+  const copyBranchToClipboard = async () => {
+    if (!sessionBranch) return;
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(sessionBranch);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = sessionBranch;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      success('Branch name copied!');
+    } catch {
+      error('Failed to copy to clipboard');
+    }
+  };
+
+  // Create PR with AI-generated title and description
+  const handleCreatePR = async () => {
+    if (!latestSuccessfulRun) return;
+
+    setCreatingPR(true);
+    try {
+      const result = await prsApi.createAuto(taskId, {
+        selected_run_id: latestSuccessfulRun.id,
+      });
+      setPRResult({ url: result.url, number: result.number });
+      onPRCreated();
+      success('Pull request created successfully!');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create PR';
+      error(message);
+    } finally {
+      setCreatingPR(false);
+    }
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -238,6 +287,49 @@ export function ChatCodeView({
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
+      {/* Session Header - Branch name and PR button */}
+      {sessionBranch && (
+        <div className="flex items-center justify-end gap-3 px-4 py-2 border-b border-gray-800 bg-gray-900/50">
+          {/* Branch name with copy */}
+          <button
+            onClick={copyBranchToClipboard}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 transition-colors group"
+            title="Click to copy branch name"
+          >
+            <CodeBracketSquareIcon className="w-4 h-4 text-purple-400" />
+            <span className="font-mono text-sm text-gray-300 group-hover:text-white truncate max-w-[200px]">
+              {sessionBranch}
+            </span>
+            <ClipboardDocumentIcon className="w-3.5 h-3.5 text-gray-500 group-hover:text-gray-300" />
+          </button>
+
+          {/* PR button or link */}
+          {prResult ? (
+            <a
+              href={prResult.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-500 text-white text-sm font-medium transition-colors"
+            >
+              <CheckCircleIcon className="w-4 h-4" />
+              PR #{prResult.number}
+              <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+            </a>
+          ) : latestSuccessfulRun ? (
+            <Button
+              variant="success"
+              size="sm"
+              onClick={handleCreatePR}
+              disabled={creatingPR}
+              isLoading={creatingPR}
+              className="flex items-center gap-1.5"
+            >
+              {creatingPR ? 'Creating PR...' : 'Create PR'}
+            </Button>
+          ) : null}
+        </div>
+      )}
+
       {/* Conversation Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && runs.length === 0 ? (
@@ -281,12 +373,10 @@ export function ChatCodeView({
                   <RunResultCard
                     key={run.id}
                     run={run}
-                    taskId={taskId}
                     expanded={expandedRuns.has(run.id)}
                     onToggleExpand={() => toggleRunExpanded(run.id)}
                     activeTab={getRunTab(run.id)}
                     onTabChange={(tab) => setRunTab(run.id, tab)}
-                    onPRCreated={onPRCreated}
                   />
                 ))}
               </div>
@@ -395,56 +485,19 @@ export function ChatCodeView({
 // Inline Run Result Card Component
 interface RunResultCardProps {
   run: Run;
-  taskId: string;
   expanded: boolean;
   onToggleExpand: () => void;
   activeTab: RunTab;
   onTabChange: (tab: RunTab) => void;
-  onPRCreated: () => void;
 }
 
 function RunResultCard({
   run,
-  taskId,
   expanded,
   onToggleExpand,
   activeTab,
   onTabChange,
-  onPRCreated,
 }: RunResultCardProps) {
-  const [showPRForm, setShowPRForm] = useState(false);
-  const [prTitle, setPRTitle] = useState('');
-  const [prBody, setPRBody] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [prResult, setPRResult] = useState<{ url: string } | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const { success, error } = useToast();
-
-  const handleCreatePR = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prTitle.trim()) return;
-
-    setCreating(true);
-    setFormError(null);
-
-    try {
-      const result = await prsApi.create(taskId, {
-        selected_run_id: run.id,
-        title: prTitle.trim(),
-        body: prBody.trim() || undefined,
-      });
-      setPRResult(result);
-      onPRCreated();
-      success('Pull request created successfully!');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create PR';
-      setFormError(message);
-      error(message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   const getStatusBadge = () => {
     switch (run.status) {
       case 'succeeded':
@@ -582,77 +635,6 @@ function RunResultCard({
           {/* Succeeded State */}
           {run.status === 'succeeded' && (
             <>
-              {/* PR Actions */}
-              {run.patch && !prResult && (
-                <div className="px-4 pt-3 flex justify-end">
-                  <Button
-                    variant="success"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowPRForm(!showPRForm);
-                    }}
-                  >
-                    {showPRForm ? 'Cancel' : 'Create PR'}
-                  </Button>
-                </div>
-              )}
-
-              {/* PR Form */}
-              {showPRForm && (
-                <div className="mx-4 mt-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-                  {prResult ? (
-                    <div className="flex flex-col items-center text-center py-2">
-                      <CheckCircleIcon className="w-8 h-8 text-green-400 mb-2" />
-                      <p className="text-green-400 font-medium text-sm mb-2">PR created!</p>
-                      <a
-                        href={prResult.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors text-sm"
-                      >
-                        View on GitHub
-                        <ArrowTopRightOnSquareIcon className="w-4 h-4" />
-                      </a>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleCreatePR} className="space-y-2">
-                      <Input
-                        value={prTitle}
-                        onChange={(e) => setPRTitle(e.target.value)}
-                        placeholder="PR title"
-                        error={formError || undefined}
-                      />
-                      <Textarea
-                        value={prBody}
-                        onChange={(e) => setPRBody(e.target.value)}
-                        placeholder="PR description (optional)"
-                        rows={2}
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          type="submit"
-                          variant="success"
-                          size="sm"
-                          disabled={!prTitle.trim()}
-                          isLoading={creating}
-                        >
-                          Create PR
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setShowPRForm(false)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              )}
-
               {/* Tabs */}
               <div className="flex border-b border-gray-700/50 mt-3 px-4" role="tablist">
                 {runTabConfig.map((tab) => (

@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.domain.models import PR, PRCreate, PRCreated, PRUpdate, PRUpdated
 from dursor_api.dependencies import get_pr_service
+from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRCreated, PRUpdate, PRUpdated
 from dursor_api.services.pr_service import GitHubPermissionError, PRService
 
 router = APIRouter(tags=["prs"])
@@ -18,6 +18,31 @@ async def create_pr(
     """Create a Pull Request from a run."""
     try:
         pr = await pr_service.create(task_id, data)
+        return PRCreated(
+            pr_id=pr.id,
+            url=pr.url,
+            branch=pr.branch,
+            number=pr.number,
+        )
+    except GitHubPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/prs/auto", response_model=PRCreated, status_code=201)
+async def create_pr_auto(
+    task_id: str,
+    data: PRCreateAuto,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PRCreated:
+    """Create a Pull Request with AI-generated title and description.
+
+    This endpoint automatically generates the PR title and description
+    using AI based on the diff and task context.
+    """
+    try:
+        pr = await pr_service.create_auto(task_id, data)
         return PRCreated(
             pr_id=pr.id,
             url=pr.url,

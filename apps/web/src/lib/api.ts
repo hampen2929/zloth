@@ -18,6 +18,7 @@ import type {
   RunsCreated,
   PR,
   PRCreate,
+  PRCreateAuto,
   PRCreated,
   PRUpdate,
   PRUpdated,
@@ -156,6 +157,12 @@ export const runsApi = {
 export const prsApi = {
   create: (taskId: string, data: PRCreate) =>
     fetchApi<PRCreated>(`/tasks/${taskId}/prs`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  createAuto: (taskId: string, data: PRCreateAuto) =>
+    fetchApi<PRCreated>(`/tasks/${taskId}/prs/auto`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

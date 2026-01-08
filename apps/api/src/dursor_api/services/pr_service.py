@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.domain.enums import Provider
-from dursor_api.domain.models import PR, PRCreate, PRUpdate, Repo
+from dursor_api.domain.models import PR, PRCreate, PRCreateAuto, PRUpdate, Repo
 from dursor_api.services.git_service import GitService
 from dursor_api.services.repo_service import RepoService
 from dursor_api.storage.dao import PRDAO, RunDAO, TaskDAO
@@ -128,8 +128,8 @@ class PRService:
                 if "403" in str(e) or "Write access" in str(e):
                     raise GitHubPermissionError(
                         f"GitHub App lacks write access to {owner}/{repo_name}. "
-                        "Please ensure the GitHub App has 'Contents' permission set to 'Read and write' "
-                        "and is installed on this repository."
+                        "Please ensure the GitHub App has 'Contents' permission "
+                        "set to 'Read and write' and is installed on this repository."
                     ) from e
                 raise
 
@@ -154,6 +154,310 @@ class PRService:
             body=data.body,
             latest_commit=run.commit_sha,
         )
+
+    async def create_auto(self, task_id: str, data: PRCreateAuto) -> PR:
+        """Create a Pull Request with AI-generated title and description.
+
+        This method automatically generates the PR title and description
+        using LLM based on the diff and task context.
+
+        Args:
+            task_id: Task ID.
+            data: PR auto-creation data (only run_id needed).
+
+        Returns:
+            Created PR object.
+        """
+        # Get task and repo
+        task = await self.task_dao.get(task_id)
+        if not task:
+            raise ValueError(f"Task not found: {task_id}")
+
+        repo_obj = await self.repo_service.get(task.repo_id)
+        if not repo_obj:
+            raise ValueError(f"Repo not found: {task.repo_id}")
+
+        # Get run
+        run = await self.run_dao.get(data.selected_run_id)
+        if not run:
+            raise ValueError(f"Run not found: {data.selected_run_id}")
+
+        # Verify run has a branch and commit
+        if not run.working_branch:
+            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+        if not run.commit_sha:
+            raise ValueError(f"Run has no commits: {data.selected_run_id}")
+
+        # Parse GitHub info
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+
+        # If branch hasn't been pushed yet, push it now
+        if run.worktree_path:
+            try:
+                auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                await self.git_service.push(
+                    Path(run.worktree_path),
+                    branch=run.working_branch,
+                    auth_url=auth_url,
+                )
+            except Exception as e:
+                if "403" in str(e) or "Write access" in str(e):
+                    raise GitHubPermissionError(
+                        f"GitHub App lacks write access to {owner}/{repo_name}. "
+                        "Please ensure the GitHub App has 'Contents' permission "
+                        "set to 'Read and write' and is installed on this repository."
+                    ) from e
+                raise
+
+        # Get diff for AI generation
+        diff = ""
+        if run.worktree_path:
+            worktree_path = Path(run.worktree_path)
+            if worktree_path.exists():
+                diff = await self.git_service.get_diff_from_base(
+                    worktree_path,
+                    base_ref=run.base_ref or repo_obj.default_branch,
+                )
+        if not diff and run.patch:
+            diff = run.patch
+
+        # Generate title and description with AI
+        title = await self._generate_title(diff, task, run)
+        template = await self._load_pr_template(repo_obj)
+        description = await self._generate_description_for_new_pr(
+            diff=diff,
+            template=template,
+            task=task,
+            title=title,
+            run=run,
+        )
+
+        # Create PR via GitHub API
+        pr_data = await self.github_service.create_pull_request(
+            owner=owner,
+            repo=repo_name,
+            title=title,
+            head=run.working_branch,
+            base=repo_obj.default_branch,
+            body=description,
+        )
+
+        # Save to database
+        return await self.pr_dao.create(
+            task_id=task_id,
+            number=pr_data["number"],
+            url=pr_data["html_url"],
+            branch=run.working_branch,
+            title=title,
+            body=description,
+            latest_commit=run.commit_sha,
+        )
+
+    async def _generate_title(self, diff: str, task, run) -> str:
+        """Generate PR title using LLM.
+
+        Args:
+            diff: Unified diff string.
+            task: Task object.
+            run: Run object.
+
+        Returns:
+            Generated title string.
+        """
+        # Truncate diff if too long
+        truncated_diff = diff[:5000] if len(diff) > 5000 else diff
+
+        prompt = f"""Generate a concise Pull Request title based on the following information.
+
+## Task Description
+{task.title or "(None)"}
+
+## Run Summary
+{run.summary or "(None)"}
+
+## Diff (truncated)
+```diff
+{truncated_diff}
+```
+
+## Rules
+- Output ONLY the title, no quotes or extra text
+- Keep it under 72 characters
+- Use imperative mood (e.g., "Add feature X" not "Added feature X")
+- Be specific but concise
+"""
+
+        try:
+            config = LLMConfig(
+                provider=Provider.ANTHROPIC,
+                model_name="claude-3-haiku-20240307",
+                api_key="",  # Will be loaded from environment
+            )
+            llm_client = self.llm_router.get_client(config)
+            response = await llm_client.generate(
+                prompt=prompt,
+                system_prompt=(
+                    "You are a helpful assistant that generates clear and concise "
+                    "PR titles. Output only the title text."
+                ),
+            )
+            # Clean up the response - remove quotes and extra whitespace
+            title = response.strip().strip('"\'')
+            # Ensure title is not too long
+            if len(title) > 72:
+                title = title[:69] + "..."
+            return title
+        except Exception:
+            # Fallback to a simple title
+            if run.summary:
+                summary_title = run.summary.split("\n")[0][:69]
+                return summary_title if len(summary_title) <= 72 else summary_title[:69] + "..."
+            return "Update code changes"
+
+    async def _generate_description_for_new_pr(
+        self,
+        diff: str,
+        template: str | None,
+        task,
+        title: str,
+        run,
+    ) -> str:
+        """Generate PR description for new PR using LLM.
+
+        Similar to _generate_description but takes title as input
+        instead of PR object.
+
+        Args:
+            diff: Unified diff string.
+            template: Optional PR template.
+            task: Task object.
+            title: Generated PR title.
+            run: Run object.
+
+        Returns:
+            Generated description string.
+        """
+        prompt = self._build_description_prompt_for_new_pr(diff, template, task, title, run)
+
+        try:
+            config = LLMConfig(
+                provider=Provider.ANTHROPIC,
+                model_name="claude-3-haiku-20240307",
+                api_key="",  # Will be loaded from environment
+            )
+            llm_client = self.llm_router.get_client(config)
+            response = await llm_client.generate(
+                prompt=prompt,
+                system_prompt=(
+                    "You are a helpful assistant that generates clear "
+                    "and concise PR descriptions."
+                ),
+            )
+            return response
+        except Exception:
+            # Fallback to a simple description
+            return self._generate_fallback_description_for_new_pr(diff, title, run)
+
+    def _build_description_prompt_for_new_pr(
+        self,
+        diff: str,
+        template: str | None,
+        task,
+        title: str,
+        run,
+    ) -> str:
+        """Build prompt for description generation for new PR.
+
+        Args:
+            diff: Unified diff string.
+            template: Optional PR template.
+            task: Task object.
+            title: Generated PR title.
+            run: Run object.
+
+        Returns:
+            Prompt string.
+        """
+        # Truncate diff if too long
+        truncated_diff = diff[:10000] if len(diff) > 10000 else diff
+
+        prompt_parts = [
+            "Generate a Pull Request Description based on the following information.",
+            "",
+            "## Task Description",
+            task.title or "(None)",
+            "",
+            "## Run Summary",
+            run.summary or "(None)",
+            "",
+            "## PR Title",
+            title,
+            "",
+            "## Diff",
+            "```diff",
+            truncated_diff,
+            "```",
+        ]
+
+        if template:
+            prompt_parts.extend([
+                "",
+                "## Template",
+                "Create the Description following this template format:",
+                "",
+                template,
+            ])
+        else:
+            prompt_parts.extend([
+                "",
+                "## Output Format",
+                "Create the Description in the following format:",
+                "",
+                "## Summary",
+                "(Overview of changes in 1-3 sentences)",
+                "",
+                "## Changes",
+                "(Main changes as bullet points)",
+                "",
+                "## Test Plan",
+                "(Testing methods and verification items)",
+            ])
+
+        return "\n".join(prompt_parts)
+
+    def _generate_fallback_description_for_new_pr(self, diff: str, title: str, run) -> str:
+        """Generate a simple fallback description for new PR.
+
+        Args:
+            diff: Unified diff string.
+            title: PR title.
+            run: Run object.
+
+        Returns:
+            Simple description string.
+        """
+        # Count changes
+        added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
+        removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
+        files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
+
+        summary = run.summary or title
+
+        return f"""## Summary
+{summary}
+
+## Changes
+- Modified {len(files)} file(s)
+- +{added_lines} -{removed_lines} lines
+
+### Files Changed
+{chr(10).join(f'- {f}' for f in sorted(files)[:10])}
+{'...' if len(files) > 10 else ''}
+
+## Test Plan
+- [ ] Manual testing
+- [ ] Unit tests
+"""
 
     async def update(self, task_id: str, pr_id: str, data: PRUpdate) -> PR:
         """Update an existing Pull Request with a new run.
@@ -241,8 +545,8 @@ class PRService:
             if "403" in str(e) or "Write access" in str(e):
                 raise GitHubPermissionError(
                     f"GitHub App lacks write access to {owner}/{repo_name}. "
-                    "Please ensure the GitHub App has 'Contents' permission set to 'Read and write' "
-                    "and is installed on this repository."
+                    "Please ensure the GitHub App has 'Contents' permission "
+                    "set to 'Read and write' and is installed on this repository."
                 ) from e
             raise
 
@@ -392,7 +696,10 @@ class PRService:
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
                 prompt=prompt,
-                system_prompt="You are a helpful assistant that generates clear and concise PR descriptions.",
+                system_prompt=(
+                    "You are a helpful assistant that generates clear "
+                    "and concise PR descriptions."
+                ),
             )
             return response
         except Exception:

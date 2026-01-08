@@ -157,6 +157,10 @@ export interface PRCreate {
   body?: string;
 }
 
+export interface PRCreateAuto {
+  selected_run_id: string;
+}
+
 export interface PRUpdate {
   selected_run_id: string;
   message?: string;
