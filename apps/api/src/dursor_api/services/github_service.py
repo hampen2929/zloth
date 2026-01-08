@@ -59,7 +59,7 @@ class GitHubService:
                 app_id_masked=self._mask_value(row["app_id"]),
                 installation_id=row["installation_id"],
                 installation_id_masked=self._mask_value(row["installation_id"]),
-                has_private_key=bool(row.get("private_key")),
+                has_private_key=bool(row["private_key"]),
                 is_configured=True,
                 source="db",
             )
@@ -145,18 +145,20 @@ class GitHubService:
         if not private_key:
             return None
 
+        app_id: str | None
+        installation_id: str | None
         if config.source == "env":
-            return (
-                settings.github_app_id,
-                private_key,
-                settings.github_app_installation_id,
-            )
+            app_id = settings.github_app_id
+            installation_id = settings.github_app_installation_id
         else:
-            return (
-                config.app_id,
-                private_key,
-                config.installation_id,
-            )
+            app_id = config.app_id
+            installation_id = config.installation_id
+
+        # These should be set when is_configured is True
+        if not app_id or not installation_id:
+            return None
+
+        return (app_id, private_key, installation_id)
 
     def _generate_jwt(self, app_id: str, private_key: str) -> str:
         """Generate JWT for GitHub App authentication."""
