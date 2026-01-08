@@ -64,7 +64,7 @@ test.describe('Home Page', () => {
     await expect(page.getByText(mockResponses.repos[1].full_name)).toBeVisible();
 
     // Check that private badge is shown for private repo
-    await expect(page.getByText('Private')).toBeVisible();
+    await expect(page.getByRole('button', { name: /private-repo.*Private/i })).toBeVisible();
   });
 
   test('should select a repository from dropdown', async ({ page }) => {
