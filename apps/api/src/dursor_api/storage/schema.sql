@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     default_repo_name TEXT,                 -- Default repository name (e.g., "claude-code")
     default_branch TEXT,                    -- Default branch (e.g., "main")
     default_branch_prefix TEXT,             -- Default branch prefix for work branches (e.g., "dursor")
+    default_pr_creation_mode TEXT,          -- Default PR creation behavior: create|link
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

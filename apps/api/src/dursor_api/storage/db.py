@@ -72,6 +72,13 @@ class Database:
             )
             await self._connection.commit()
 
+        # Migration: Add default_pr_creation_mode column to user_preferences table if it doesn't exist
+        if "default_pr_creation_mode" not in pref_column_names:
+            await self._connection.execute(
+                "ALTER TABLE user_preferences ADD COLUMN default_pr_creation_mode TEXT"
+            )
+            await self._connection.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""

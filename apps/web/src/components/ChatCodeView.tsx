@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { tasksApi, runsApi, prsApi } from '@/lib/api';
+import useSWR from 'swr';
+import { tasksApi, runsApi, prsApi, preferencesApi } from '@/lib/api';
 import type { Message, ModelProfile, ExecutorType, Run, RunStatus } from '@/types';
 import { Button } from './ui/Button';
 import { DiffViewer } from './DiffViewer';
@@ -65,8 +66,14 @@ export function ChatCodeView({
   const [runTabs, setRunTabs] = useState<Record<string, RunTab>>({});
   const [creatingPR, setCreatingPR] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
+  const [prLinkResult, setPRLinkResult] = useState<{ url: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
+
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
+  const { data: prs } = useSWR(`prs-${taskId}`, () => prsApi.list(taskId), {
+    refreshInterval: prLinkResult ? 2000 : 0,
+  });
 
   // Determine the locked executor:
   // - If we already have runs, lock to the earliest run's executor_type.
@@ -81,6 +88,15 @@ export function ChatCodeView({
 
   // Get the latest successful run for PR creation
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
+  const latestPR = prs && prs.length > 0 ? prs[0] : null;
+
+  // If we discover an existing PR (e.g., after manual creation), prefer it.
+  useEffect(() => {
+    if (latestPR && !prResult) {
+      setPRResult({ url: latestPR.url, number: latestPR.number });
+      setPRLinkResult(null);
+    }
+  }, [latestPR, prResult]);
 
   // Copy branch name to clipboard
   const copyBranchToClipboard = async () => {
@@ -108,12 +124,20 @@ export function ChatCodeView({
 
     setCreatingPR(true);
     try {
-      const result = await prsApi.createAuto(taskId, {
-        selected_run_id: latestSuccessfulRun.id,
-      });
-      setPRResult({ url: result.url, number: result.number });
-      onPRCreated();
-      success('Pull request created successfully!');
+      if (preferences?.default_pr_creation_mode === 'link') {
+        const result = await prsApi.createLinkAuto(taskId, {
+          selected_run_id: latestSuccessfulRun.id,
+        });
+        setPRLinkResult({ url: result.url });
+        success('PR link generated. Create the PR on GitHub.');
+      } else {
+        const result = await prsApi.createAuto(taskId, {
+          selected_run_id: latestSuccessfulRun.id,
+        });
+        setPRResult({ url: result.url, number: result.number });
+        onPRCreated();
+        success('Pull request created successfully!');
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create PR';
       error(message);
@@ -121,6 +145,34 @@ export function ChatCodeView({
       setCreatingPR(false);
     }
   };
+
+  // When using "Open PR link" mode, poll GitHub/DB sync until the PR is created.
+  useEffect(() => {
+    if (!prLinkResult) return;
+    if (!latestSuccessfulRun) return;
+    if (prResult) return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const synced = await prsApi.sync(taskId, latestSuccessfulRun.id);
+        if (synced.found && synced.pr) {
+          setPRResult({ url: synced.pr.url, number: synced.pr.number });
+          setPRLinkResult(null);
+          onPRCreated();
+          success('PR detected. Opening PR link.');
+        }
+      } catch {
+        // Ignore transient errors while user is still creating the PR.
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [prLinkResult, latestSuccessfulRun, prResult, taskId, onPRCreated, success]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -314,6 +366,16 @@ export function ChatCodeView({
             >
               <CheckCircleIcon className="w-4 h-4" />
               PR #{prResult.number}
+              <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+            </a>
+          ) : prLinkResult ? (
+            <a
+              href={prLinkResult.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+            >
+              Open PR link
               <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
             </a>
           ) : latestSuccessfulRun ? (

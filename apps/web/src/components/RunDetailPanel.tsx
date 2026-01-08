@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { prsApi } from '@/lib/api';
+import useSWR from 'swr';
+import { prsApi, preferencesApi } from '@/lib/api';
 import type { Run } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { StreamingLogs } from '@/components/StreamingLogs';
@@ -57,6 +58,8 @@ export function RunDetailPanel({
   const [prBody, setPRBody] = useState('');
   const [creating, setCreating] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string } | null>(null);
+  const [prResultMode, setPRResultMode] = useState<'created' | 'link' | null>(null);
+  const [pendingSyncRunId, setPendingSyncRunId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Update tab when run changes or status changes
@@ -64,6 +67,36 @@ export function RunDetailPanel({
     setActiveTab(getDefaultTab(run.status));
   }, [run.id, run.status]);
   const { success, error } = useToast();
+
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
+
+  // If a PR was created manually (link mode), poll sync until found, then switch to the PR URL.
+  useEffect(() => {
+    if (!pendingSyncRunId) return;
+    if (prResultMode === 'created') return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const synced = await prsApi.sync(taskId, pendingSyncRunId);
+        if (synced.found && synced.pr) {
+          setPRResult({ url: synced.pr.url });
+          setPRResultMode('created');
+          setPendingSyncRunId(null);
+          onPRCreated();
+          success('PR detected. Opening PR.');
+        }
+      } catch {
+        // Ignore transient errors while user is still creating the PR.
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pendingSyncRunId, prResultMode, taskId, onPRCreated, success]);
 
   const handleCreatePR = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,14 +106,27 @@ export function RunDetailPanel({
     setFormError(null);
 
     try {
-      const result = await prsApi.create(taskId, {
-        selected_run_id: run.id,
-        title: prTitle.trim(),
-        body: prBody.trim() || undefined,
-      });
-      setPRResult(result);
-      onPRCreated();
-      success('Pull request created successfully!');
+      if (preferences?.default_pr_creation_mode === 'link') {
+        const result = await prsApi.createLink(taskId, {
+          selected_run_id: run.id,
+          title: prTitle.trim(),
+          body: prBody.trim() || undefined,
+        });
+        setPRResult({ url: result.url });
+        setPRResultMode('link');
+        setPendingSyncRunId(run.id);
+        success('PR link generated. Create the PR on GitHub.');
+      } else {
+        const result = await prsApi.create(taskId, {
+          selected_run_id: run.id,
+          title: prTitle.trim(),
+          body: prBody.trim() || undefined,
+        });
+        setPRResult(result);
+        setPRResultMode('created');
+        onPRCreated();
+        success('Pull request created successfully!');
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create PR';
       setFormError(message);
@@ -207,14 +253,16 @@ export function RunDetailPanel({
           {prResult ? (
             <div className="flex flex-col items-center text-center py-4">
               <CheckCircleIcon className="w-10 h-10 text-green-400 mb-3" />
-              <p className="text-green-400 font-medium mb-2">PR created successfully!</p>
+              <p className="text-green-400 font-medium mb-2">
+                {prResultMode === 'link' ? 'PR link generated!' : 'PR created successfully!'}
+              </p>
               <a
                 href={prResult.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors"
               >
-                View PR on GitHub
+                {prResultMode === 'link' ? 'Open PR creation page on GitHub' : 'View PR on GitHub'}
                 <ArrowTopRightOnSquareIcon className="w-4 h-4" />
               </a>
             </div>
@@ -240,7 +288,7 @@ export function RunDetailPanel({
                   disabled={!prTitle.trim()}
                   isLoading={creating}
                 >
-                  Create PR
+                  {preferences?.default_pr_creation_mode === 'link' ? 'Open PR link' : 'Create PR'}
                 </Button>
                 <Button
                   type="button"
