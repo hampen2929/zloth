@@ -12,7 +12,7 @@ venv:
 
 # Local development - install dependencies
 install-api:
-	cd apps/api && uv pip install -e ".[dev]"
+	cd apps/api && uv sync --extra dev
 
 install-web:
 	cd apps/web && npm install

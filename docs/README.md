@@ -31,9 +31,7 @@ cd dursor
 
 # Backend setup
 cd apps/api
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Frontend setup
 cd ../web

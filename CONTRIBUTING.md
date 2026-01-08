@@ -16,9 +16,7 @@ cd dursor
 ```bash
 # Backend
 cd apps/api
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Frontend
 cd apps/web
@@ -44,9 +42,9 @@ cp .env.example .env
 
 ```bash
 # Run before submitting
-ruff check --fix src/
-ruff format src/
-mypy src/
+uv run ruff check --fix src/
+uv run ruff format src/
+uv run mypy src/
 ```
 
 ### TypeScript
@@ -106,9 +104,9 @@ git checkout -b fix/your-fix-name
 ```bash
 # Backend
 cd apps/api
-pytest
-ruff check src/
-mypy src/
+uv run pytest
+uv run ruff check src/
+uv run mypy src/
 
 # Frontend
 cd apps/web

@@ -27,7 +27,7 @@
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - Node.js 20+
 - Git
 - GitHub Personal Access Token (for PR operations)
@@ -43,9 +43,7 @@
 2. **Set up the API server**
    ```bash
    cd apps/api
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install -e ".[dev]"
+   uv sync --extra dev
    ```
 
 3. **Set up the web frontend**
@@ -64,7 +62,7 @@
    ```bash
    # Terminal 1: API server
    cd apps/api
-   python -m dursor_api.main
+   uv run python -m dursor_api.main
 
    # Terminal 2: Web frontend
    cd apps/web
