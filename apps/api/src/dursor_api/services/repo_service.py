@@ -1,9 +1,12 @@
 """Repository management service."""
 
+from __future__ import annotations
+
 import os
 import shutil
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import git
 
@@ -11,19 +14,22 @@ from dursor_api.config import settings
 from dursor_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
 from dursor_api.storage.dao import RepoDAO
 
-# Forward declaration for type hints
-GitHubService = None
+if TYPE_CHECKING:
+    from dursor_api.services.github_service import GitHubService
 
 
 class RepoService:
     """Service for managing Git repositories."""
 
-    def __init__(self, dao: RepoDAO, github_service: "GitHubService | None" = None):
+    def __init__(self, dao: RepoDAO, github_service: GitHubService | None = None):
         self.dao = dao
-        self.workspaces_dir = settings.workspaces_dir
+        if settings.workspaces_dir:
+            self.workspaces_dir: Path = settings.workspaces_dir
+        else:
+            raise ValueError("workspaces_dir must be set in settings")
         self._github_service = github_service
 
-    def set_github_service(self, github_service: "GitHubService") -> None:
+    def set_github_service(self, github_service: GitHubService) -> None:
         """Set the GitHub service (for dependency injection)."""
         self._github_service = github_service
 
@@ -104,7 +110,7 @@ class RepoService:
         """
         return await self.dao.find_by_url(repo_url)
 
-    async def select(self, data: RepoSelectRequest, github_service: "GitHubService") -> Repo:
+    async def select(self, data: RepoSelectRequest, github_service: GitHubService) -> Repo:
         """Select and clone a repository by owner/repo name using GitHub App auth.
 
         Args:

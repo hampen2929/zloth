@@ -88,7 +88,9 @@ class GeminiExecutor:
             )
 
             # Stream output from CLI
-            async def read_output():
+            async def read_output() -> None:
+                if process.stdout is None:
+                    return
                 while True:
                     line = await process.stdout.readline()
                     if not line:

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import uuid
 from datetime import datetime
 from typing import Any
 
-from dursor_api.domain.enums import ExecutorType, MessageRole, Provider, RunStatus
+from dursor_api.domain.enums import (
+    ExecutorType,
+    MessageRole,
+    PRCreationMode,
+    Provider,
+    RunStatus,
+)
 from dursor_api.domain.models import (
     PR,
     FileDiff,
@@ -397,9 +404,9 @@ class RunDAO:
         status: RunStatus,
         summary: str | None = None,
         patch: str | None = None,
-        files_changed: list[FileDiff] | None = None,
-        logs: list[str] | None = None,
-        warnings: list[str] | None = None,
+        files_changed: builtins.list[FileDiff] | None = None,
+        logs: builtins.list[str] | None = None,
+        warnings: builtins.list[str] | None = None,
         error: str | None = None,
         commit_sha: str | None = None,
         session_id: str | None = None,
@@ -777,7 +784,7 @@ class UserPreferencesDAO:
             default_repo_name=default_repo_name,
             default_branch=default_branch,
             default_branch_prefix=default_branch_prefix,
-            default_pr_creation_mode=default_pr_creation_mode or "create",
+            default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -788,7 +795,7 @@ class UserPreferencesDAO:
             default_branch_prefix=(
                 row["default_branch_prefix"] if "default_branch_prefix" in row.keys() else None
             ),
-            default_pr_creation_mode=(
+            default_pr_creation_mode=PRCreationMode(
                 row["default_pr_creation_mode"]
                 if "default_pr_creation_mode" in row.keys() and row["default_pr_creation_mode"]
                 else "create"

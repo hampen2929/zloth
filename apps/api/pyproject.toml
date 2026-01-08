@@ -26,6 +26,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
+    "types-aiofiles>=24.1.0",
 ]
 
 [build-system]
@@ -45,3 +46,27 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.mypy]
 python_version = "3.13"
 strict = true
+plugins = ["pydantic.mypy"]
+# Allow some common patterns that are hard to type
+warn_return_any = false
+disallow_any_generics = false
+# Temporarily allow some relaxed type checks for incremental adoption
+warn_unused_ignores = false
+
+# Pydantic mypy plugin config
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[[tool.mypy.overrides]]
+module = [
+    "dotenv",
+    "aiosqlite",
+    "aiosqlite.*",
+    "google.generativeai",
+    "google.generativeai.*",
+    "git",
+    "git.*",
+]
+ignore_missing_imports = true
