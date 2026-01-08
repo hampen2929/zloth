@@ -75,36 +75,45 @@ async def stream_run_logs(
         raise HTTPException(status_code=404, detail="Run not found")
 
     async def gen():
-        # Backlog first
-        backlog = await run_service.run_log_service.list(run_id=run_id, after_seq=from_seq, limit=1000)
-        for entry in backlog:
+        # NOTE: We intentionally poll SQLite for new logs instead of relying on
+        # in-memory pub/sub. This keeps streaming reliable even when the API is
+        # running with multiple workers/processes (SSE connection may not hit the
+        # same process that is appending logs).
+        last_seq = from_seq
+        idle_ticks = 0
+
+        while True:
             if await request.is_disconnected():
                 return
-            payload = {"type": "log", "data": entry.model_dump(mode="json")}
-            yield f"event: log\ndata: {json.dumps(payload)}\n\n"
 
-        queue, is_finished = await run_service.run_log_service.subscribe(run_id)
-        try:
-            if is_finished:
-                yield f"event: done\ndata: {json.dumps({'type': 'done', 'data': {'run_id': run_id}})}\n\n"
-                return
+            # Fetch new entries
+            entries = await run_service.run_log_service.list(
+                run_id=run_id,
+                after_seq=last_seq,
+                limit=1000,
+            )
+            if entries:
+                idle_ticks = 0
+                for entry in entries:
+                    last_seq = max(last_seq, entry.seq)
+                    payload = {"type": "log", "data": entry.model_dump(mode="json")}
+                    yield f"event: log\ndata: {json.dumps(payload)}\n\n"
+            else:
+                idle_ticks += 1
 
-            while True:
-                if await request.is_disconnected():
+            # Periodic keep-alive
+            if idle_ticks % 10 == 0:
+                yield ": ping\n\n"
+
+            # If run is finished and we didn't find any new logs, end stream.
+            # (We only check status occasionally to reduce DB load.)
+            if idle_ticks % 4 == 0:
+                current = await run_service.get(run_id)
+                if current and current.status.value in ("succeeded", "failed", "canceled"):
+                    yield f"event: done\ndata: {json.dumps({'type': 'done', 'data': {'run_id': run_id}})}\n\n"
                     return
 
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except TimeoutError:
-                    # Keep-alive to prevent proxy timeouts
-                    yield ": ping\n\n"
-                    continue
-
-                yield f"event: {event.type}\ndata: {json.dumps({'type': event.type, 'data': event.data})}\n\n"
-                if event.type == "done":
-                    return
-        finally:
-            await run_service.run_log_service.unsubscribe(run_id, queue)
+            await asyncio.sleep(0.4)
 
     return StreamingResponse(
         gen(),
