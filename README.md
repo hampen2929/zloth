@@ -23,6 +23,41 @@
 - **Self-hosted**: Run locally or on your own infrastructure
 - **BYO API Keys**: Securely store and use your own LLM API keys
 
+## Who is dursor for?
+
+dursor is designed for:
+
+- **People who prefer a web-based chat interface**
+  - Tired of AI conversations in CLI tools
+  - Tired of AI-assisted coding in IDEs
+  - Want a simple, intuitive chat experience for code generation
+
+- **People who want to run AI agents on localhost with their own API keys**
+  - Full control over your development environment
+  - Self-hosted solution that keeps your code and data within your network
+  - Works with your existing API keys (BYO API Key)
+
+- **People who want to use multiple AI models**
+  - Compare outputs from different models side-by-side
+  - Choose the best implementation from multiple options
+  - Not locked into a single AI provider
+
+### Comparison Matrix
+
+|  | dursor | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini) | AI Coding Cloud (Claude Code, Codex, Gemini) |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Web-based chat interface | ✅ | ✅ | ❌ | ❌ | ✅ |
+| On-premises / Localhost | ✅ | ❌ | ✅ | ✅ | ❌ |
+| Multiple AI models | ✅ | ✅ | ✅ | ❌ | ❌ |
+| BYO API Key | ✅ | ❌ | ✅ | ✅ | ❌ |
+| OSS | ✅ | ❌ | ❌ | ✅ | ❌ |
+| CLI integration | ✅* | ❌ | ❌ | ✅ | ❌ |
+| IDE integration | ❌ | ❌ | ✅ | ❌ | ❌ |
+
+*dursor runs AI Coding CLIs on localhost behind the scenes
+
+> **dursor is the OSS solution that combines a web-based chat interface, localhost deployment, multiple AI models, BYO API Key support, and CLI integration.**
+
 ## Quick Start
 
 ### Prerequisites
