@@ -8,6 +8,7 @@ pattern defined in docs/git_operation_design.md.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -18,6 +19,8 @@ import git
 
 from dursor_api.config import settings
 from dursor_api.domain.models import Repo
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -217,6 +220,61 @@ class GitService:
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _is_ancestor)
+
+    async def get_ref_sha(self, repo_path: Path, ref: str) -> str | None:
+        """Resolve a git ref to a SHA (best-effort).
+
+        Args:
+            repo_path: Path to a git repo (workspace or worktree).
+            ref: Git ref to resolve (e.g., 'origin/main', 'HEAD', 'refs/remotes/origin/main').
+
+        Returns:
+            SHA string if resolvable, otherwise None.
+        """
+
+        def _get_ref_sha() -> str | None:
+            repo = git.Repo(repo_path)
+            try:
+                # Best-effort fetch to keep origin refs fresh.
+                repo.git.fetch("origin", "--prune")
+            except Exception as e:
+                logger.debug(f"git fetch failed while resolving ref: {e}")
+
+            try:
+                return repo.git.rev_parse(ref).strip()
+            except git.GitCommandError:
+                return None
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _get_ref_sha)
+
+    async def get_merge_base(self, repo_path: Path, ref1: str, ref2: str) -> str | None:
+        """Get merge-base SHA between two refs (best-effort).
+
+        Args:
+            repo_path: Path to a git repo (workspace or worktree).
+            ref1: First ref (e.g., 'origin/main').
+            ref2: Second ref (e.g., 'origin/feature' or 'HEAD').
+
+        Returns:
+            Merge-base SHA if computable, otherwise None.
+        """
+
+        def _get_merge_base() -> str | None:
+            repo = git.Repo(repo_path)
+            try:
+                repo.git.fetch("origin", "--prune")
+            except Exception as e:
+                logger.debug(f"git fetch failed while computing merge-base: {e}")
+
+            try:
+                mb = repo.git.merge_base(ref1, ref2).strip()
+                return mb.splitlines()[0].strip() if mb else None
+            except git.GitCommandError:
+                return None
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _get_merge_base)
 
     async def cleanup_worktree(
         self,

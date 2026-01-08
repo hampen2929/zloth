@@ -7,6 +7,7 @@ pushed by RunService, so this service only handles GitHub API operations.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,6 +23,8 @@ from dursor_api.storage.dao import PRDAO, RunDAO, TaskDAO
 
 if TYPE_CHECKING:
     from dursor_api.services.github_service import GitHubService
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubPermissionError(Exception):
@@ -134,6 +137,9 @@ class PRService:
                     ) from e
                 raise
 
+        # Diagnostics: confirm PR branch is based on latest default (origin/<default>)
+        await self._log_pr_branch_base_state(repo_obj, run)
+
         # Create PR body (apply pull_request_template if available)
         template = await self._load_pr_template(repo_obj)
         description_src = (data.body or run.summary or "").strip()
@@ -219,6 +225,9 @@ class PRService:
                         "set to 'Read and write' and is installed on this repository."
                     ) from e
                 raise
+
+        # Diagnostics: confirm PR branch is based on latest default (origin/<default>)
+        await self._log_pr_branch_base_state(repo_obj, run)
 
         # Get diff for AI generation
         diff = ""
@@ -680,6 +689,38 @@ class PRService:
                 return path.read_text()
 
         return None
+
+    async def _log_pr_branch_base_state(self, repo_obj: Repo, run) -> None:
+        """Log merge-base diagnostics for PR branches.
+
+        This helps confirm whether the PR branch includes the latest default branch.
+        The check uses remote refs: origin/<default> and origin/<working_branch>.
+        """
+        try:
+            if not repo_obj.default_branch or not run.working_branch:
+                return
+
+            repo_path = Path(repo_obj.workspace_path)
+            base_ref = f"origin/{repo_obj.default_branch}"
+            head_ref = f"origin/{run.working_branch}"
+
+            base_sha = await self.git_service.get_ref_sha(repo_path, base_ref)
+            head_sha = await self.git_service.get_ref_sha(repo_path, head_ref)
+            merge_base = await self.git_service.get_merge_base(repo_path, base_ref, head_ref)
+            base_is_ancestor = await self.git_service.is_ancestor(
+                repo_path=repo_path,
+                ancestor=base_ref,
+                descendant=head_ref,
+            )
+
+            logger.info(
+                "PR base diagnostics: "
+                f"base_ref={base_ref} base_sha={base_sha} "
+                f"head_ref={head_ref} head_sha={head_sha} "
+                f"merge_base={merge_base} base_is_ancestor={base_is_ancestor}"
+            )
+        except Exception as e:
+            logger.warning(f"PR base diagnostics failed: {e}")
 
     def _render_pr_body_from_template(self, template: str, title: str, description: str) -> str:
         """Render PR body using pull_request_template.
