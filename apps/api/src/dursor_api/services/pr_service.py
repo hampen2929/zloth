@@ -101,7 +101,7 @@ class PRService:
         For CLI runs, we usually have a worktree and can push from it.
         If the push fails due to permission issues, raise a friendly error.
         """
-        if not run.worktree_path:
+        if not run.worktree_path or not run.working_branch:
             return
         try:
             auth_url = await self.github_service.get_auth_url(owner, repo)
@@ -780,7 +780,10 @@ class PRService:
         if run.commit_sha and run.working_branch == pr.branch:
             # Commit is already on the PR branch, just update the database
             await self.pr_dao.update(pr_id, run.commit_sha)
-            return await self.pr_dao.get(pr_id)
+            updated_pr = await self.pr_dao.get(pr_id)
+            if not updated_pr:
+                raise ValueError(f"PR not found after update: {pr_id}")
+            return updated_pr
 
         # For PatchAgent runs or different branches, we need to apply the patch
         # This is backward compatibility code
@@ -844,7 +847,10 @@ class PRService:
         # Update database
         await self.pr_dao.update(pr_id, commit_sha)
 
-        return await self.pr_dao.get(pr_id)
+        updated_pr = await self.pr_dao.get(pr_id)
+        if not updated_pr:
+            raise ValueError(f"PR not found after update: {pr_id}")
+        return updated_pr
 
     async def regenerate_description(self, task_id: str, pr_id: str) -> PR:
         """Regenerate PR description from current diff.
@@ -925,7 +931,10 @@ class PRService:
         # Update database
         await self.pr_dao.update_body(pr_id, new_description)
 
-        return await self.pr_dao.get(pr_id)
+        updated_pr = await self.pr_dao.get(pr_id)
+        if not updated_pr:
+            raise ValueError(f"PR not found after update: {pr_id}")
+        return updated_pr
 
     async def _load_pr_template(self, repo: Repo) -> str | None:
         """Load repository's pull_request_template.

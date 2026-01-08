@@ -11,7 +11,7 @@ import asyncio
 import builtins
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -55,7 +55,7 @@ class QueueAdapter:
     def enqueue(
         self,
         run_id: str,
-        coro: Callable[[], Awaitable[None]],
+        coro: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         """Enqueue a run for execution.
 
@@ -236,9 +236,14 @@ class RunService:
                 runs.append(run)
 
                 # Enqueue for execution
+                def make_patch_agent_coro(
+                    r: Run, rp: Any
+                ) -> Callable[[], Coroutine[Any, Any, None]]:
+                    return lambda: self._execute_patch_agent_run(r, rp)
+
                 self.queue.enqueue(
                     run.id,
-                    lambda r=run, rp=repo: self._execute_patch_agent_run(r, rp),
+                    make_patch_agent_coro(run, repo),
                 )
 
         return runs
@@ -356,18 +361,22 @@ class RunService:
         )
 
         # Update the run object with new info
-        run = await self.run_dao.get(run.id)
+        updated_run = await self.run_dao.get(run.id)
+        if not updated_run:
+            raise ValueError(f"Run not found after update: {run.id}")
 
         # Enqueue for execution based on executor type
-        def make_coro(r, wt, et, ps, rp):
+        def make_coro(
+            r: Run, wt: Any, et: ExecutorType, ps: str | None, rp: Any
+        ) -> Callable[[], Coroutine[Any, Any, None]]:
             return lambda: self._execute_cli_run(r, wt, et, ps, rp)
 
         self.queue.enqueue(
-            run.id,
-            make_coro(run, worktree_info, executor_type, previous_session_id, repo),
+            updated_run.id,
+            make_coro(updated_run, worktree_info, executor_type, previous_session_id, repo),
         )
 
-        return run
+        return updated_run
 
     async def get(self, run_id: str) -> Run | None:
         """Get a run by ID.
@@ -446,6 +455,13 @@ class RunService:
             run: Run object.
             repo: Repository object.
         """
+        # Validate required fields for PatchAgent runs
+        if not run.model_id or not run.provider or not run.model_name:
+            raise ValueError(
+                f"PatchAgent run {run.id} missing required model info: "
+                f"model_id={run.model_id}, provider={run.provider}, model_name={run.model_name}"
+            )
+
         try:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
@@ -531,7 +547,9 @@ class RunService:
         commit_sha: str | None = None
 
         # Map executor types to their executors and names
-        executor_map = {
+        executor_map: dict[
+            ExecutorType, tuple[ClaudeCodeExecutor | CodexExecutor | GeminiExecutor, str]
+        ] = {
             ExecutorType.CLAUDE_CODE: (self.claude_executor, "Claude Code"),
             ExecutorType.CODEX_CLI: (self.codex_executor, "Codex"),
             ExecutorType.GEMINI_CLI: (self.gemini_executor, "Gemini"),
