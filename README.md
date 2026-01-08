@@ -51,9 +51,9 @@ dursor is designed for:
 
 |  | dursor | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini) | AI Coding Cloud (Claude Code, Codex, Gemini) |
 |---|:---:|:---:|:---:|:---:|:---:|
-| Multiple AI models | ✅ | ✅ | ✅ | ❌ | ❌ |
-| On-premises / Localhost | ✅ | ❌ | ✅ | ✅ | ❌ |
 | Web-based chat interface | ✅ | ✅ | ❌ | ❌ | ✅ |
+| On-premises / Localhost | ✅ | ❌ | ✅ | ✅ | ❌ |
+| Multiple AI models | ✅ | ✅ | ✅ | ❌ | ❌ |
 | CLI integration | ❌ | ❌ | ✅ | ✅ | ❌ |
 | IDE integration | ❌ | ❌ | ✅ | ❌ | ❌ |
 
