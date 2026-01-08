@@ -1,17 +1,17 @@
 # UI/UX Improvement Plan v2 for dursor
 
-このドキュメントは、dursor のUI/UXをより深く分析し、ユーザー体験の観点から改善すべき点を詳細にまとめています。v1 で特定された基礎的な問題に加え、より高度なUXの課題と解決策を提示します。
+このドキュメントは、dursor のUI/UXをユーザー体験の観点から分析し、**ユーザーが迷う・待つ・誤る**ポイントを洗い出して、優先度付きで改善案をまとめたものです。v1 で特定された基礎的な問題に加え、より高度なUXの課題と解決策を提示します。
 
 ## 目次
 
 1. [エグゼクティブサマリー](#エグゼクティブサマリー)
-2. [ユーザージャーニー分析](#ユーザージャーニー分析)
-3. [重要な改善領域](#重要な改善領域)
-4. [詳細な改善提案](#詳細な改善提案)
-5. [インタラクションデザイン改善](#インタラクションデザイン改善)
-6. [情報アーキテクチャ改善](#情報アーキテクチャ改善)
-7. [ビジュアルデザイン改善](#ビジュアルデザイン改善)
-8. [実装優先度マトリクス](#実装優先度マトリクス)
+2. [現状分析](#現状分析)
+3. [改善の狙い（UX原則）](#改善の狙いux原則)
+4. [優先度付き改善項目](#優先度付き改善項目)
+5. [画面別の具体提案](#画面別の具体提案)
+6. [デザインとアクセシビリティ](#デザインとアクセシビリティ)
+7. [成功指標（KPI）](#成功指標kpi)
+8. [実装ロードマップ](#実装ロードマップ)
 
 ---
 
@@ -28,6 +28,7 @@ dursor は機能的に優れたマルチモデル並列コーディングエー�
 | タスク効率 | 3/5 | 5/5 | ワークフローの最適化が必要 |
 | エラーハンドリング | 3/5 | 5/5 | 復旧パスが不明確 |
 | 認知負荷 | 3/5 | 4/5 | 選択肢が多すぎる場面がある |
+| 比較体験 | 2/5 | 5/5 | マルチモデルの価値を活かせていない |
 
 ### v1 からの変更点
 
@@ -35,26 +36,30 @@ v1 ドキュメントでは技術的な問題（レスポンシブ、コンポ�
 
 ---
 
-## ユーザージャーニー分析
+## 現状分析
 
-### ペルソナ
+### 技術スタック
+- **基盤**: Next.js App Router, Tailwind CSS, Heroicons
+- **コンポーネント**: `components/ui`に基本的なUIパーツ（Button, Input, Modal, Toast, Skeleton）が実装済み
+- **状態管理**: SWRを使用したデータフェッチとキャッシュ管理
 
-1. **新規ユーザー (田中さん)**
-   - 初めて dursor を使用
-   - GitHub App の設定が必要
-   - 最初のタスクを作成したい
+### 主要フロー（現状）
+- **Home**: 指示入力 → 実行器（Models/Claude Code/Codex/Gemini）選択 → Repo/Branch選択 → Task作成＆Run開始
+- **Task**: 会話（ユーザーメッセージ）とRun結果カード（Summary/Diff/Logs）を同一画面で閲覧 → 成功RunからPR作成
+- **Settings**: Model Profiles / GitHub App / Defaults（repo/branch/prefix/PR作成モード）
 
-2. **リピートユーザー (佐藤さん)**
-   - 既に設定済み
-   - 効率的にタスクを管理したい
-   - 複数の PR を並行して作成
+### すでに入っている良い点
+- **トースト通知**、**スケルトン**、**確認ダイアログ**など、フィードバックの土台がある
+- **モバイルサイドバー**とオーバーレイにより、最低限のモバイル動線は確保されている
+- `Modal` のフォーカス復帰・Esc閉じなど、アクセシビリティの芽がある
 
-3. **パワーユーザー (山田さん)**
-   - キーボードショートカットを多用
-   - 複数のリポジトリを管理
-   - 自動化を求める
+### 課題
+- データ量が増えた際のスケーラビリティ（タスク一覧や実行ログ）
+- インタラクションの滑らかさ
+- モバイル対応の不完全さ
+- キーボード操作の網羅性
 
-### 現在のユーザーフロー課題マップ
+### ユーザーフロー課題マップ
 
 ```
 [初回アクセス] → [ホーム画面]
@@ -69,65 +74,60 @@ v1 ドキュメントでは技術的な問題（レスポンシブ、コンポ�
      ↓
 [実行状況確認] ← ⚠️ 長時間実行時の進捗が不明確
      ↓
-[結果確認] ← ⚠️ Diff の可読性改善が必要
+[結果確認] ← ⚠️ Diff の可読性・比較UIが弱い
      ↓
 [PR 作成] ← ❌ PR 作成後のフローが不明確
 ```
 
 ---
 
-## 重要な改善領域
+## 改善の狙い（UX原則）
 
-### 1. オンボーディング体験の欠如 🔴 Critical
+| 原則 | 説明 |
+|-----|------|
+| **認知負荷の低減** | 何をすれば動くのか、次に何が起きるのかを常に明確にする |
+| **エラー予防** | 入力不足/設定不足を「押してから失敗」ではなく「押す前に理解」へ |
+| **比較・意思決定の支援** | マルチモデルの価値は「比較できること」なので、比較のUIを強くする |
+| **信頼性の可視化** | 実行中/待機/失敗の状態が、理由と次の手段まで含めて伝わる |
+| **"次に何をすべきか"を画面上に残す** | 空状態・エラー・設定不足の全てで導線を提示 |
 
-**現状の問題:**
-- 初回アクセス時に何をすべきか分からない
-- GitHub App 未設定時のエラーメッセージが技術的すぎる
-- モデル未登録でもタスク作成画面が表示される
+---
 
-**影響:**
-- ユーザーの離脱率が高くなる可能性
-- サポートへの問い合わせ増加
+## 優先度付き改善項目
 
-**改善案:**
+### P0（詰まりを解消／コア体験を守る）
+
+#### 1. 入力バリデーションの"沈黙"をなくす（Home）
+
+**課題**: 指示/Repo/Branch/Models不足時に、送信が通らない・返ってくるが理由が見えにくい。
+
+**改善案**:
+- 送信ボタン付近に「不足している条件」を1行で表示（例: "リポジトリを選択してください"）
+- `patch_agent` でモデル未設定時は、**SettingsへのCTA**（"モデルを追加"）を提示
+- GitHub App 未設定でRepo一覧が取れない場合も、**Settings（GitHub App）へ誘導**
 
 ```tsx
-// components/Onboarding/WelcomeFlow.tsx (新規)
-
-interface OnboardingStep {
-  id: string;
-  title: string;
-  description: string;
-  completed: boolean;
-  action: () => void;
-}
-
-const onboardingSteps: OnboardingStep[] = [
-  {
-    id: 'github',
-    title: 'GitHub App を接続',
-    description: 'リポジトリにアクセスするために必要です',
-    completed: false,
-    action: () => openSettings('github'),
-  },
-  {
-    id: 'model',
-    title: 'モデルを追加',
-    description: 'OpenAI、Anthropic、Google のAPIキーを登録',
-    completed: false,
-    action: () => openSettings('models'),
-  },
-  {
-    id: 'first-task',
-    title: '最初のタスクを作成',
-    description: '準備完了！タスクを作成しましょう',
-    completed: false,
-    action: () => navigate('/'),
-  },
-];
+// 改善例: 送信ボタン付近の条件表示
+<div className="space-y-2">
+  {!selectedRepo && (
+    <p className="text-sm text-amber-400 flex items-center gap-2">
+      <ExclamationTriangleIcon className="w-4 h-4" />
+      リポジトリを選択してください
+    </p>
+  )}
+  {executorType === 'patch_agent' && selectedModels.length === 0 && (
+    <p className="text-sm text-amber-400 flex items-center gap-2">
+      <ExclamationTriangleIcon className="w-4 h-4" />
+      モデルが未設定です
+      <button onClick={() => openSettings('models')} className="text-blue-400 underline">
+        設定する →
+      </button>
+    </p>
+  )}
+</div>
 ```
 
-**ホーム画面の改善案:**
+**ホーム画面の改善イメージ:**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -148,230 +148,41 @@ const onboardingSteps: OnboardingStep[] = [
 
 ---
 
-### 2. 認知負荷の軽減 🟠 High
+#### 2. RunとユーザーメッセージのID紐付け（Task）
 
-**現状の問題:**
+**課題**: 現状は「ユーザーメッセージ数に応じてRunを均等割り当て」しており、会話が進むほど誤結合が起きやすい。
 
-#### a) Executor 選択の複雑さ
-
-現在の `ExecutorSelector` は以下の問題があります：
-
-- モデル選択と CLI エージェント選択が混在
-- 初見では何を選ぶべきか分からない
-- 選択状態の視覚的フィードバックが弱い
-
-**改善案:**
-
-```
-現在:
-┌──────────────────────────────────────────┐
-│ [Models ▼]                               │
-│ ├── ✓ GPT-4                              │
-│ ├── ✓ Claude 3.5 Sonnet                  │
-│ └── ○ Gemini Pro                         │
-│ ─────────────────────────────────────────│
-│ CLI Agents                               │
-│ ├── ○ Claude Code                        │
-│ ├── ○ Codex                              │
-│ └── ○ Gemini CLI                         │
-└──────────────────────────────────────────┘
-
-改善案:
-┌──────────────────────────────────────────┐
-│  実行方法を選択                           │
-│                                          │
-│  ┌─────────────────┐  ┌─────────────────┐│
-│  │  🤖 並列モデル   │  │  💻 CLI Agent   ││
-│  │  複数のモデルで  │  │  単一のCLIで    ││
-│  │  同時に実行     │  │  対話的に実行    ││
-│  │                 │  │                 ││
-│  │  [選択中 ✓]     │  │  [選択]         ││
-│  └─────────────────┘  └─────────────────┘│
-│                                          │
-│  選択したモデル: GPT-4, Claude 3.5       │
-│  [モデルを変更]                          │
-└──────────────────────────────────────────┘
-```
-
-#### b) タスク作成時の必須項目の明確化
+**改善案**:
+- Run作成時に **`message_id` を保存**し、UIはそのIDで厳密にグルーピング
+- 過去データはフォールバック表示（"推定グループ" ラベル）に留める
 
 ```tsx
-// 現在の問題: 何が必須か視覚的に不明確
+// バックエンド改善: Run作成時にmessage_idを保存
+interface CreateRunRequest {
+  instruction: string;
+  model_ids?: string[];
+  executor_type: ExecutorType;
+  message_id: string;  // 新規追加
+}
 
-// 改善案: 明確なステップ表示
-<div className="space-y-6">
-  {/* Step indicator */}
-  <div className="flex items-center gap-2 text-sm">
-    <span className={cn(
-      "w-6 h-6 rounded-full flex items-center justify-center",
-      selectedRepo ? "bg-green-600" : "bg-blue-600 animate-pulse"
-    )}>1</span>
-    <span className="text-gray-400">→</span>
-    <span className={cn(
-      "w-6 h-6 rounded-full flex items-center justify-center",
-      hasModelsOrExecutor ? "bg-green-600" : "bg-gray-600"
-    )}>2</span>
-    <span className="text-gray-400">→</span>
-    <span className={cn(
-      "w-6 h-6 rounded-full flex items-center justify-center",
-      instruction ? "bg-green-600" : "bg-gray-600"
-    )}>3</span>
-  </div>
-</div>
+// フロントエンド: 正確なグルーピング
+const getRunsForMessage = (messageId: string): Run[] => {
+  return runs.filter(run => run.message_id === messageId);
+};
 ```
 
 ---
 
-### 3. フィードバックループの改善 🟠 High
+#### 3. Diffの可読性・操作性を一段上げる（Task）
 
-**現状の問題:**
+**課題**: 現状のDiffはパッチを素朴に描画しており、ファイル一覧/ジャンプ/折り畳み/コピー等が弱い。
 
-#### a) 実行中の進捗表示が不十分
-
-- CLI 実行時に何が起きているか分からない
-- 長時間実行時にユーザーが不安になる
-- キャンセル可能かどうか不明
-
-**改善案: プログレス表示の強化**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  🔄 Claude Code 実行中                         [キャンセル] │
-│  ─────────────────────────────────────────────────────────  │
-│                                                             │
-│  ⏱️ 経過時間: 2:34                                          │
-│                                                             │
-│  📋 現在のステップ:                                         │
-│  ├── ✓ ワークスペース準備                                   │
-│  ├── ✓ コード分析                                          │
-│  ├── 🔄 変更を生成中...                                     │
-│  └── ○ パッチ作成                                          │
-│                                                             │
-│  💬 最新のログ:                                             │
-│  > Analyzing src/components/Button.tsx                      │
-│  > Found 3 areas to modify                                  │
-│                                                             │
-│  [ログを展開] [バックグラウンドで実行]                        │
-└─────────────────────────────────────────────────────────────┘
-```
-
-#### b) Toast 通知の改善
-
-現在のトースト通知は基本的ですが、アクション可能な通知に改善できます：
-
-```tsx
-// 改善案: アクション付きトースト
-
-interface ToastAction {
-  label: string;
-  onClick: () => void;
-}
-
-// 使用例
-success('PR #123 を作成しました', {
-  action: {
-    label: 'PR を見る',
-    onClick: () => window.open(prUrl, '_blank'),
-  },
-});
-
-error('実行に失敗しました', {
-  action: {
-    label: 'ログを確認',
-    onClick: () => setActiveTab('logs'),
-  },
-});
-```
-
----
-
-### 4. タスク管理の効率化 🟡 Medium
-
-**現状の問題:**
-
-- サイドバーのタスク一覧が時系列のみ
-- タスクの検索・フィルター機能がない
-- 完了したタスクと進行中のタスクが混在
-
-**改善案:**
-
-```
-サイドバー改善案:
-
-┌──────────────────────────────────┐
-│  🔍 タスクを検索...              │
-├──────────────────────────────────┤
-│  フィルター: [すべて ▼]          │
-│                                  │
-│  📌 ピン留め                      │
-│  └── 🔄 API エンドポイント追加    │
-│                                  │
-│  🔄 進行中 (2)                   │
-│  ├── バグ修正 #123               │
-│  └── リファクタリング             │
-│                                  │
-│  ✅ 今日 (3)                     │
-│  ├── テスト追加                   │
-│  ├── ドキュメント更新             │
-│  └── CI 修正                     │
-│                                  │
-│  📅 昨日 (5)                     │
-│  └── [展開...]                   │
-└──────────────────────────────────┘
-```
-
-**実装案:**
-
-```tsx
-// components/Sidebar/TaskFilters.tsx (新規)
-
-type TaskFilter = 'all' | 'in_progress' | 'completed' | 'failed';
-
-interface TaskGroup {
-  label: string;
-  tasks: Task[];
-  icon: React.ReactNode;
-}
-
-function groupTasks(tasks: Task[]): TaskGroup[] {
-  const now = new Date();
-  const today = startOfDay(now);
-  const yesterday = subDays(today, 1);
-  
-  return [
-    {
-      label: '進行中',
-      tasks: tasks.filter(t => hasRunningRuns(t)),
-      icon: <ArrowPathIcon className="animate-spin" />,
-    },
-    {
-      label: '今日',
-      tasks: tasks.filter(t => isAfter(t.updated_at, today)),
-      icon: <CalendarIcon />,
-    },
-    {
-      label: '昨日',
-      tasks: tasks.filter(t => 
-        isAfter(t.updated_at, yesterday) && isBefore(t.updated_at, today)
-      ),
-      icon: <CalendarIcon />,
-    },
-  ];
-}
-```
-
----
-
-### 5. Diff ビューアの可読性向上 🟡 Medium
-
-**現状の問題:**
-
-- 行番号がない
-- ファイル間のナビゲーションが困難
-- シンタックスハイライトがない
-- 大きな Diff の場合にスクロールが大変
-
-**改善案:**
+**改善案**:
+- 左に **ファイル一覧（変更行数＋状態）**、右にDiffの2カラム（狭い画面ではドロワー）
+- **ファイル内のhunk折り畳み**、大きな差分はデフォルト折り畳み
+- "Copy patch" / "Download patch" / "Copy file path" のユーティリティ
+- **表示モード切替**: Split（左右分割）表示とUnified（行内）表示
+- **シンタックスハイライト**: 変更箇所の言語に応じた適切なハイライト
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -394,59 +205,22 @@ function groupTasks(tasks: Task[]): TaskGroup[] {
 │   17 │                                                       │
 │   18 │     return (                                          │
 │                                                             │
-│  [統合ビュー] [分割ビュー] [Raw パッチ]                       │
+│  [Unified] [Split] [Raw パッチ] [コピー ▼]                   │
 └─────────────────────────────────────────────────────────────┘
-```
-
-**実装案:**
-
-```tsx
-// components/DiffViewer/EnhancedDiffViewer.tsx (新規)
-
-interface EnhancedDiffViewerProps {
-  patch: string;
-  viewMode?: 'unified' | 'split' | 'raw';
-  showLineNumbers?: boolean;
-  syntaxHighlight?: boolean;
-  collapsible?: boolean;
-}
-
-// ファイルごとの折りたたみ状態管理
-const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-
-// 行番号付きレンダリング
-function renderLine(line: string, index: number) {
-  const lineNumber = index + 1;
-  return (
-    <div className="flex">
-      <span className="w-12 text-right pr-2 text-gray-600 select-none border-r border-gray-800">
-        {lineNumber}
-      </span>
-      <span className={cn(
-        "flex-1 pl-2",
-        getLineClass(line)
-      )}>
-        {line}
-      </span>
-    </div>
-  );
-}
 ```
 
 ---
 
-### 6. エラー状態の改善 🟡 Medium
+#### 4. 失敗時の"次の一手"を提示（Task / Run）
 
-**現状の問題:**
+**課題**: エラー表示はあるが、ユーザーが取るべき行動が分かりにくい。
 
-- エラーメッセージが技術的すぎる場合がある
-- エラーからの復旧パスが不明確
-- 一時的なエラーと致命的なエラーの区別がない
-
-**改善案: エラータイプ別の UI**
+**改善案**:
+- 代表的な失敗パターンを分類（認証/ネットワーク/コンフリクト/依存関係/テスト失敗/レート制限）
+- UI上で **推奨アクション**（再実行・別実行器・指示の改善例・Settingsの該当タブ）を表示
 
 ```tsx
-// lib/error-handling.ts (新規)
+// lib/error-handling.ts
 
 type ErrorType = 
   | 'network'        // 一時的なネットワークエラー
@@ -455,6 +229,7 @@ type ErrorType =
   | 'validation'     // 入力検証エラー
   | 'execution'      // 実行時エラー
   | 'rate_limit'     // API レート制限
+  | 'conflict'       // Git コンフリクト
   | 'unknown';       // 不明なエラー
 
 interface ErrorDisplay {
@@ -466,32 +241,28 @@ interface ErrorDisplay {
 }
 
 const errorDisplayMap: Record<ErrorType, (error: Error) => ErrorDisplay> = {
-  network: (error) => ({
+  network: () => ({
     title: '接続エラー',
     message: 'サーバーに接続できませんでした。インターネット接続を確認してください。',
     icon: <WifiIcon />,
     actions: [{ label: '再試行', action: 'retry' }],
     retryable: true,
   }),
-  auth: (error) => ({
-    title: '認証エラー',
-    message: 'セッションが期限切れです。再度ログインしてください。',
-    icon: <LockClosedIcon />,
-    actions: [{ label: 'ログイン', action: 'login' }],
-    retryable: false,
-  }),
-  rate_limit: (error) => ({
+  rate_limit: () => ({
     title: 'API制限に達しました',
     message: 'しばらく待ってから再試行してください。',
     icon: <ClockIcon />,
-    actions: [{ label: '1分後に再試行', action: 'retry_delayed' }],
+    actions: [
+      { label: '1分後に再試行', action: 'retry_delayed' },
+      { label: '別のモデルで実行', action: 'switch_model' },
+    ],
     retryable: true,
   }),
   // ...
 };
 ```
 
-**エラー表示コンポーネント:**
+**エラー表示例:**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -501,236 +272,294 @@ const errorDisplayMap: Record<ErrorType, (error: Error) => ErrorDisplay> = {
 │                                                             │
 │  詳細: APIレート制限に達しました                              │
 │                                                             │
-│  💡 ヒント:                                                  │
+│  💡 推奨アクション:                                          │
 │  • 1分ほど待ってから再試行してください                         │
 │  • または別のモデルを試してください                            │
 │                                                             │
-│  [30秒後に再試行] [別のモデルで実行] [詳細を見る]              │
+│  [30秒後に再試行] [別のモデルで実行] [ログを確認]              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 7. キーボードショートカットの拡充 🟢 Low
+### P1（価値を伸ばす／比較と管理の体験）
 
-**現状の問題:**
+#### 1. マルチモデル比較を"結果カードの羅列"から"比較ビュー"へ
 
-- `Cmd/Ctrl + Enter` で送信のみ
-- パワーユーザー向けのショートカットがない
-- ショートカット一覧がない
+**課題**: マルチモデルの強みが、ユーザーの視点では比較しづらい。
 
-**改善案:**
-
-```tsx
-// lib/keyboard-shortcuts.ts (新規)
-
-const shortcuts: Shortcut[] = [
-  // グローバル
-  { keys: 'mod+k', action: 'openCommandPalette', description: 'コマンドパレット' },
-  { keys: 'mod+/', action: 'showShortcuts', description: 'ショートカット一覧' },
-  { keys: 'mod+,', action: 'openSettings', description: '設定を開く' },
-  
-  // タスク作成
-  { keys: 'mod+enter', action: 'submit', description: '送信' },
-  { keys: 'mod+shift+enter', action: 'submitAndCreateNew', description: '送信して新規作成' },
-  
-  // タスク詳細
-  { keys: 'mod+1', action: 'switchToSummary', description: 'サマリータブ' },
-  { keys: 'mod+2', action: 'switchToDiff', description: 'Diff タブ' },
-  { keys: 'mod+3', action: 'switchToLogs', description: 'ログタブ' },
-  { keys: 'mod+p', action: 'createPR', description: 'PR を作成' },
-  
-  // ナビゲーション
-  { keys: 'mod+n', action: 'newTask', description: '新規タスク' },
-  { keys: 'mod+[', action: 'previousTask', description: '前のタスク' },
-  { keys: 'mod+]', action: 'nextTask', description: '次のタスク' },
-];
-```
-
-**ショートカット一覧モーダル:**
+**改善案**:
+- 同一メッセージ配下のRunに **Compareモード**（Summary比較、Files changed比較、Diffの切替）
+- "採用候補" をピン留めできる（最終的にPRを作るRunを選びやすくする）
+- 成功/失敗/警告数などの **サマリー行** をグループ上部に表示
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ⌨️ キーボードショートカット                     [ESC で閉じる]│
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  グローバル                                                  │
+│  📊 実行結果比較                              [比較モード ON]│
 │  ─────────────────────────────────────────────────────────  │
-│  ⌘ K         コマンドパレット                               │
-│  ⌘ /         ショートカット一覧                              │
-│  ⌘ ,         設定を開く                                     │
+│  サマリー: ✓ 2成功 / ⚠️ 1警告 / ✗ 1失敗                      │
 │                                                             │
-│  タスク作成                                                  │
-│  ─────────────────────────────────────────────────────────  │
-│  ⌘ ⏎         送信                                          │
-│  ⌘ ⇧ ⏎       送信して新規作成                               │
+│  ┌─────────────┬─────────────┬─────────────┬─────────────┐ │
+│  │   GPT-4     │ Claude 3.5  │ Gemini Pro  │  Codex CLI  │ │
+│  ├─────────────┼─────────────┼─────────────┼─────────────┤ │
+│  │ ✓ 成功      │ ✓ 成功     │ ⚠️ 警告     │ ✗ 失敗      │ │
+│  │ 5 files     │ 4 files     │ 4 files     │ -           │ │
+│  │ +120 -45    │ +95 -30     │ +100 -35    │ -           │ │
+│  │ [📌 採用]   │ [採用]      │ [採用]      │ [再実行]    │ │
+│  └─────────────┴─────────────┴─────────────┴─────────────┘ │
 │                                                             │
-│  ナビゲーション                                              │
-│  ─────────────────────────────────────────────────────────  │
-│  ⌘ N         新規タスク                                     │
-│  ⌘ [         前のタスク                                     │
-│  ⌘ ]         次のタスク                                     │
-│                                                             │
+│  [Summary比較] [Diff比較] [Files比較]                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## インタラクションデザイン改善
+#### 2. Task履歴の探索性向上（Sidebar）
 
-### 1. マイクロインタラクション
+**課題**: タスク数が増加すると目的のタスクを見つけるのが困難。
 
-**現状の問題:**
-- ボタンクリック時のフィードバックが弱い
-- 状態遷移がぎこちない
+**改善案**:
+- 検索（タイトル/Repo）・フィルタ（成功PRあり/最近/Repo別/ステータス別）
+- 日付でのグルーピング（「今日」「昨日」「過去7日間」など）
+- サイドバーを **折り畳み可能** にし、作業領域を広げる（特にラップトップ）
+- タスクのメタデータ表示（ステータス、使用モデルのアイコン）
 
-**改善案:**
-
-```css
-/* globals.css に追加 */
-
-/* ボタンプレス効果 */
-.button-press {
-  transition: transform 0.1s ease-out;
-}
-
-.button-press:active {
-  transform: scale(0.97);
-}
-
-/* カード選択アニメーション */
-.card-selectable {
-  transition: all 0.15s ease-out;
-}
-
-.card-selectable:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.card-selectable.selected {
-  transform: translateY(0);
-  box-shadow: inset 0 0 0 2px theme('colors.blue.500');
-}
-
-/* スケルトンローダーのパルス */
-@keyframes skeleton-pulse {
-  0%, 100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.8;
-  }
-}
-
-.skeleton {
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
-  background: linear-gradient(
-    90deg,
-    theme('colors.gray.800') 0%,
-    theme('colors.gray.700') 50%,
-    theme('colors.gray.800') 100%
-  );
-  background-size: 200% 100%;
-}
+```
+┌──────────────────────────────────┐
+│  🔍 タスクを検索...              │
+├──────────────────────────────────┤
+│  フィルター: [すべて ▼]          │
+│                                  │
+│  📌 ピン留め                      │
+│  └── 🔄 API エンドポイント追加    │
+│                                  │
+│  🔄 進行中 (2)                   │
+│  ├── 🤖 バグ修正 #123             │
+│  └── 💻 リファクタリング          │
+│                                  │
+│  ✅ 今日 (3)                     │
+│  ├── テスト追加                   │
+│  ├── ドキュメント更新             │
+│  └── CI 修正                     │
+│                                  │
+│  📅 昨日 (5)                     │
+│  └── [展開...]                   │
+└──────────────────────────────────┘
 ```
 
-### 2. ドラッグ＆ドロップ
+---
 
-**将来的な改善案:**
-- タスクの並べ替え
-- ファイルのドラッグによる添付
-- モデルの優先順位設定
+#### 3. PR作成体験の統一（Auto作成/Link作成）
+
+**課題**: "Create PR" がモードにより挙動が異なり、成功状態の表現も分散しやすい。
+
+**改善案**:
+- PR作成ボタン周辺に「現在の設定モード」を明示
+- Linkモード時は "PR作成リンクを開いた後に自動検出します" を固定表示し、待機状態を見える化
 
 ```tsx
-// 例: ファイル添付のドラッグ＆ドロップ
-<div
-  className={cn(
-    "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
-    isDragging 
-      ? "border-blue-500 bg-blue-500/10" 
-      : "border-gray-700 hover:border-gray-600"
+// PR作成ボタンの改善例
+<div className="space-y-2">
+  <div className="text-xs text-gray-500">
+    モード: {preferences?.default_pr_creation_mode === 'link' 
+      ? '🔗 リンクモード（GitHub上で作成）' 
+      : '✨ 自動作成'}
+  </div>
+  <Button onClick={handleCreatePR}>
+    {preferences?.default_pr_creation_mode === 'link' 
+      ? 'GitHub で PR を作成' 
+      : 'PR を作成'}
+  </Button>
+  {prLinkResult && (
+    <p className="text-xs text-blue-400 animate-pulse">
+      PR作成を検出中... GitHubでPRを作成してください
+    </p>
   )}
-  onDragOver={handleDragOver}
-  onDragLeave={handleDragLeave}
-  onDrop={handleDrop}
->
-  <CloudArrowUpIcon className="w-12 h-12 text-gray-500 mx-auto mb-3" />
-  <p className="text-gray-400">ファイルをドラッグ＆ドロップ</p>
-  <p className="text-gray-500 text-sm mt-1">または クリックして選択</p>
 </div>
 ```
 
 ---
 
-## 情報アーキテクチャ改善
+#### 4. チャット体験の向上
 
-### 1. 設定画面の再構成
+**改善案**:
 
-**現状の問題:**
-- 設定がモーダルに集約されすぎている
-- タブ間の関連性が不明確
+**入力エリアの改善**:
+- **リッチテキスト入力**: コードブロックの貼り付けや、メンション機能（`@`でファイル参照など）
+- **楽観的UI (Optimistic UI)**: メッセージ送信時、サーバーレスポンスを待たずに即座にUIに反映
+- **入力補助**: 例文チップ（"バグ修正""テスト追加""設計レビュー"など）を用意
+
+**モデル選択の改善**:
+- プロバイダー（OpenAI, Anthropic, Google）ごとにグループ化
+- **プリセット機能**: よく使うモデルの組み合わせ（「高速セット」「高品質セット」など）を保存
+
+---
+
+#### 5. 実行中の進捗表示の強化
+
+**課題**: CLI 実行時に何が起きているか分からない。長時間実行時にユーザーが不安になる。
 
 **改善案:**
 
 ```
-設定の階層構造:
-
-設定
-├── 接続
-│   ├── GitHub App
-│   └── API キー（モデル）
-├── デフォルト
-│   ├── リポジトリ
-│   ├── ブランチ
-│   └── PR 作成モード
-└── 表示
-    ├── テーマ（将来）
-    └── 言語（将来）
-```
-
-### 2. タスク詳細画面のレイアウト
-
-**現状:**
-単一カラムのチャット風レイアウト
-
-**改善案: 適応型レイアウト**
-
-```
-デスクトップ（lg以上）:
-┌────────────────────────┬────────────────────────────────┐
-│  チャット履歴           │  実行結果                       │
-│                        │  ┌────────────────────────────┐│
-│  [User] タスク指示      │  │ Summary │ Diff │ Logs     ││
-│                        │  ├────────────────────────────┤│
-│  [Claude Code] 実行中   │  │                            ││
-│  └── プログレス表示     │  │  選択された Run の詳細     ││
-│                        │  │                            ││
-│  ──────────────────    │  │                            ││
-│  [入力フィールド]       │  └────────────────────────────┘│
-└────────────────────────┴────────────────────────────────┘
-
-タブレット・モバイル:
-┌──────────────────────────────────────────────────────────┐
-│  [チャット] [結果]                                        │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│  選択されたタブの内容                                      │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  🔄 Claude Code 実行中                         [キャンセル] │
+│  ─────────────────────────────────────────────────────────  │
+│                                                             │
+│  ⏱️ 経過時間: 2:34                                          │
+│                                                             │
+│  📋 現在のステップ:                                         │
+│  ├── ✓ ワークスペース準備                                   │
+│  ├── ✓ コード分析                                          │
+│  ├── 🔄 変更を生成中...                                     │
+│  └── ○ パッチ作成                                          │
+│                                                             │
+│  💬 最新のログ:                                             │
+│  > Analyzing src/components/Button.tsx                      │
+│  > Found 3 areas to modify                                  │
+│                                                             │
+│  [ログを展開] [バックグラウンドで実行]                        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## ビジュアルデザイン改善
+### P2（品質・アクセシビリティ・一貫性）
 
-### 1. 色彩システムの拡張
+#### 1. アクセシビリティ（A11y）
 
-**現状の問題:**
-- ダークモードのみ
-- セマンティックカラーの一貫性が不十分
+**改善案**:
+- `Modal` のフォーカストラップを"最初にフォーカス"だけでなく、**Tab循環**まで対応
+- タブUI（Settings/Run）に `aria-controls` / `id` を付与して、関係性を明確にする
+- `prefers-reduced-motion` への配慮（アニメーション抑制）
+- 重要な状態変化（Run完了/失敗）を `aria-live` の領域で補助
+- アイコンボタンへの `aria-label` の徹底
 
-**改善案: CSS 変数化**
+```tsx
+// aria-live の活用例
+<div aria-live="polite" className="sr-only">
+  {runStatus === 'succeeded' && `${modelName} の実行が完了しました`}
+  {runStatus === 'failed' && `${modelName} の実行が失敗しました`}
+</div>
+```
+
+---
+
+#### 2. マイクロコピーの統一
+
+**課題**: UI文言が英語中心で、表現の粒度が揃っていない。
+
+**改善案**:
+- 用語集を作り、UI上の用語（Task/Run/Executor/Model/Branch）を統一
+- "Run / Execute / Submit" 等の動詞を統一し、学習コストを下げる
+
+| 用語 | 統一表記 | 説明 |
+|-----|---------|------|
+| Task | タスク | 1つの目標に対する作業単位 |
+| Run | 実行 | モデルによる1回の実行 |
+| Executor | 実行器 | モデルまたはCLIエージェント |
+| Instruction | 指示 | ユーザーからの依頼内容 |
+
+---
+
+#### 3. 視覚的一貫性（密度・余白・アイコン）
+
+**改善案**:
+- "絵文字混在（例: 📋）" は原則アイコンに統一
+- ステータス表現（色/ラベル/アイコン）を `StatusBadge` に集約し、重複実装を削減
+- コンポーネントの境界や階層を明確にするための「Surface」カラーの定義
+
+```tsx
+// アイコンサイズの標準化
+export const iconSizes = {
+  xs: 'w-3 h-3',   // インライン、バッジ
+  sm: 'w-4 h-4',   // ボタン内、リスト
+  md: 'w-5 h-5',   // 単独のアイコンボタン
+  lg: 'w-6 h-6',   // 見出し横
+  xl: 'w-8 h-8',   // 空状態のイラスト
+  '2xl': 'w-12 h-12', // 大きな空状態
+} as const;
+```
+
+---
+
+#### 4. キーボードショートカットの拡充
+
+**改善案**:
+
+| ショートカット | アクション | 説明 |
+|--------------|----------|------|
+| `Cmd/Ctrl + K` | コマンドパレット | クイックアクション |
+| `Cmd/Ctrl + /` | ショートカット一覧 | ヘルプ表示 |
+| `Cmd/Ctrl + ,` | 設定を開く | Settings モーダル |
+| `Cmd/Ctrl + Enter` | 送信 | メッセージ送信 |
+| `Cmd/Ctrl + N` | 新規タスク | ホームへ移動 |
+| `Cmd/Ctrl + 1/2/3` | タブ切替 | Summary/Diff/Logs |
+| `Escape` | 入力クリア/モーダル閉じ | コンテキストに応じて |
+| `/` | 入力欄フォーカス | クイック入力 |
+
+---
+
+### P3（将来投資）
+
+#### 1. i18n（日本語UI対応）
+
+**改善案**:
+- UI文言を辞書化し、日英切替（最初はSettingsにトグル）
+- 日付表記や相対時間をローカライズ（`formatRelativeTime` の日本語化）
+
+#### 2. 観測性のUX（"何が起きたか"の説明）
+
+**改善案**:
+- Runの"入力→実行→成果物→PR"の履歴を時系列で俯瞰できるタイムライン
+- "このRunが触ったファイル"から直接Diff該当箇所へジャンプ
+
+#### 3. APIキー管理のUX改善
+
+**改善案**:
+- **検証機能**: APIキーを入力した際、保存前に「テスト接続」ボタンで有効性を確認
+- **セキュリティ表示**: 入力済みのキーは伏せ字で表示、「保存されました（復元不可）」の安心文言
+
+---
+
+## 画面別の具体提案
+
+### Home（タスク作成）
+
+| 改善項目 | 詳細 |
+|---------|------|
+| **段階表示（Step）** | Repo/Branch/Executor/Models/Instruction を「必要条件のチェックリスト」として見せる |
+| **空状態の導線** | モデル0件: "Settings → Models へ" / GitHub未設定: "Settings → GitHub App へ" |
+| **入力補助** | 例文チップ（"バグ修正""テスト追加""設計レビュー"など）を用意 |
+| **最近使用したリポジトリ** | 履歴から素早く選択できるセクションの追加 |
+| **ステップバイステップUI** | 必須項目（リポジトリ選択）を先に完了させてから詳細設定を表示 |
+
+### Task（会話＋結果）
+
+| 改善項目 | 詳細 |
+|---------|------|
+| **グループヘッダー** | ユーザーメッセージごとに「実行したモデル数/成功数/失敗数/警告数」を要約 |
+| **Runカード** | 重要情報（成功/失敗/警告/変更ファイル数）をヘッダーに集約、開かなくても判断可能に |
+| **Logs強化** | UI内検索とコピー機能を追加 |
+| **Diff** | ファイル一覧＋ジャンプ、hunk折り畳み、"変更なし" の理由補足 |
+| **比較モード** | 同一メッセージ配下のRunを横並びで比較 |
+
+### Settings
+
+| 改善項目 | 詳細 |
+|---------|------|
+| **GitHub App設定** | "どこで取得するか"の短い手順（3ステップ）をUI内に表示 |
+| **API Key** | 保存後に「保存されました（復元不可）」の安心文言 |
+| **Defaults** | リポジトリ/ブランチの選択を検索可能に |
+| **テスト接続** | APIキー入力時に有効性を確認できるボタン |
+
+---
+
+## デザインとアクセシビリティ
+
+### デザインシステムの洗練
+
+#### CSS 変数化
 
 ```css
 /* globals.css */
@@ -748,11 +577,6 @@ const shortcuts: Shortcut[] = [
   --text-muted: #9ca3af;
   --text-disabled: #6b7280;
   
-  /* ブランドカラー */
-  --brand-primary: #2563eb;
-  --brand-hover: #1d4ed8;
-  --brand-light: #3b82f6;
-  
   /* セマンティック */
   --success: #22c55e;
   --success-muted: rgba(34, 197, 94, 0.2);
@@ -762,115 +586,124 @@ const shortcuts: Shortcut[] = [
   --warning-muted: rgba(245, 158, 11, 0.2);
   --info: #3b82f6;
   --info-muted: rgba(59, 130, 246, 0.2);
-  
-  /* ボーダー */
-  --border-default: #374151;
-  --border-subtle: #1f2937;
-  --border-focus: #2563eb;
 }
 ```
 
-### 2. タイポグラフィの統一
-
-**改善案:**
+#### タイポグラフィの統一
 
 ```tsx
-// lib/typography.ts
-
 export const typography = {
-  // 見出し
   h1: 'text-2xl font-bold text-gray-100',
   h2: 'text-xl font-semibold text-gray-100',
   h3: 'text-lg font-semibold text-gray-100',
   h4: 'text-base font-medium text-gray-200',
-  
-  // 本文
   body: 'text-sm text-gray-300',
   bodySmall: 'text-xs text-gray-400',
-  
-  // コード
   code: 'font-mono text-sm',
-  codeSmall: 'font-mono text-xs',
-  
-  // ラベル
   label: 'text-sm font-medium text-gray-200',
   hint: 'text-xs text-gray-500',
   error: 'text-sm text-red-400',
 } as const;
 ```
 
-### 3. アイコンの一貫性
+### マイクロインタラクション
 
-**現状:**
-Heroicons を使用（良い選択）
+```css
+/* ボタンプレス効果 */
+.button-press:active {
+  transform: scale(0.97);
+}
 
-**改善案:**
-アイコン使用ガイドラインの策定
+/* カード選択アニメーション */
+.card-selectable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
 
-```tsx
-// lib/icons.ts
-
-// アイコンサイズの標準化
-export const iconSizes = {
-  xs: 'w-3 h-3',   // インライン、バッジ
-  sm: 'w-4 h-4',   // ボタン内、リスト
-  md: 'w-5 h-5',   // 単独のアイコンボタン
-  lg: 'w-6 h-6',   // 見出し横
-  xl: 'w-8 h-8',   // 空状態のイラスト
-  '2xl': 'w-12 h-12', // 大きな空状態
-} as const;
-
-// 状態別アイコンマッピング
-export const statusIcons = {
-  success: CheckCircleIcon,
-  error: ExclamationCircleIcon,
-  warning: ExclamationTriangleIcon,
-  info: InformationCircleIcon,
-  loading: ArrowPathIcon,
-  queued: ClockIcon,
-} as const;
+/* prefers-reduced-motion 対応 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 ```
 
 ---
 
-## 実装優先度マトリクス
+## 成功指標（KPI）
 
-| 改善項目 | 影響度 | 実装難易度 | 優先度 | 推奨フェーズ |
-|---------|-------|-----------|-------|-------------|
-| オンボーディングフロー | 高 | 中 | P0 | Phase 1 |
-| エラー状態の改善 | 高 | 低 | P0 | Phase 1 |
-| 実行中進捗表示 | 高 | 中 | P1 | Phase 1 |
-| Executor 選択の簡略化 | 中 | 中 | P1 | Phase 1 |
-| Toast 通知の改善 | 中 | 低 | P1 | Phase 1 |
-| タスク検索・フィルター | 中 | 中 | P2 | Phase 2 |
-| Diff ビューア強化 | 中 | 高 | P2 | Phase 2 |
-| キーボードショートカット | 低 | 中 | P2 | Phase 2 |
-| CSS 変数化 | 低 | 低 | P3 | Phase 3 |
-| ダークモード以外のテーマ | 低 | 高 | P3 | Phase 3 |
+| 指標 | 説明 | 目標値 |
+|-----|------|-------|
+| **タスク開始成功率** | "送信できない"状態からの離脱率 | < 5% |
+| **初回PR作成までの時間** | 初見ユーザーがPRを作るまでの平均時間 | < 10分 |
+| **Run比較の利用率** | Compareビュー利用、採用Runのピン留め率 | > 30% |
+| **エラー復帰率** | 失敗Run後に再実行/設定修正/別実行器へ進めた割合 | > 70% |
+| **アクセシビリティスコア** | Lighthouse A11y スコア | > 90 |
 
 ---
 
-## 次のステップ
+## 実装ロードマップ
 
-1. **Phase 1 (2週間)**: オンボーディングとフィードバック改善
-   - オンボーディングチェックリスト実装
-   - エラー表示の改善
-   - 実行中進捗の強化
+### Phase 1: クイックウィン（1-2週間）
 
-2. **Phase 2 (2週間)**: 効率性の改善
-   - タスク検索・フィルター
-   - キーボードショートカット
-   - Diff ビューア強化
+**即効性のある改善**
 
-3. **Phase 3 (1週間)**: ビジュアル統一
-   - CSS 変数化
-   - タイポグラフィ統一
-   - アイコンガイドライン適用
+| 項目 | 優先度 | 難易度 |
+|-----|-------|-------|
+| 入力バリデーションエラーの表示 | P0 | 低 |
+| 失敗時の推奨アクション表示 | P0 | 中 |
+| RunsPanelのフィルタリング（成功/失敗） | P1 | 低 |
+| サイドバーのレスポンシブ対応強化 | P1 | 低 |
+| キーボードショートカット追加 | P2 | 低 |
+
+### Phase 2: コア体験の向上（2-3週間）
+
+**比較とワークフローの改善**
+
+| 項目 | 優先度 | 難易度 |
+|-----|-------|-------|
+| RunとメッセージのID紐付け | P0 | 中 |
+| Diff ビューア強化（ファイル一覧、折り畳み） | P0 | 高 |
+| マルチモデル比較ビュー | P1 | 高 |
+| 実行中進捗表示の強化 | P1 | 中 |
+| チャット入力の楽観的UI | P1 | 中 |
+| タスク検索・フィルター | P1 | 中 |
+
+### Phase 3: 基盤整備（1-2週間）
+
+**品質と一貫性の向上**
+
+| 項目 | 優先度 | 難易度 |
+|-----|-------|-------|
+| アクセシビリティ監査と修正 | P2 | 中 |
+| マイクロコピー/用語の統一 | P2 | 低 |
+| CSS変数化・デザイントークン | P2 | 低 |
+| 視覚的一貫性（アイコン統一） | P2 | 低 |
+
+### Phase 4: 将来投資（継続的）
+
+| 項目 | 優先度 | 難易度 |
+|-----|-------|-------|
+| 初回設定ウィザード | P3 | 高 |
+| i18n（日本語対応） | P3 | 高 |
+| タイムラインビュー | P3 | 中 |
+| APIキーテスト接続 | P3 | 低 |
+
+---
+
+## 実装方針（サマリー）
+
+1. **"次に何をすべきか"を画面上に残す**（空状態・エラー・設定不足の全て）
+2. **比較のユースケースを中心に設計する**（dursorの差別化ポイント）
+3. **情報の重複を減らし、重要情報を先頭に集約する**（Runカード、ヘッダー、サマリー）
+4. **エラー予防 > エラー回復**（押す前に理解できるUIへ）
+5. **アクセシビリティは後付けではなく設計時から考慮**
 
 ---
 
 ## 関連ドキュメント
 
-- [UI/UX Improvement Plan v1](./ui-ux-improvement.md) - 基礎的な改善項目
+- [UI/UX Improvement Plan v1](./ui-ux-improvement.md) - 基礎的な改善項目（レスポンシブ、コンポーネント一貫性など）
 - [Architecture](./architecture.md) - システムアーキテクチャ
 - [Development](./development.md) - 開発ガイドライン
