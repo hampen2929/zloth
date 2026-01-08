@@ -71,6 +71,8 @@ class CodexExecutor:
             )
 
             async def read_output() -> None:
+                if process.stdout is None:
+                    return
                 while True:
                     line = await process.stdout.readline()
                     if not line:

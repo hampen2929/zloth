@@ -119,9 +119,12 @@ class ClaudeCodeExecutor:
             logger.info(f"Process created successfully with PID: {process.pid}")
 
             # Stream output from CLI
-            async def read_output():
+            async def read_output() -> None:
                 line_count = 0
                 logger.info("Starting to read output lines...")
+                if process.stdout is None:
+                    logger.error("Process stdout is None")
+                    return
                 while True:
                     # Add timeout per line to detect hanging
                     try:
@@ -249,9 +252,9 @@ class ClaudeCodeExecutor:
                 data = json.loads(line)
                 if isinstance(data, dict):
                     if "session_id" in data:
-                        return data["session_id"]
+                        return str(data["session_id"])
                     if "sessionId" in data:
-                        return data["sessionId"]
+                        return str(data["sessionId"])
             except json.JSONDecodeError:
                 continue
 

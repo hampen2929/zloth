@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     codex_cli_path: str = Field(default="codex")
     gemini_cli_path: str = Field(default="gemini")
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: object) -> None:
         """Set derived paths after initialization."""
         if self.workspaces_dir is None:
             self.workspaces_dir = self.base_dir / "workspaces"

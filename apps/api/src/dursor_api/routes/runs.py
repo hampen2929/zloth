@@ -84,7 +84,7 @@ async def get_run_logs(
     from_line: int = Query(0, ge=0, description="Line number to start from (0-based)"),
     run_service: RunService = Depends(get_run_service),
     output_manager: OutputManager = Depends(get_output_manager),
-):
+) -> dict[str, object]:
     """Get run logs (for polling).
 
     Returns logs from OutputManager if the run is in progress,

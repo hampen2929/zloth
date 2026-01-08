@@ -62,7 +62,12 @@ class GitService:
         Args:
             workspaces_dir: Base directory for workspaces. Defaults to settings.
         """
-        self.workspaces_dir = workspaces_dir or settings.workspaces_dir
+        if workspaces_dir:
+            self.workspaces_dir = workspaces_dir
+        elif settings.workspaces_dir:
+            self.workspaces_dir = settings.workspaces_dir
+        else:
+            raise ValueError("workspaces_dir must be provided or set in settings")
         self.worktrees_dir = self.workspaces_dir / "worktrees"
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
@@ -126,7 +131,7 @@ class GitService:
         branch_name = self._generate_branch_name(run_id, branch_prefix=branch_prefix)
         worktree_path = self.worktrees_dir / f"run_{run_id}"
 
-        def _create_worktree():
+        def _create_worktree() -> WorktreeInfo:
             source_repo = git.Repo(repo.workspace_path)
 
             default_branch = repo.default_branch or "main"
@@ -289,7 +294,7 @@ class GitService:
             delete_branch: Whether to also delete the local branch.
         """
 
-        def _cleanup():
+        def _cleanup() -> None:
             if not worktree_path.exists():
                 return
 
@@ -339,9 +344,9 @@ class GitService:
             List of WorktreeInfo objects.
         """
 
-        def _list():
+        def _list() -> list[WorktreeInfo]:
             source_repo = git.Repo(repo.workspace_path)
-            worktrees = []
+            worktrees: list[WorktreeInfo] = []
 
             try:
                 output = source_repo.git.worktree("list", "--porcelain")
@@ -389,7 +394,7 @@ class GitService:
             True if valid, False otherwise.
         """
 
-        def _check():
+        def _check() -> bool:
             if not worktree_path.exists():
                 return False
 
@@ -419,7 +424,7 @@ class GitService:
             GitStatus with staged, modified, untracked, and deleted files.
         """
 
-        def _get_status():
+        def _get_status() -> GitStatus:
             repo = git.Repo(worktree_path)
             status = GitStatus()
 
@@ -428,15 +433,17 @@ class GitService:
 
             # Modified and deleted (unstaged)
             for item in repo.index.diff(None):
-                if item.deleted_file:
-                    status.deleted.append(item.a_path)
-                else:
-                    status.modified.append(item.a_path)
+                if item.a_path:
+                    if item.deleted_file:
+                        status.deleted.append(item.a_path)
+                    else:
+                        status.modified.append(item.a_path)
 
             # Staged files
             try:
                 for item in repo.index.diff("HEAD"):
-                    status.staged.append(item.a_path)
+                    if item.a_path:
+                        status.staged.append(item.a_path)
             except git.GitCommandError:
                 # No HEAD commit yet
                 pass
@@ -453,7 +460,7 @@ class GitService:
             worktree_path: Path to the worktree.
         """
 
-        def _stage_all():
+        def _stage_all() -> None:
             repo = git.Repo(worktree_path)
             repo.git.add("-A")
 
@@ -467,7 +474,7 @@ class GitService:
             worktree_path: Path to the worktree.
         """
 
-        def _unstage_all():
+        def _unstage_all() -> None:
             repo = git.Repo(worktree_path)
             try:
                 repo.git.reset("HEAD")
@@ -489,13 +496,13 @@ class GitService:
             Unified diff string.
         """
 
-        def _get_diff():
+        def _get_diff() -> str:
             repo = git.Repo(worktree_path)
             try:
                 if staged:
-                    return repo.git.diff("HEAD", "--cached")
+                    return str(repo.git.diff("HEAD", "--cached"))
                 else:
-                    return repo.git.diff()
+                    return str(repo.git.diff())
             except git.GitCommandError:
                 return ""
 
@@ -517,16 +524,16 @@ class GitService:
             Unified diff string.
         """
 
-        def _get_diff_from_base():
+        def _get_diff_from_base() -> str:
             repo = git.Repo(worktree_path)
             try:
                 # Get diff from merge-base to HEAD
                 merge_base = repo.git.merge_base(base_ref, "HEAD")
-                return repo.git.diff(merge_base, "HEAD")
+                return str(repo.git.diff(merge_base, "HEAD"))
             except git.GitCommandError:
                 # Fallback to simple diff
                 try:
-                    return repo.git.diff(base_ref, "HEAD")
+                    return str(repo.git.diff(base_ref, "HEAD"))
                 except git.GitCommandError:
                     return ""
 
@@ -545,7 +552,7 @@ class GitService:
             hard: If True, discard all changes; otherwise only unstage.
         """
 
-        def _reset():
+        def _reset() -> None:
             repo = git.Repo(worktree_path)
             if hard:
                 repo.git.reset("--hard", "HEAD")
@@ -575,10 +582,10 @@ class GitService:
             Commit SHA.
         """
 
-        def _commit():
+        def _commit() -> str:
             repo = git.Repo(worktree_path)
             repo.index.commit(message)
-            return repo.head.commit.hexsha
+            return str(repo.head.commit.hexsha)
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _commit)
@@ -598,13 +605,13 @@ class GitService:
             New commit SHA.
         """
 
-        def _amend():
+        def _amend() -> str:
             repo = git.Repo(worktree_path)
             if message:
                 repo.git.commit("--amend", "-m", message)
             else:
                 repo.git.commit("--amend", "--no-edit")
-            return repo.head.commit.hexsha
+            return str(repo.head.commit.hexsha)
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _amend)
@@ -627,7 +634,7 @@ class GitService:
             base: Base branch/commit to create from.
         """
 
-        def _create_branch():
+        def _create_branch() -> None:
             repo = git.Repo(repo_path)
             repo.git.checkout("-b", branch_name, base)
 
@@ -642,7 +649,7 @@ class GitService:
             branch_name: Branch name to checkout.
         """
 
-        def _checkout():
+        def _checkout() -> None:
             repo = git.Repo(repo_path)
             repo.git.checkout(branch_name)
 
@@ -663,7 +670,7 @@ class GitService:
             force: If True, force delete even if not merged.
         """
 
-        def _delete_branch():
+        def _delete_branch() -> None:
             repo = git.Repo(repo_path)
             flag = "-D" if force else "-d"
             repo.git.branch(flag, branch_name)
@@ -691,7 +698,7 @@ class GitService:
             force: If True, force push.
         """
 
-        def _push():
+        def _push() -> None:
             repo = git.Repo(repo_path)
 
             if auth_url:
@@ -737,7 +744,7 @@ class GitService:
             remote: Remote name.
         """
 
-        def _fetch():
+        def _fetch() -> None:
             repo = git.Repo(repo_path)
             repo.remotes[remote].fetch()
 
@@ -758,7 +765,7 @@ class GitService:
             auth_url: Authenticated URL for push (e.g., with token).
         """
 
-        def _delete_remote_branch():
+        def _delete_remote_branch() -> None:
             repo = git.Repo(repo_path)
 
             if auth_url:
@@ -795,7 +802,7 @@ class GitService:
             soft: If True, keep changes staged.
         """
 
-        def _reset_to_previous():
+        def _reset_to_previous() -> None:
             repo = git.Repo(repo_path)
             mode = "--soft" if soft else "--mixed"
             repo.git.reset(mode, "HEAD~1")
@@ -817,9 +824,9 @@ class GitService:
             Current branch name.
         """
 
-        def _get_current_branch():
+        def _get_current_branch() -> str:
             repo = git.Repo(repo_path)
-            return repo.active_branch.name
+            return str(repo.active_branch.name)
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _get_current_branch)
@@ -834,9 +841,9 @@ class GitService:
             HEAD commit SHA.
         """
 
-        def _get_head_sha():
+        def _get_head_sha() -> str:
             repo = git.Repo(repo_path)
-            return repo.head.commit.hexsha
+            return str(repo.head.commit.hexsha)
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _get_head_sha)
@@ -851,22 +858,22 @@ class GitService:
             List of changed file paths.
         """
 
-        def _get_changed_files():
+        def _get_changed_files() -> list[str]:
             repo = git.Repo(worktree_path)
-            changed_files = []
+            changed_files: list[str] = []
 
             # Untracked files
             changed_files.extend(repo.untracked_files)
 
             # Modified and deleted files
             for item in repo.index.diff(None):
-                if item.a_path not in changed_files:
+                if item.a_path and item.a_path not in changed_files:
                     changed_files.append(item.a_path)
 
             # Staged files
             try:
                 for item in repo.index.diff("HEAD"):
-                    if item.a_path not in changed_files:
+                    if item.a_path and item.a_path not in changed_files:
                         changed_files.append(item.a_path)
             except git.GitCommandError:
                 pass
