@@ -370,13 +370,13 @@ class PRService:
                 prompt=prompt,
                 system_prompt=(
                     "You are a helpful assistant that generates clear "
-                    "and concise PR descriptions."
+                    "and concise PR descriptions. Follow the provided template exactly."
                 ),
             )
             return response
         except Exception:
             # Fallback to a simple description
-            return self._generate_fallback_description_for_new_pr(diff, title, run)
+            return self._generate_fallback_description_for_new_pr(diff, title, run, template)
 
     def _build_description_prompt_for_new_pr(
         self,
@@ -422,10 +422,18 @@ class PRService:
         if template:
             prompt_parts.extend([
                 "",
-                "## Template",
-                "Create the Description following this template format:",
+                "## Template (MUST FOLLOW EXACTLY)",
+                "You MUST create the Description following this exact template structure.",
+                "- Keep ALL section headings from the template.",
+                "- Fill in each section with appropriate content based on the diff and context.",
+                "- Do NOT add sections that are not in the template.",
+                "- Do NOT remove or rename any sections from the template.",
+                "- Replace HTML comments (<!-- ... -->) with actual content.",
                 "",
+                "Template:",
+                "```markdown",
                 template,
+                "```",
             ])
         else:
             prompt_parts.extend([
@@ -445,13 +453,19 @@ class PRService:
 
         return "\n".join(prompt_parts)
 
-    def _generate_fallback_description_for_new_pr(self, diff: str, title: str, run) -> str:
+    def _generate_fallback_description_for_new_pr(
+        self, diff: str, title: str, run, template: str | None = None
+    ) -> str:
         """Generate a simple fallback description for new PR.
+
+        If a template is provided, fills in the template sections.
+        Otherwise, uses a default format.
 
         Args:
             diff: Unified diff string.
             title: PR title.
             run: Run object.
+            template: Optional PR template string.
 
         Returns:
             Simple description string.
@@ -462,22 +476,102 @@ class PRService:
         files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
 
         summary = run.summary or title
+        files_list = "\n".join(f"- {f}" for f in sorted(files)[:10])
+        if len(files) > 10:
+            files_list += "\n- ..."
 
+        changes_text = f"""- Modified {len(files)} file(s)
+- +{added_lines} -{removed_lines} lines
+
+### Files Changed
+{files_list}"""
+
+        if template:
+            return self._fill_template_sections(
+                template=template,
+                summary=summary,
+                changes=changes_text,
+            )
+
+        # Default format if no template
         return f"""## Summary
 {summary}
 
 ## Changes
-- Modified {len(files)} file(s)
-- +{added_lines} -{removed_lines} lines
-
-### Files Changed
-{chr(10).join(f'- {f}' for f in sorted(files)[:10])}
-{'...' if len(files) > 10 else ''}
+{changes_text}
 
 ## Test Plan
 - [ ] Manual testing
 - [ ] Unit tests
 """
+
+    def _fill_template_sections(
+        self, template: str, summary: str, changes: str
+    ) -> str:
+        """Fill in template sections with provided content.
+
+        Replaces content under known headings (Summary, Changes, Description, etc.)
+        with the provided values, preserving the template structure.
+
+        Args:
+            template: PR template string.
+            summary: Summary text to insert.
+            changes: Changes text to insert.
+
+        Returns:
+            Filled template string.
+        """
+        result = template.replace("\r\n", "\n")
+
+        # Define section mappings: heading pattern -> content to insert
+        section_mappings = [
+            (r"(#{1,6}\s+(?:summary|description)\s*\n)", summary),
+            (r"(#{1,6}\s+changes\s*\n)", changes),
+        ]
+
+        for pattern, content in section_mappings:
+            result = self._replace_section_content(result, pattern, content)
+
+        return result
+
+    def _replace_section_content(
+        self, template: str, heading_pattern: str, new_content: str
+    ) -> str:
+        """Replace content under a section heading.
+
+        Finds a heading matching the pattern and replaces everything between
+        it and the next heading (or end of file) with the new content.
+
+        Args:
+            template: Template string.
+            heading_pattern: Regex pattern for the section heading.
+            new_content: Content to insert after the heading.
+
+        Returns:
+            Modified template string.
+        """
+        heading_re = re.compile(heading_pattern, re.IGNORECASE | re.MULTILINE)
+        match = heading_re.search(template)
+        if not match:
+            return template
+
+        heading_end = match.end()
+        heading_level_match = re.match(r"(#{1,6})", match.group(1))
+        if not heading_level_match:
+            return template
+
+        level = len(heading_level_match.group(1))
+
+        # Find the next heading with level <= current level
+        next_heading_re = re.compile(rf"^#{{1,{level}}}\s+\S", re.MULTILINE)
+        next_match = next_heading_re.search(template, pos=heading_end)
+        section_end = next_match.start() if next_match else len(template)
+
+        # Build the result: before + heading + new content + after
+        before = template[: heading_end]
+        after = template[section_end:]
+
+        return f"{before}{new_content}\n\n{after}".strip() + "\n"
 
     async def update(self, task_id: str, pr_id: str, data: PRUpdate) -> PR:
         """Update an existing Pull Request with a new run.
@@ -797,13 +891,13 @@ class PRService:
                 prompt=prompt,
                 system_prompt=(
                     "You are a helpful assistant that generates clear "
-                    "and concise PR descriptions."
+                    "and concise PR descriptions. Follow the provided template exactly."
                 ),
             )
             return response
         except Exception:
             # Fallback to a simple description if LLM fails
-            return self._generate_fallback_description(diff, pr)
+            return self._generate_fallback_description(diff, pr, template)
 
     def _build_description_prompt(
         self,
@@ -844,10 +938,18 @@ class PRService:
         if template:
             prompt_parts.extend([
                 "",
-                "## Template",
-                "Create the Description following this template format:",
+                "## Template (MUST FOLLOW EXACTLY)",
+                "You MUST create the Description following this exact template structure.",
+                "- Keep ALL section headings from the template.",
+                "- Fill in each section with appropriate content based on the diff and context.",
+                "- Do NOT add sections that are not in the template.",
+                "- Do NOT remove or rename any sections from the template.",
+                "- Replace HTML comments (<!-- ... -->) with actual content.",
                 "",
+                "Template:",
+                "```markdown",
                 template,
+                "```",
             ])
         else:
             prompt_parts.extend([
@@ -867,12 +969,18 @@ class PRService:
 
         return "\n".join(prompt_parts)
 
-    def _generate_fallback_description(self, diff: str, pr: PR) -> str:
+    def _generate_fallback_description(
+        self, diff: str, pr: PR, template: str | None = None
+    ) -> str:
         """Generate a simple fallback description.
+
+        If a template is provided, fills in the template sections.
+        Otherwise, uses a default format.
 
         Args:
             diff: Unified diff string.
             pr: PR object.
+            template: Optional PR template string.
 
         Returns:
             Simple description string.
@@ -882,16 +990,29 @@ class PRService:
         removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
         files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
 
+        files_list = "\n".join(f"- {f}" for f in sorted(files)[:10])
+        if len(files) > 10:
+            files_list += "\n- ..."
+
+        changes_text = f"""- Modified {len(files)} file(s)
+- +{added_lines} -{removed_lines} lines
+
+### Files Changed
+{files_list}"""
+
+        if template:
+            return self._fill_template_sections(
+                template=template,
+                summary=pr.title,
+                changes=changes_text,
+            )
+
+        # Default format if no template
         return f"""## Summary
 {pr.title}
 
 ## Changes
-- Modified {len(files)} file(s)
-- +{added_lines} -{removed_lines} lines
-
-### Files Changed
-{chr(10).join(f'- {f}' for f in sorted(files)[:10])}
-{'...' if len(files) > 10 else ''}
+{changes_text}
 
 ## Test Plan
 - [ ] Manual testing
