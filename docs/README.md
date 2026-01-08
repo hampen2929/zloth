@@ -1,4 +1,4 @@
-# dursor Documentation
+# something
 
 Welcome to the dursor documentation. This guide will help you understand, develop, and contribute to the project.
 
