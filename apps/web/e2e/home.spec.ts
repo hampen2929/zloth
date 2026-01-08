@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, mockResponses } from './fixtures';
 
 test.describe('Home Page', () => {
   test('should display the main input area', async ({ page }) => {
@@ -48,7 +48,7 @@ test.describe('Home Page', () => {
     await expect(hint).toBeVisible();
   });
 
-  test('should open repository dropdown when clicked', async ({ page }) => {
+  test('should open repository dropdown and show mocked repos', async ({ page }) => {
     await page.goto('/');
 
     // Click on repository selector
@@ -58,5 +58,42 @@ test.describe('Home Page', () => {
     // Check that the search input appears
     const searchInput = page.getByPlaceholder('Search repositories...');
     await expect(searchInput).toBeVisible();
+
+    // Check that mocked repos are displayed
+    await expect(page.getByText(mockResponses.repos[0].full_name)).toBeVisible();
+    await expect(page.getByText(mockResponses.repos[1].full_name)).toBeVisible();
+
+    // Check that private badge is shown for private repo
+    await expect(page.getByText('Private')).toBeVisible();
+  });
+
+  test('should select a repository from dropdown', async ({ page }) => {
+    await page.goto('/');
+
+    // Click on repository selector
+    const repoButton = page.getByRole('button', { name: /select repository/i });
+    await repoButton.click();
+
+    // Click on the first repo
+    await page.getByText(mockResponses.repos[0].full_name).click();
+
+    // Verify the repo is selected (button text should change)
+    await expect(page.getByRole('button', { name: mockResponses.repos[0].full_name })).toBeVisible();
+  });
+
+  test('should filter repositories by search', async ({ page }) => {
+    await page.goto('/');
+
+    // Open dropdown
+    const repoButton = page.getByRole('button', { name: /select repository/i });
+    await repoButton.click();
+
+    // Search for "private"
+    const searchInput = page.getByPlaceholder('Search repositories...');
+    await searchInput.fill('private');
+
+    // Only the private repo should be visible
+    await expect(page.getByText(mockResponses.repos[1].full_name)).toBeVisible();
+    await expect(page.getByText(mockResponses.repos[0].full_name)).not.toBeVisible();
   });
 });
