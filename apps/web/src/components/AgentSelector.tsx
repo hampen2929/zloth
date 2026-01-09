@@ -112,37 +112,8 @@ export function AgentSelector({
       {/* Dropdown - opens downward */}
       {showDropdown && (
         <div className="absolute top-full left-0 mt-2 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-20 animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Multi-agent Toggle */}
-          <div className="p-3 border-b border-gray-700">
-            <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm text-gray-300">Use Multiple Agents</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const newValue = !useMultipleAgents;
-                  onUseMultipleAgentsChange(newValue);
-                  // If switching to single mode and multiple agents selected, keep first
-                  if (!newValue && selectedAgents.length > 1) {
-                    onAgentsChange([selectedAgents[0]]);
-                  }
-                }}
-                className={cn(
-                  'w-10 h-6 rounded-full transition-colors relative',
-                  useMultipleAgents ? 'bg-green-600' : 'bg-gray-600'
-                )}
-              >
-                <div
-                  className={cn(
-                    'w-4 h-4 bg-white rounded-full absolute top-1 transition-transform',
-                    useMultipleAgents ? 'translate-x-5' : 'translate-x-1'
-                  )}
-                />
-              </button>
-            </label>
-          </div>
-
           {/* Agent List */}
-          <div className="max-h-60 overflow-y-auto">
+          <div className="max-h-48 overflow-y-auto">
             {AGENT_OPTIONS.map((agent) => {
               const isSelected = selectedAgents.includes(agent.type);
               return (
@@ -176,27 +147,53 @@ export function AgentSelector({
             })}
           </div>
 
-          {/* Footer (multi-mode only) */}
-          {useMultipleAgents && (
-            <div className="p-2 border-t border-gray-700 flex justify-between items-center">
-              <span className="text-xs text-gray-500">
-                {selectedAgents.length} agent{selectedAgents.length !== 1 ? 's' : ''} selected
-              </span>
+          {/* Multi-agent Toggle - at bottom so it's always visible */}
+          <div className="p-3 border-t border-gray-700">
+            <label className="flex items-center justify-between cursor-pointer">
+              <span className="text-sm text-gray-300">Use Multiple Agents</span>
               <button
+                type="button"
                 onClick={() => {
-                  if (selectedAgents.length === AGENT_OPTIONS.length) {
-                    // Keep at least one
-                    onAgentsChange([AGENT_OPTIONS[0].type]);
-                  } else {
-                    onAgentsChange(AGENT_OPTIONS.map((a) => a.type));
+                  const newValue = !useMultipleAgents;
+                  onUseMultipleAgentsChange(newValue);
+                  // If switching to single mode and multiple agents selected, keep first
+                  if (!newValue && selectedAgents.length > 1) {
+                    onAgentsChange([selectedAgents[0]]);
                   }
                 }}
-                className="text-xs text-blue-400 hover:text-blue-300"
+                className={cn(
+                  'w-10 h-6 rounded-full transition-colors relative',
+                  useMultipleAgents ? 'bg-green-600' : 'bg-gray-600'
+                )}
               >
-                {selectedAgents.length === AGENT_OPTIONS.length ? 'Deselect all' : 'Select all'}
+                <div
+                  className={cn(
+                    'w-4 h-4 bg-white rounded-full absolute top-1 transition-transform',
+                    useMultipleAgents ? 'translate-x-5' : 'translate-x-1'
+                  )}
+                />
               </button>
-            </div>
-          )}
+            </label>
+            {useMultipleAgents && (
+              <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-700">
+                <span className="text-xs text-gray-500">
+                  {selectedAgents.length} agent{selectedAgents.length !== 1 ? 's' : ''} selected
+                </span>
+                <button
+                  onClick={() => {
+                    if (selectedAgents.length === AGENT_OPTIONS.length) {
+                      onAgentsChange([AGENT_OPTIONS[0].type]);
+                    } else {
+                      onAgentsChange(AGENT_OPTIONS.map((a) => a.type));
+                    }
+                  }}
+                  className="text-xs text-blue-400 hover:text-blue-300"
+                >
+                  {selectedAgents.length === AGENT_OPTIONS.length ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
