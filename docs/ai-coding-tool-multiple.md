@@ -18,19 +18,19 @@
 
 ```mermaid
 graph TB
-    subgraph "Home Page (page.tsx)"
+    subgraph "Home Page - page.tsx"
         A[ユーザー入力] --> B[ExecutorSelector]
         B --> C{選択タイプ}
         C -->|CLIエグゼキューター| D[単一選択<br/>radio button]
         C -->|Modelsモード| E[複数選択可能<br/>checkbox]
-        D --> F[executorType: ExecutorType]
-        E --> G[selectedModels: string[]]
+        D --> F["executorType: ExecutorType"]
+        E --> G["selectedModels: string配列"]
     end
 
     subgraph "API呼び出し"
         F --> H[runsApi.create]
         G --> H
-        H --> I[POST /v1/tasks/{id}/runs]
+        H --> I["POST /v1/tasks/id/runs"]
     end
 ```
 
@@ -38,7 +38,7 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph "RunService.create_runs()"
+    subgraph "RunService.create_runs"
         A[RunCreate] --> B{executor_type?}
         B -->|PATCH_AGENT| C[model_ids ごとに<br/>複数 Run 作成]
         B -->|CLAUDE_CODE| D[単一 Run 作成]
@@ -153,9 +153,9 @@ graph TB
     end
 
     subgraph "変更後"
-        A2[CLI選択] --> B2[selectedCLIs: ExecutorType[]]
+        A2[CLI選択] --> B2["selectedCLIs: ExecutorType配列"]
         B2 --> C2[複数選択可能<br/>checkbox化]
-        D2[Models選択] --> E2[selectedModels: string[]]
+        D2[Models選択] --> E2["selectedModels: string配列"]
         C2 -.->|排他ではない| E2
     end
 ```
@@ -320,19 +320,19 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph "ExecutorSelector（変更後）"
+    subgraph "ExecutorSelector - 変更後"
         A[ドロップダウン]
 
         subgraph "Models Section"
-            B1[Model 1 ☑]
-            B2[Model 2 ☐]
-            B3[Model 3 ☑]
+            B1["Model 1 (selected)"]
+            B2["Model 2"]
+            B3["Model 3 (selected)"]
         end
 
         subgraph "CLI Agents Section"
-            C1[Claude Code ☑]
-            C2[Codex ☑]
-            C3[Gemini CLI ☐]
+            C1["Claude Code (selected)"]
+            C2["Codex (selected)"]
+            C3["Gemini CLI"]
         end
 
         A --> B1
@@ -378,13 +378,13 @@ interface ExecutorSelectorProps {
 
 ```mermaid
 graph LR
-    subgraph "RunsPanel（変更後）"
+    subgraph "RunsPanel - 変更後"
         A[Message 1の結果]
 
         subgraph "並列結果"
-            B1[Claude Code<br/>✓ Succeeded]
-            B2[Codex<br/>⏳ Running]
-            B3[Gemini<br/>✓ Succeeded]
+            B1["Claude Code - Succeeded"]
+            B2["Codex - Running"]
+            B3["Gemini - Succeeded"]
         end
 
         A --> B1
