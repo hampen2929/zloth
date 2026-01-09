@@ -145,10 +145,10 @@ class ClaudeCodeExecutor:
             "stream-json",  # Streaming JSON for session_id extraction
         ]
 
-        # Add --session-id flag if we have a previous session ID
-        # Note: Use --session-id (not --resume) to continue conversation in -p mode
+        # Add --resume flag if we have a previous session ID
+        # Note: Use --resume (not --session-id) to continue conversation
         if resume_session_id:
-            cmd.extend(["--session-id", resume_session_id])
+            cmd.extend(["--resume", resume_session_id])
             logs.append(f"Continuing session: {resume_session_id}")
 
         # Don't log full instruction - it can be very long
@@ -331,8 +331,8 @@ class ClaudeCodeExecutor:
         patterns = [
             # "Session ID: <uuid>" or "session_id: <uuid>"
             re.compile(r"session[_\s]?id[:\s]+(" + uuid_pattern + r")", re.IGNORECASE),
-            # "--session-id <uuid>" hint
-            re.compile(r"--session-id\s+(" + uuid_pattern + r")", re.IGNORECASE),
+            # "--resume <uuid>" or "--session-id <uuid>" hint
+            re.compile(r"--(?:resume|session-id)\s+(" + uuid_pattern + r")", re.IGNORECASE),
             # "session: <uuid>"
             re.compile(r"\bsession[:\s]+(" + uuid_pattern + r")", re.IGNORECASE),
         ]
