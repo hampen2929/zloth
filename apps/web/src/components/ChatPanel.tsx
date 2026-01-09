@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { tasksApi, runsApi } from '@/lib/api';
 import type { Message, ModelProfile, ExecutorType } from '@/types';
 import { Button } from './ui/Button';
+import { AgentSelector } from './AgentSelector';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
 import { cn } from '@/lib/utils';
@@ -14,6 +15,9 @@ import {
   CheckIcon,
   CommandLineIcon,
 } from '@heroicons/react/24/outline';
+
+// CLI Agent types for the AgentSelector
+const CLI_AGENT_TYPES: ExecutorType[] = ['claude_code', 'codex_cli', 'gemini_cli'];
 
 interface PendingMessage {
   id: string;
@@ -42,6 +46,11 @@ export function ChatPanel({
   const [input, setInput] = useState('');
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
   const [currentExecutor, setCurrentExecutor] = useState<ExecutorType>(executorType);
+  // Multi-agent state
+  const [selectedAgents, setSelectedAgents] = useState<ExecutorType[]>(
+    CLI_AGENT_TYPES.includes(executorType) ? [executorType] : ['claude_code']
+  );
+  const [useMultipleAgents, setUseMultipleAgents] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -80,8 +89,12 @@ export function ChatPanel({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    const isCLIExecutor = currentExecutor === 'claude_code' || currentExecutor === 'codex_cli' || currentExecutor === 'gemini_cli';
+    const isCLIExecutor =
+      currentExecutor === 'claude_code' ||
+      currentExecutor === 'codex_cli' ||
+      currentExecutor === 'gemini_cli';
     if (!isCLIExecutor && selectedModels.length === 0) return;
+    if (isCLIExecutor && selectedAgents.length === 0) return;
 
     // Optimistic UI: Clear input and show pending message immediately
     const pendingId = `pending-${Date.now()}`;
@@ -103,18 +116,30 @@ export function ChatPanel({
 
       // Create runs based on executor type, linking to the message
       const cliExecutorNames: Record<string, string> = {
-        'claude_code': 'Claude Code',
-        'codex_cli': 'Codex',
-        'gemini_cli': 'Gemini CLI',
+        claude_code: 'Claude Code',
+        codex_cli: 'Codex',
+        gemini_cli: 'Gemini CLI',
       };
 
       if (isCLIExecutor) {
-        await runsApi.create(taskId, {
-          instruction: messageContent,
-          executor_type: currentExecutor,
-          message_id: message.id,
-        });
-        success(`Started ${cliExecutorNames[currentExecutor]} run`);
+        // Multi-agent parallel execution
+        if (useMultipleAgents && selectedAgents.length > 1) {
+          await runsApi.create(taskId, {
+            instruction: messageContent,
+            executor_types: selectedAgents,
+            message_id: message.id,
+          });
+          success(`Started ${selectedAgents.length} agent runs in parallel`);
+        } else {
+          // Single agent execution
+          const agent = selectedAgents[0] || currentExecutor;
+          await runsApi.create(taskId, {
+            instruction: messageContent,
+            executor_type: agent,
+            message_id: message.id,
+          });
+          success(`Started ${cliExecutorNames[agent]} run`);
+        }
       } else {
         await runsApi.create(taskId, {
           instruction: messageContent,
@@ -279,42 +304,21 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              onClick={() => setCurrentExecutor('claude_code')}
+              onClick={() => {
+                setCurrentExecutor('claude_code');
+                if (!selectedAgents.includes('claude_code')) {
+                  setSelectedAgents(['claude_code']);
+                }
+              }}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'claude_code'
+                CLI_AGENT_TYPES.includes(currentExecutor)
                   ? 'bg-gray-700 text-white'
                   : 'text-gray-400 hover:text-white'
               )}
             >
               <CommandLineIcon className="w-3.5 h-3.5" />
-              <span>Claude</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentExecutor('codex_cli')}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'codex_cli'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
-              )}
-            >
-              <CommandLineIcon className="w-3.5 h-3.5" />
-              <span>Codex</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentExecutor('gemini_cli')}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors',
-                currentExecutor === 'gemini_cli'
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
-              )}
-            >
-              <CommandLineIcon className="w-3.5 h-3.5" />
-              <span>Gemini</span>
+              <span>CLI Agents</span>
             </button>
           </div>
         </div>
@@ -366,15 +370,39 @@ export function ChatPanel({
           </div>
         )}
 
-        {/* CLI executor info */}
-        {(currentExecutor === 'claude_code' || currentExecutor === 'codex_cli' || currentExecutor === 'gemini_cli') && (
-          <div className="flex items-center gap-2 p-2 bg-purple-900/20 rounded-lg border border-purple-800/30">
-            <CommandLineIcon className="w-4 h-4 text-purple-400" />
-            <span className="text-xs text-purple-300">
-              {currentExecutor === 'claude_code' && 'Claude Code will execute in an isolated worktree'}
-              {currentExecutor === 'codex_cli' && 'Codex will execute in an isolated worktree'}
-              {currentExecutor === 'gemini_cli' && 'Gemini CLI will execute in an isolated worktree'}
-            </span>
+        {/* CLI Agent Selection */}
+        {CLI_AGENT_TYPES.includes(currentExecutor) && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Agent:</span>
+              <AgentSelector
+                selectedAgents={selectedAgents}
+                onAgentsChange={setSelectedAgents}
+                useMultipleAgents={useMultipleAgents}
+                onUseMultipleAgentsChange={setUseMultipleAgents}
+                disabled={loading}
+              />
+            </div>
+
+            {/* Parallel execution info */}
+            {useMultipleAgents && selectedAgents.length > 1 && (
+              <div className="flex items-center gap-2 p-2 bg-blue-900/20 rounded-lg border border-blue-800/30">
+                <CommandLineIcon className="w-4 h-4 text-blue-400" />
+                <span className="text-xs text-blue-300">
+                  {selectedAgents.length} agents will run in parallel, each in isolated worktrees
+                </span>
+              </div>
+            )}
+
+            {/* Single agent info */}
+            {(!useMultipleAgents || selectedAgents.length === 1) && (
+              <div className="flex items-center gap-2 p-2 bg-purple-900/20 rounded-lg border border-purple-800/30">
+                <CommandLineIcon className="w-4 h-4 text-purple-400" />
+                <span className="text-xs text-purple-300">
+                  Agent will execute in an isolated worktree
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -412,27 +440,19 @@ export function ChatPanel({
           </Button>
         </div>
         <div className="flex items-center justify-between mt-2">
-          <span className="text-xs text-gray-500">
-            {getShortcutText('Enter')} to submit
-          </span>
+          <span className="text-xs text-gray-500">{getShortcutText('Enter')} to submit</span>
           {currentExecutor === 'patch_agent' && selectedModels.length > 0 && (
             <span className="text-xs text-gray-500">
               {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''} selected
             </span>
           )}
-          {currentExecutor === 'claude_code' && (
+          {CLI_AGENT_TYPES.includes(currentExecutor) && (
             <span className="text-xs text-purple-400">
-              Claude Code CLI
-            </span>
-          )}
-          {currentExecutor === 'codex_cli' && (
-            <span className="text-xs text-purple-400">
-              Codex CLI
-            </span>
-          )}
-          {currentExecutor === 'gemini_cli' && (
-            <span className="text-xs text-purple-400">
-              Gemini CLI
+              {useMultipleAgents && selectedAgents.length > 1
+                ? `${selectedAgents.length} agents (parallel)`
+                : selectedAgents.length === 1
+                  ? `${selectedAgents[0] === 'claude_code' ? 'Claude Code' : selectedAgents[0] === 'codex_cli' ? 'Codex' : 'Gemini'} CLI`
+                  : 'Select an agent'}
             </span>
           )}
         </div>
