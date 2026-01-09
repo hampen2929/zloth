@@ -9,6 +9,8 @@ from dursor_api.domain.models import (
     PRCreateAuto,
     PRCreated,
     PRCreateLink,
+    PRLinkJob,
+    PRLinkJobResult,
     PRSyncRequest,
     PRSyncResult,
     PRUpdate,
@@ -93,6 +95,38 @@ async def create_pr_link_auto(
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/prs/auto/link/job", response_model=PRLinkJob)
+async def start_pr_link_auto_job(
+    task_id: str,
+    data: PRCreateAuto,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PRLinkJob:
+    """Start async PR link generation (returns immediately with job ID).
+
+    Use this endpoint for long-running PR link generation to avoid timeout.
+    Poll GET /prs/jobs/{job_id} to check status and get result.
+    """
+    try:
+        return pr_service.start_link_auto_job(task_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/prs/jobs/{job_id}", response_model=PRLinkJobResult)
+async def get_pr_link_job(
+    job_id: str,
+    pr_service: PRService = Depends(get_pr_service),
+) -> PRLinkJobResult:
+    """Get status of PR link generation job.
+
+    Poll this endpoint until status is 'completed' or 'failed'.
+    """
+    result = pr_service.get_link_auto_job(job_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return result
 
 
 @router.post("/tasks/{task_id}/prs/sync", response_model=PRSyncResult)
