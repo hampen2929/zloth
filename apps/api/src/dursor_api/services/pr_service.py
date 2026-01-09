@@ -8,6 +8,7 @@ pushed by RunService, so this service only handles GitHub API operations.
 from __future__ import annotations
 
 import logging
+import json
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -280,13 +281,39 @@ class PRService:
         # Generate title and description with AI
         title = await self._generate_title(diff, task, run)
         template = await self._load_pr_template(repo_obj)
-        description = await self._generate_description_for_new_pr(
-            diff=diff,
-            template=template,
-            task=task,
-            title=title,
-            run=run,
-        )
+        if template:
+            try:
+                fields = await self._generate_pr_fields_from_template(
+                    diff=diff,
+                    template=template,
+                    task_title=task.title or "",
+                    pr_title=title,
+                    run_summary=run.summary or "",
+                )
+            except Exception:
+                fields = {
+                    "summary": (run.summary or title).strip(),
+                    "changes": self._build_changes_section_from_diff(diff),
+                    "review_notes": "",
+                    "test_plan": self._default_test_plan_section(),
+                }
+
+            description = self._render_pr_body_from_template(
+                template=template,
+                title=title,
+                description=fields.get("summary", "").strip(),
+                changes=fields.get("changes", "").strip() or None,
+                review_notes=fields.get("review_notes", "").strip() or None,
+                test_plan=fields.get("test_plan", "").strip() or None,
+            )
+        else:
+            description = await self._generate_description_for_new_pr(
+                diff=diff,
+                template=None,
+                task=task,
+                title=title,
+                run=run,
+            )
 
         # Create PR via GitHub API
         pr_data = await self.github_service.create_pull_request(
@@ -912,13 +939,42 @@ class PRService:
         # Load pull_request_template
         template = await self._load_pr_template(repo_obj)
 
-        # Generate description with LLM
-        new_description = await self._generate_description(
-            diff=cumulative_diff,
-            template=template,
-            task=task,
-            pr=pr,
-        )
+        if template:
+            # Regenerate the full PR body in the repository's template format.
+            try:
+                run_summary = (latest_run.summary or "") if latest_run else ""
+                fields = await self._generate_pr_fields_from_template(
+                    diff=cumulative_diff,
+                    template=template,
+                    task_title=task.title or "",
+                    pr_title=pr.title,
+                    run_summary=run_summary,
+                )
+            except Exception:
+                # Fall back to deterministic content injection.
+                fields = {
+                    "summary": (latest_run.summary if latest_run else "") or pr.title,
+                    "changes": self._build_changes_section_from_diff(cumulative_diff),
+                    "review_notes": "",
+                    "test_plan": self._default_test_plan_section(),
+                }
+
+            new_description = self._render_pr_body_from_template(
+                template=template,
+                title=pr.title,
+                description=(fields.get("summary", "") or pr.title).strip(),
+                changes=fields.get("changes", "").strip() or None,
+                review_notes=fields.get("review_notes", "").strip() or None,
+                test_plan=fields.get("test_plan", "").strip() or None,
+            )
+        else:
+            # Generate description with LLM (or fallback) in the default format.
+            new_description = await self._generate_description(
+                diff=cumulative_diff,
+                template=None,
+                task=task,
+                pr=pr,
+            )
 
         # Update PR via GitHub API
         await self.github_service.update_pull_request(
@@ -953,12 +1009,30 @@ class PRService:
             workspace_path / ".github" / "PULL_REQUEST_TEMPLATE.md",
             workspace_path / "pull_request_template.md",
             workspace_path / "PULL_REQUEST_TEMPLATE.md",
+            workspace_path / "docs" / "pull_request_template.md",
+            workspace_path / "docs" / "PULL_REQUEST_TEMPLATE.md",
             workspace_path / ".github" / "PULL_REQUEST_TEMPLATE" / "default.md",
         ]
 
         for path in template_paths:
             if path.exists():
                 return path.read_text()
+
+        # Support multiple-template directories by picking default.md if present,
+        # otherwise the first *.md in the directory (stable order).
+        multi_template_dirs = [
+            workspace_path / ".github" / "PULL_REQUEST_TEMPLATE",
+            workspace_path / "PULL_REQUEST_TEMPLATE",
+        ]
+        for d in multi_template_dirs:
+            if not d.exists() or not d.is_dir():
+                continue
+            default_md = d / "default.md"
+            if default_md.exists():
+                return default_md.read_text()
+            md_files = sorted(p for p in d.iterdir() if p.is_file() and p.suffix.lower() == ".md")
+            if md_files:
+                return md_files[0].read_text()
 
         return None
 
@@ -994,12 +1068,22 @@ class PRService:
         except Exception as e:
             logger.warning(f"PR base diagnostics failed: {e}")
 
-    def _render_pr_body_from_template(self, template: str, title: str, description: str) -> str:
+    def _render_pr_body_from_template(
+        self,
+        template: str,
+        title: str,
+        description: str,
+        *,
+        changes: str | None = None,
+        review_notes: str | None = None,
+        test_plan: str | None = None,
+    ) -> str:
         """Render PR body using pull_request_template.
 
         Strategy:
         - If the template has a 'Summary' (or 'Description') heading, replace the section body
           with the provided description.
+        - If the template has 'Changes' or 'Test Plan', replace those section bodies when provided.
         - Otherwise, prepend a Summary section and include the template below it.
         """
         tmpl = (template or "").replace("\r\n", "\n").strip()
@@ -1008,33 +1092,222 @@ class PRService:
         if not tmpl:
             return desc
 
-        if not desc:
-            # No description to inject; keep the template as-is.
-            return tmpl
+        body = tmpl
 
-        # Find an injection target heading.
-        # Matches e.g. "## Summary" / "# Summary" (case-insensitive).
+        if desc:
+            body, injected = self._replace_markdown_section(
+                body,
+                section_names=["summary", "description"],
+                new_body=desc,
+            )
+            if not injected:
+                # If the template doesn't have a Summary/Description section, prepend.
+                # If it does but we failed to match for replacement, avoid duplicating headings.
+                if not self._has_markdown_heading(body, section_names=["summary", "description"]):
+                    body = f"## Summary\n{desc}\n\n{body}".strip()
+
+        if changes:
+            body, _ = self._replace_markdown_section(
+                body,
+                section_names=["changes"],
+                new_body=changes,
+            )
+
+        if review_notes:
+            body, _ = self._replace_markdown_section(
+                body,
+                section_names=["review notes", "review", "notes"],
+                new_body=review_notes,
+            )
+
+        if test_plan:
+            body, _ = self._replace_markdown_section(
+                body,
+                section_names=["test plan", "tests", "testing"],
+                new_body=test_plan,
+            )
+
+        return body.strip()
+
+    def _replace_markdown_section(
+        self,
+        markdown: str,
+        *,
+        section_names: list[str],
+        new_body: str,
+    ) -> tuple[str, bool]:
+        """Replace a markdown section body by heading name.
+
+        Matches headings like "# Summary" or "## Test Plan" (case-insensitive).
+        The replaced range is from the end of the matched heading line to the next
+        heading of level <= matched level (or EOF).
+        """
+        text = (markdown or "").replace("\r\n", "\n")
+        names_pat = "|".join(re.escape(n) for n in section_names)
         heading_re = re.compile(
-            r"^(#{1,6})\s+(summary|description)\s*$",
+            # Match headings like "## Summary" and allow trailing text/comments on the same line.
+            rf"^\s*(#{1,6})\s+({names_pat})\b.*$",
             re.IGNORECASE | re.MULTILINE,
         )
-        m = heading_re.search(tmpl)
+        m = heading_re.search(text)
         if not m:
-            # No obvious section; prepend a Summary and keep the template.
-            return f"## Summary\n{desc}\n\n{tmpl}"
+            return text, False
 
         level = len(m.group(1))
         start = m.end()
+        next_heading_re = re.compile(rf"^\s*#{{1,{level}}}\s+\S.*$", re.MULTILINE)
+        m2 = next_heading_re.search(text, pos=start)
+        end = m2.start() if m2 else len(text)
 
-        # Find the next heading with level <= current to determine section end.
-        next_heading_re = re.compile(rf"^#{{1,{level}}}\s+\S.*$", re.MULTILINE)
-        m2 = next_heading_re.search(tmpl, pos=start)
-        end = m2.start() if m2 else len(tmpl)
+        before = text[:start].rstrip()
+        after = text[end:].lstrip()
+        replaced = f"{before}\n\n{new_body.strip()}\n\n{after}".strip()
+        return replaced, True
 
-        before = tmpl[:start].rstrip()
-        after = tmpl[end:].lstrip()
-        injected = f"{before}\n\n{desc}\n\n{after}".strip()
-        return injected
+    def _has_markdown_heading(self, markdown: str, *, section_names: list[str]) -> bool:
+        """Check if markdown contains a heading for any of the given section names."""
+        text = (markdown or "").replace("\r\n", "\n")
+        names_pat = "|".join(re.escape(n) for n in section_names)
+        heading_re = re.compile(
+            rf"^\s*#{1,6}\s+({names_pat})\b.*$",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        return heading_re.search(text) is not None
+
+    def _extract_summary_text(self, generated_markdown: str) -> str:
+        """Extract a summary-like snippet from generated markdown."""
+        text = (generated_markdown or "").replace("\r\n", "\n").strip()
+        if not text:
+            return ""
+
+        # Prefer an explicit Summary/Description section if present.
+        for name in ("summary", "description"):
+            extracted = self._extract_markdown_section(text, section_name=name)
+            if extracted:
+                return extracted.strip()
+
+        # Otherwise, take the first non-heading paragraph.
+        for block in re.split(r"\n{2,}", text):
+            b = block.strip()
+            if not b:
+                continue
+            if re.match(r"^#{1,6}\s+\S", b):
+                continue
+            return b
+        return ""
+
+    def _extract_markdown_section(self, markdown: str, *, section_name: str) -> str:
+        """Extract a markdown section body by heading name."""
+        text = (markdown or "").replace("\r\n", "\n")
+        heading_re = re.compile(
+            rf"^\s*(#{1,6})\s+{re.escape(section_name)}\b.*$",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        m = heading_re.search(text)
+        if not m:
+            return ""
+        level = len(m.group(1))
+        start = m.end()
+        next_heading_re = re.compile(rf"^\s*#{{1,{level}}}\s+\S.*$", re.MULTILINE)
+        m2 = next_heading_re.search(text, pos=start)
+        end = m2.start() if m2 else len(text)
+        return text[start:end].strip()
+
+    def _build_changes_section_from_diff(self, diff: str) -> str:
+        """Build a markdown bullet list for a Changes section from a unified diff."""
+        added_lines = len(re.findall(r"^\+[^+]", diff or "", re.MULTILINE))
+        removed_lines = len(re.findall(r"^-[^-]", diff or "", re.MULTILINE))
+        files = sorted(set(re.findall(r"^\+\+\+ b/(.+)$", diff or "", re.MULTILINE)))
+
+        lines: list[str] = [
+            f"- Modified {len(files)} file(s)",
+            f"- +{added_lines} -{removed_lines} lines",
+        ]
+        if files:
+            lines.append("- Files:")
+            lines.extend([f"  - {f}" for f in files[:20]])
+            if len(files) > 20:
+                lines.append("  - ...")
+        return "\n".join(lines).strip()
+
+    def _default_test_plan_section(self) -> str:
+        """Default markdown content for a Test Plan section (if present in template)."""
+        return "\n".join(
+            [
+                "- [ ] Manual testing",
+                "- [ ] Unit tests",
+            ]
+        ).strip()
+
+    async def _generate_pr_fields_from_template(
+        self,
+        *,
+        diff: str,
+        template: str,
+        task_title: str,
+        pr_title: str,
+        run_summary: str,
+    ) -> dict[str, str]:
+        """Generate section contents to be injected into the repository PR template.
+
+        Returns a dict with keys: summary, changes, review_notes, test_plan.
+        """
+        truncated_diff = diff[:10000] if diff and len(diff) > 10000 else (diff or "")
+        template_text = (template or "").replace("\r\n", "\n").strip()
+
+        prompt = "\n".join(
+            [
+                "Generate content for a GitHub Pull Request description.",
+                "",
+                "## Inputs",
+                "### PR Title",
+                pr_title or "(None)",
+                "",
+                "### Task Context",
+                task_title or "(None)",
+                "",
+                "### Run Summary",
+                run_summary or "(None)",
+                "",
+                "### Diff (truncated)",
+                "```diff",
+                truncated_diff,
+                "```",
+                "",
+                "### Repository PR Template",
+                template_text,
+                "",
+                "## Output Rules",
+                "- Output ONLY valid JSON (no markdown fences).",
+                "- JSON must have these keys: summary, changes, review_notes, test_plan.",
+                "- Values must NOT include headings like '## Summary'. Provide section BODY only.",
+                "- summary: 1-2 sentences.",
+                "- changes: bullet list lines starting with '- '. Replace placeholder '-' with real bullets.",
+                "- review_notes: 0-3 bullets or short paragraph (empty string if none).",
+                "- test_plan: checklist lines starting with '- [ ] '.",
+            ]
+        ).strip()
+
+        config = LLMConfig(
+            provider=Provider.ANTHROPIC,
+            model_name="claude-3-haiku-20240307",
+            api_key="",  # Will be loaded from environment
+        )
+        llm_client = self.llm_router.get_client(config)
+        raw = await llm_client.generate(
+            prompt=prompt,
+            system_prompt=(
+                "You are a helpful assistant that writes PR description content. "
+                "Return JSON only."
+            ),
+        )
+        data = json.loads((raw or "").strip())
+        return {
+            "summary": str(data.get("summary", "")).strip(),
+            "changes": str(data.get("changes", "")).strip(),
+            "review_notes": str(data.get("review_notes", "")).strip(),
+            "test_plan": str(data.get("test_plan", "")).strip(),
+        }
 
     async def _generate_description(
         self,
