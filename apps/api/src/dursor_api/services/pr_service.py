@@ -519,8 +519,9 @@ class PRService:
             response = await llm_client.generate(
                 messages=[{"role": "user", "content": prompt}],
                 system=(
-                    "You are a helpful assistant that generates clear "
-                    "and concise PR descriptions. Follow the provided template exactly."
+                    "You generate PR descriptions by filling in templates. "
+                    "You MUST fill in every section with actual content. "
+                    "Never leave placeholders or HTML comments in your output."
                 ),
             )
             return response
@@ -916,8 +917,9 @@ class PRService:
             response = await llm_client.generate(
                 messages=[{"role": "user", "content": prompt}],
                 system=(
-                    "You are a helpful assistant that generates clear "
-                    "and concise PR descriptions. Follow the provided template exactly."
+                    "You generate PR descriptions by filling in templates. "
+                    "You MUST fill in every section with actual content. "
+                    "Never leave placeholders or HTML comments in your output."
                 ),
             )
             return response
