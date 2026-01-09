@@ -44,21 +44,25 @@ class KanbanService:
     ) -> TaskKanbanStatus:
         """Compute final kanban status.
 
-        Dynamic computation overrides base status.
+        Dynamic computation overrides base status, except for archived.
         """
-        # 1. PR is merged -> Done (highest priority)
+        # 1. Archived status takes priority - user explicitly archived this task
+        if base_status == TaskBaseKanbanStatus.ARCHIVED.value:
+            return TaskKanbanStatus.ARCHIVED
+
+        # 2. PR is merged -> Done (highest priority for active tasks)
         if latest_pr_status == "merged":
             return TaskKanbanStatus.DONE
 
-        # 2. Run is running -> InProgress
+        # 3. Run is running -> InProgress
         if running_count > 0:
             return TaskKanbanStatus.IN_PROGRESS
 
-        # 3. Runs exist and all completed -> InReview
+        # 4. Runs exist and all completed -> InReview
         if run_count > 0 and completed_count == run_count:
             return TaskKanbanStatus.IN_REVIEW
 
-        # 4. Use base status (backlog/todo/archived)
+        # 5. Use base status (backlog/todo)
         # Runs that are queued also fall here (not started yet)
         return TaskKanbanStatus(base_status)
 
