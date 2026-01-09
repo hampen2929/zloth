@@ -546,9 +546,7 @@ class TaskBreakdownResponse(BaseModel):
     )
     summary: str | None = Field(None, description="Summary of breakdown")
     original_content: str = Field(..., description="Original hearing content")
-    codebase_analysis: CodebaseAnalysis | None = Field(
-        None, description="Codebase analysis result"
-    )
+    codebase_analysis: CodebaseAnalysis | None = Field(None, description="Codebase analysis result")
     error: str | None = Field(None, description="Error message if failed")
 
 

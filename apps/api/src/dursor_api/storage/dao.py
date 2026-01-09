@@ -857,11 +857,13 @@ class BacklogDAO:
         subtask_list = []
         if subtasks:
             for st in subtasks:
-                subtask_list.append({
-                    "id": generate_id(),
-                    "title": st.get("title", ""),
-                    "completed": False,
-                })
+                subtask_list.append(
+                    {
+                        "id": generate_id(),
+                        "title": st.get("title", ""),
+                        "completed": False,
+                    }
+                )
 
         await self.db.connection.execute(
             """
@@ -909,9 +911,7 @@ class BacklogDAO:
 
     async def get(self, id: str) -> BacklogItem | None:
         """Get a backlog item by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM backlog_items WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("SELECT * FROM backlog_items WHERE id = ?", (id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -1024,9 +1024,7 @@ class BacklogDAO:
         Returns:
             True if deleted, False if not found.
         """
-        cursor = await self.db.connection.execute(
-            "DELETE FROM backlog_items WHERE id = ?", (id,)
-        )
+        cursor = await self.db.connection.execute("DELETE FROM backlog_items WHERE id = ?", (id,))
         await self.db.connection.commit()
         return cursor.rowcount > 0
 

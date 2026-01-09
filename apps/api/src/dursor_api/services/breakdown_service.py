@@ -218,9 +218,7 @@ class BreakdownService:
         )
 
         # Executor map
-        self._executors: dict[
-            ExecutorType, ClaudeCodeExecutor | CodexExecutor | GeminiExecutor
-        ] = {
+        self._executors: dict[ExecutorType, ClaudeCodeExecutor | CodexExecutor | GeminiExecutor] = {
             ExecutorType.CLAUDE_CODE: self._claude_executor,
             ExecutorType.CODEX_CLI: self._codex_executor,
             ExecutorType.GEMINI_CLI: self._gemini_executor,
@@ -231,9 +229,7 @@ class BreakdownService:
     ) -> ClaudeCodeExecutor | CodexExecutor | GeminiExecutor:
         """Get executor for the given type."""
         if executor_type == ExecutorType.PATCH_AGENT:
-            raise ValueError(
-                "patch_agent is not supported for task breakdown. Use CLI executors."
-            )
+            raise ValueError("patch_agent is not supported for task breakdown. Use CLI executors.")
 
         executor = self._executors.get(executor_type)
         if not executor:
