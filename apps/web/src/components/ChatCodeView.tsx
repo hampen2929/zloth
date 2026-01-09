@@ -8,7 +8,7 @@ import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
 import { cn } from '@/lib/utils';
-import { useExecutorType, useClipboard, getExecutorDisplayName } from '@/hooks';
+import { useClipboard, getExecutorDisplayName } from '@/hooks';
 import { RunResultCard, type RunTab } from './RunResultCard';
 import {
   UserIcon,
@@ -37,7 +37,7 @@ export function ChatCodeView({
   messages,
   runs,
   models,
-  executorType = 'patch_agent',
+  // executorType prop kept for backwards compatibility but not used
   initialModelIds,
   onRunsCreated,
   onPRCreated,
@@ -59,10 +59,31 @@ export function ChatCodeView({
     refreshInterval: prLinkResult ? 2000 : 0,
   });
 
-  // Determine the locked executor and its properties
+  // Determine executor types used in this task
   const sortedRuns = [...runs].reverse();
-  const lockedExecutor: ExecutorType = (sortedRuns[0]?.executor_type || executorType) as ExecutorType;
-  const { isCLI: isCLIExecutor, displayName: cliDisplayName } = useExecutorType(lockedExecutor);
+
+  // Get unique CLI executor types from existing runs (for continuation)
+  const cliExecutorTypes: ExecutorType[] = [
+    ...new Set(
+      sortedRuns
+        .map((r) => r.executor_type)
+        .filter(
+          (et): et is ExecutorType =>
+            et === 'claude_code' || et === 'codex_cli' || et === 'gemini_cli'
+        )
+    ),
+  ];
+
+  // Check if patch_agent is used
+  const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
+
+  // For backwards compatibility, determine if we're in CLI mode or patch_agent mode
+  const isCLIExecutor = cliExecutorTypes.length > 0;
+  const cliDisplayName = isCLIExecutor
+    ? cliExecutorTypes.length === 1
+      ? getExecutorDisplayName(cliExecutorTypes[0])
+      : `${cliExecutorTypes.length} CLIs`
+    : undefined;
 
   // Get session-level branch name
   const sessionBranch = sortedRuns.find((r) => r.working_branch)?.working_branch || null;
@@ -84,10 +105,10 @@ export function ChatCodeView({
 
   // Select all models by default if none specified (patch_agent only)
   useEffect(() => {
-    if (!isCLIExecutor && models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
+    if (hasPatchAgent && models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
       setSelectedModels(models.map((m) => m.id));
     }
-  }, [models, selectedModels.length, initialModelIds, isCLIExecutor]);
+  }, [models, selectedModels.length, initialModelIds, hasPatchAgent]);
 
   // Auto-expand new runs
   useEffect(() => {
@@ -189,27 +210,36 @@ export function ChatCodeView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    if (!isCLIExecutor && selectedModels.length === 0) return;
+    // Need at least CLI executors or models selected
+    if (cliExecutorTypes.length === 0 && selectedModels.length === 0) return;
 
     setLoading(true);
 
     try {
       await tasksApi.addMessage(taskId, { role: 'user', content: input.trim() });
 
-      if (isCLIExecutor) {
-        await runsApi.create(taskId, {
-          instruction: input.trim(),
-          executor_type: lockedExecutor,
-        });
-        success(`Started ${cliDisplayName} run`);
-      } else {
-        await runsApi.create(taskId, {
-          instruction: input.trim(),
-          model_ids: selectedModels,
-          executor_type: 'patch_agent',
-        });
-        success(`Started ${selectedModels.length} run${selectedModels.length > 1 ? 's' : ''}`);
+      // Build executor_types array for continuation
+      const executorTypesToRun: ExecutorType[] = [...cliExecutorTypes];
+      if (hasPatchAgent && selectedModels.length > 0) {
+        executorTypesToRun.push('patch_agent');
       }
+
+      // Create runs with executor_types for parallel execution
+      await runsApi.create(taskId, {
+        instruction: input.trim(),
+        executor_types: executorTypesToRun,
+        model_ids: hasPatchAgent && selectedModels.length > 0 ? selectedModels : undefined,
+      });
+
+      // Show success message
+      const parts: string[] = [];
+      if (cliExecutorTypes.length > 0) {
+        parts.push(cliDisplayName || 'CLI');
+      }
+      if (hasPatchAgent && selectedModels.length > 0) {
+        parts.push(`${selectedModels.length} model${selectedModels.length > 1 ? 's' : ''}`);
+      }
+      success(`Started ${parts.join(' + ')} run${executorTypesToRun.length > 1 ? 's' : ''}`);
 
       setInput('');
       onRunsCreated();
@@ -312,8 +342,8 @@ export function ChatCodeView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Model Selection (patch_agent only) */}
-      {!isCLIExecutor && (
+      {/* Model Selection (when patch_agent is used in the task) */}
+      {hasPatchAgent && (
         <ModelSelector
           models={models}
           selectedModels={selectedModels}
@@ -328,8 +358,8 @@ export function ChatCodeView({
         onChange={setInput}
         onSubmit={handleSubmit}
         loading={loading}
-        disabled={!isCLIExecutor && selectedModels.length === 0}
-        selectedModelCount={isCLIExecutor ? undefined : selectedModels.length}
+        disabled={cliExecutorTypes.length === 0 && selectedModels.length === 0}
+        selectedModelCount={hasPatchAgent ? selectedModels.length : undefined}
       />
     </div>
   );

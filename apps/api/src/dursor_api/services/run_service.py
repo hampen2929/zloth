@@ -134,11 +134,14 @@ class RunService:
         )
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
-        """Create runs for multiple models or Claude Code.
+        """Create runs for multiple models or CLI executors.
+
+        Supports parallel execution of multiple CLI executors (Claude Code, Codex, Gemini)
+        by specifying executor_types list.
 
         Args:
             task_id: Task ID.
-            data: Run creation data with model IDs or executor type.
+            data: Run creation data with model IDs or executor type(s).
 
         Returns:
             List of created Run objects.
@@ -153,52 +156,43 @@ class RunService:
         if not repo:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        runs = []
-
-        # Lock executor after the first run in the task.
-        # Users expect "resume" style conversations to keep using the initially chosen executor.
+        runs: list[Run] = []
         existing_runs = await self.run_dao.list(task_id)
-        locked_executor: ExecutorType | None = None
-        if existing_runs:
-            # DAO returns newest-first; the earliest run is last.
-            locked_executor = existing_runs[-1].executor_type
-            if data.executor_type != locked_executor:
-                data = data.model_copy(update={"executor_type": locked_executor})
 
-        if data.executor_type == ExecutorType.CLAUDE_CODE:
-            # Create a single Claude Code run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.CLAUDE_CODE,
-                message_id=data.message_id,
-            )
-            runs.append(run)
-        elif data.executor_type == ExecutorType.CODEX_CLI:
-            # Create a single Codex CLI run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.CODEX_CLI,
-                message_id=data.message_id,
-            )
-            runs.append(run)
-        elif data.executor_type == ExecutorType.GEMINI_CLI:
-            # Create a single Gemini CLI run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.GEMINI_CLI,
-                message_id=data.message_id,
-            )
-            runs.append(run)
+        # Determine executor types to use:
+        # 1. If executor_types is specified, use it (new multi-CLI parallel execution)
+        # 2. Otherwise, fall back to executor_type for backward compatibility
+        executor_types: list[ExecutorType]
+        if data.executor_types:
+            executor_types = data.executor_types
         else:
+            executor_types = [data.executor_type]
+
+        # Note: Each executor type maintains its own worktree and session
+        # so we allow multiple different CLI types in the same task
+
+        # Separate CLI executors from PATCH_AGENT
+        cli_executor_types = [
+            et
+            for et in executor_types
+            if et in {ExecutorType.CLAUDE_CODE, ExecutorType.CODEX_CLI, ExecutorType.GEMINI_CLI}
+        ]
+        has_patch_agent = ExecutorType.PATCH_AGENT in executor_types
+
+        # Create runs for each CLI executor type
+        for executor_type in cli_executor_types:
+            run = await self._create_cli_run(
+                task_id=task_id,
+                repo=repo,
+                instruction=data.instruction,
+                base_ref=data.base_ref or repo.default_branch,
+                executor_type=executor_type,
+                message_id=data.message_id,
+            )
+            runs.append(run)
+
+        # Handle PATCH_AGENT if included
+        if has_patch_agent:
             # Create runs for each model (PatchAgent)
             model_ids = data.model_ids
             if not model_ids:

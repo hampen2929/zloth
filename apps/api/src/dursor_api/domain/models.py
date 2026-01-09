@@ -175,6 +175,10 @@ class RunCreate(BaseModel):
         default=ExecutorType.PATCH_AGENT,
         description="Executor type: patch_agent (LLM) or claude_code (CLI)",
     )
+    executor_types: list[ExecutorType] | None = Field(
+        None,
+        description="List of executor types to run in parallel (overrides executor_type)",
+    )
     message_id: str | None = Field(None, description="ID of the triggering message")
 
 
