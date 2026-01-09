@@ -29,6 +29,7 @@ from dursor_api.domain.models import (
 )
 from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
+from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
 from dursor_api.storage.dao import PRDAO, RunDAO, TaskDAO
 
@@ -60,6 +61,7 @@ class PRService:
         run_dao: RunDAO,
         repo_service: RepoService,
         github_service: GitHubService,
+        model_service: ModelService,
         git_service: GitService | None = None,
         llm_router: LLMRouter | None = None,
     ):
@@ -68,6 +70,7 @@ class PRService:
         self.run_dao = run_dao
         self.repo_service = repo_service
         self.github_service = github_service
+        self.model_service = model_service
         self.git_service = git_service or GitService()
         self.llm_router = llm_router or LLMRouter()
 
@@ -510,10 +513,19 @@ class PRService:
         prompt = self._build_description_prompt_for_new_pr(diff, template, task, title, run)
 
         try:
+            # Use the same model as the Run for consistency
+            provider = run.provider or Provider.ANTHROPIC
+            model_name = run.model_name or "claude-3-haiku-20240307"
+
+            # Get API key from the Run's model profile
+            api_key = ""
+            if run.model_id:
+                api_key = await self.model_service.get_decrypted_key(run.model_id) or ""
+
             config = LLMConfig(
-                provider=Provider.ANTHROPIC,
-                model_name="claude-3-haiku-20240307",
-                api_key="",  # Will be loaded from environment
+                provider=provider,
+                model_name=model_name,
+                api_key=api_key,
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
@@ -525,7 +537,8 @@ class PRService:
                 ),
             )
             return response
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to generate PR description with LLM: {e}")
             # Fallback to a simple description
             return self._generate_fallback_description_for_new_pr(diff, title, run, template)
 
@@ -809,6 +822,7 @@ class PRService:
             template=template,
             task=task,
             pr=pr,
+            run=latest_run,
         )
 
         # Update PR via GitHub API
@@ -891,6 +905,7 @@ class PRService:
         template: str | None,
         task: Task,
         pr: PR,
+        run: Run | None = None,
     ) -> str:
         """Generate PR description using LLM.
 
@@ -899,19 +914,27 @@ class PRService:
             template: Optional PR template.
             task: Task object.
             pr: PR object.
+            run: Optional Run object for model settings.
 
         Returns:
             Generated description string.
         """
         prompt = self._build_description_prompt(diff, template, task, pr)
 
-        # Generate with LLM using a default model
-        # In production, this could be configurable
         try:
+            # Use the Run's model settings if available
+            provider = (run.provider if run else None) or Provider.ANTHROPIC
+            model_name = (run.model_name if run else None) or "claude-3-haiku-20240307"
+
+            # Get API key from the Run's model profile
+            api_key = ""
+            if run and run.model_id:
+                api_key = await self.model_service.get_decrypted_key(run.model_id) or ""
+
             config = LLMConfig(
-                provider=Provider.ANTHROPIC,
-                model_name="claude-3-haiku-20240307",
-                api_key="",  # Will be loaded from environment
+                provider=provider,
+                model_name=model_name,
+                api_key=api_key,
             )
             llm_client = self.llm_router.get_client(config)
             response = await llm_client.generate(
@@ -923,7 +946,8 @@ class PRService:
                 ),
             )
             return response
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to generate PR description with LLM: {e}")
             # Fallback to a simple description if LLM fails
             return self._generate_fallback_description(diff, pr, template)
 
