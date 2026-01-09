@@ -45,6 +45,7 @@ export interface Task {
   id: string;
   repo_id: string;
   title: string | null;
+  kanban_status: string;
   created_at: string;
   updated_at: string;
 }
@@ -312,6 +313,35 @@ export interface TaskBulkCreate {
 export interface TaskBulkCreated {
   created_tasks: Task[];
   count: number;
+}
+
+// Kanban
+export type TaskKanbanStatus =
+  | 'backlog'
+  | 'todo'
+  | 'in_progress'
+  | 'in_review'
+  | 'done'
+  | 'archived';
+
+export interface TaskWithKanbanStatus extends Task {
+  computed_status: TaskKanbanStatus;
+  run_count: number;
+  running_count: number;
+  completed_count: number;
+  pr_count: number;
+  latest_pr_status: string | null;
+}
+
+export interface KanbanColumn {
+  status: TaskKanbanStatus;
+  tasks: TaskWithKanbanStatus[];
+  count: number;
+}
+
+export interface KanbanBoard {
+  columns: KanbanColumn[];
+  total_tasks: number;
 }
 
 // Backlog

@@ -380,3 +380,33 @@ class GitHubService:
         if isinstance(prs, list) and prs:
             return prs[0]
         return None
+
+    async def get_pull_request_status(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+    ) -> dict:
+        """Get PR status from GitHub API.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            pr_number: PR number.
+
+        Returns:
+            Dict with:
+                - state: "open" | "closed"
+                - merged: bool
+                - merged_at: str | None
+        """
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        return {
+            "state": pr_data.get("state", "open"),
+            "merged": pr_data.get("merged", False),
+            "merged_at": pr_data.get("merged_at"),
+        }

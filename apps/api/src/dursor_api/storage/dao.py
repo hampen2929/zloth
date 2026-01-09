@@ -17,6 +17,7 @@ from dursor_api.domain.enums import (
     PRCreationMode,
     Provider,
     RunStatus,
+    TaskBaseKanbanStatus,
 )
 from dursor_api.domain.models import (
     PR,
@@ -244,11 +245,96 @@ class TaskDAO:
         )
         await self.db.connection.commit()
 
+    async def update_kanban_status(self, task_id: str, status: TaskBaseKanbanStatus) -> None:
+        """Update task kanban status (backlog/todo/archived only)."""
+        await self.db.connection.execute(
+            "UPDATE tasks SET kanban_status = ?, updated_at = ? WHERE id = ?",
+            (status.value, now_iso(), task_id),
+        )
+        await self.db.connection.commit()
+
+    async def list_with_aggregates(
+        self, repo_id: str | None = None
+    ) -> builtins.list[dict[str, Any]]:
+        """List tasks with run/PR aggregation for kanban status calculation.
+
+        Returns tasks with:
+        - run_count: total runs
+        - running_count: runs with status='running'
+        - completed_count: runs with status in (succeeded, failed, canceled)
+        - pr_count: total PRs
+        - latest_pr_status: most recent PR status
+        """
+        query = """
+            SELECT
+                t.*,
+                COALESCE(r.run_count, 0) as run_count,
+                COALESCE(r.running_count, 0) as running_count,
+                COALESCE(r.completed_count, 0) as completed_count,
+                COALESCE(p.pr_count, 0) as pr_count,
+                p.latest_pr_status
+            FROM tasks t
+            LEFT JOIN (
+                SELECT
+                    task_id,
+                    COUNT(*) as run_count,
+                    SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END)
+                        as running_count,
+                    SUM(CASE WHEN status IN ('succeeded', 'failed', 'canceled')
+                        THEN 1 ELSE 0 END) as completed_count
+                FROM runs
+                GROUP BY task_id
+            ) r ON t.id = r.task_id
+            LEFT JOIN (
+                SELECT
+                    task_id,
+                    COUNT(*) as pr_count,
+                    (SELECT status FROM prs WHERE task_id = p2.task_id
+                        ORDER BY created_at DESC LIMIT 1) as latest_pr_status
+                FROM prs p2
+                GROUP BY task_id
+            ) p ON t.id = p.task_id
+        """
+        params: list[Any] = []
+
+        if repo_id:
+            query += " WHERE t.repo_id = ?"
+            params.append(repo_id)
+
+        query += " ORDER BY t.updated_at DESC"
+
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+
+        result: builtins.list[dict[str, Any]] = []
+        for row in rows:
+            # Handle kanban_status for backward compatibility
+            kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
+            result.append(
+                {
+                    "id": row["id"],
+                    "repo_id": row["repo_id"],
+                    "title": row["title"],
+                    "kanban_status": kanban_status,
+                    "created_at": datetime.fromisoformat(row["created_at"]),
+                    "updated_at": datetime.fromisoformat(row["updated_at"]),
+                    "run_count": row["run_count"],
+                    "running_count": row["running_count"],
+                    "completed_count": row["completed_count"],
+                    "pr_count": row["pr_count"],
+                    "latest_pr_status": row["latest_pr_status"],
+                }
+            )
+        return result
+
     def _row_to_model(self, row: Any) -> Task:
+        # Handle kanban_status for backward compatibility
+        kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
         return Task(
             id=row["id"],
             repo_id=row["repo_id"],
             title=row["title"],
+            kanban_status=kanban_status,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -695,6 +781,14 @@ class PRDAO:
         await self.db.connection.execute(
             "UPDATE prs SET body = ?, updated_at = ? WHERE id = ?",
             (body, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_status(self, id: str, status: str) -> None:
+        """Update PR status (open/merged/closed)."""
+        await self.db.connection.execute(
+            "UPDATE prs SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now_iso(), id),
         )
         await self.db.connection.commit()
 

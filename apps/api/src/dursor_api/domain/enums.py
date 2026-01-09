@@ -72,6 +72,37 @@ class EstimatedSize(str, Enum):
     LARGE = "large"
 
 
+class TaskKanbanStatus(str, Enum):
+    """Task kanban status.
+
+    - backlog, todo, archived: Stored in DB (manually set by human)
+    - in_progress, in_review, done: Dynamically computed from Run/PR (overrides DB)
+    """
+
+    BACKLOG = "backlog"
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    IN_REVIEW = "in_review"
+    DONE = "done"
+    ARCHIVED = "archived"
+
+
+class TaskBaseKanbanStatus(str, Enum):
+    """Task base kanban status (stored in DB, manually set by human)."""
+
+    BACKLOG = "backlog"
+    TODO = "todo"
+    ARCHIVED = "archived"
+
+
+class PRStatus(str, Enum):
+    """PR status on GitHub."""
+
+    OPEN = "open"
+    MERGED = "merged"
+    CLOSED = "closed"
+
+
 class BacklogStatus(str, Enum):
     """Backlog item status."""
 

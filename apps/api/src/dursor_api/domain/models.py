@@ -15,6 +15,7 @@ from dursor_api.domain.enums import (
     PRCreationMode,
     Provider,
     RunStatus,
+    TaskKanbanStatus,
 )
 
 # ============================================================
@@ -90,11 +91,38 @@ class Task(BaseModel):
     id: str
     repo_id: str
     title: str | None
+    kanban_status: str = "backlog"  # Base status stored in DB (backlog/todo/archived)
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class TaskWithKanbanStatus(Task):
+    """Task with computed kanban status for kanban board display."""
+
+    computed_status: TaskKanbanStatus  # Final kanban status (including dynamic computation)
+    run_count: int = 0
+    running_count: int = 0  # Number of runs with status='running'
+    completed_count: int = 0  # Number of completed runs
+    pr_count: int = 0
+    latest_pr_status: str | None = None
+
+
+class KanbanColumn(BaseModel):
+    """Kanban column with tasks."""
+
+    status: TaskKanbanStatus
+    tasks: list[TaskWithKanbanStatus]
+    count: int
+
+
+class KanbanBoard(BaseModel):
+    """Full kanban board response."""
+
+    columns: list[KanbanColumn]
+    total_tasks: int
 
 
 class TaskDetail(Task):

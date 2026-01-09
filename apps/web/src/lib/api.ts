@@ -35,6 +35,7 @@ import type {
   GitHubRepository,
   UserPreferences,
   UserPreferencesSave,
+  KanbanBoard,
   BacklogItem,
   BacklogItemCreate,
   BacklogItemUpdate,
@@ -387,6 +388,33 @@ export const breakdownApi = {
       cancelled = true;
     };
   },
+};
+
+// Kanban
+export const kanbanApi = {
+  getBoard: (repoId?: string) => {
+    const params = repoId ? `?repo_id=${repoId}` : '';
+    return fetchApi<KanbanBoard>(`/kanban${params}`);
+  },
+
+  moveToTodo: (taskId: string) =>
+    fetchApi<Task>(`/kanban/tasks/${taskId}/move-to-todo`, { method: 'POST' }),
+
+  moveToBacklog: (taskId: string) =>
+    fetchApi<Task>(`/kanban/tasks/${taskId}/move-to-backlog`, {
+      method: 'POST',
+    }),
+
+  archiveTask: (taskId: string) =>
+    fetchApi<Task>(`/kanban/tasks/${taskId}/archive`, { method: 'POST' }),
+
+  unarchiveTask: (taskId: string) =>
+    fetchApi<Task>(`/kanban/tasks/${taskId}/unarchive`, { method: 'POST' }),
+
+  syncPRStatus: (taskId: string, prId: string) =>
+    fetchApi<PR>(`/kanban/tasks/${taskId}/prs/${prId}/sync-status`, {
+      method: 'POST',
+    }),
 };
 
 // Backlog

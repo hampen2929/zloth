@@ -11,6 +11,7 @@ from dursor_api.routes import (
     backlog_router,
     breakdown_router,
     github_router,
+    kanban_router,
     models_router,
     preferences_router,
     prs_router,
@@ -55,6 +56,7 @@ app.add_middleware(
 app.include_router(backlog_router, prefix="/v1")
 app.include_router(breakdown_router, prefix="/v1")
 app.include_router(github_router, prefix="/v1")
+app.include_router(kanban_router, prefix="/v1")
 app.include_router(models_router, prefix="/v1")
 app.include_router(preferences_router, prefix="/v1")
 app.include_router(repos_router, prefix="/v1")

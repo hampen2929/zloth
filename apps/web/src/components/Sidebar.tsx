@@ -18,6 +18,7 @@ import {
   XMarkIcon,
   ArrowsUpDownIcon,
   ClipboardDocumentListIcon,
+  ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 
 type SortOption = 'newest' | 'oldest' | 'alphabetical';
@@ -105,7 +106,7 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
       {/* Mobile spacing to account for mobile header */}
       <div className="lg:hidden h-14" />
 
-      {/* New Task & Backlog Buttons */}
+      {/* New Task & Navigation Buttons */}
       <div className="p-3 space-y-2">
         <Link
           href="/"
@@ -131,6 +132,19 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
         >
           <ClipboardDocumentListIcon className="w-4 h-4" />
           Backlog
+        </Link>
+        <Link
+          href="/kanban"
+          className={cn(
+            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
+            'bg-gray-800 hover:bg-gray-700 rounded-lg',
+            'text-sm font-medium transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/kanban' && 'bg-gray-700 ring-2 ring-gray-500'
+          )}
+        >
+          <ViewColumnsIcon className="w-4 h-4" />
+          Kanban Board
         </Link>
       </div>
 

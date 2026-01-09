@@ -5,6 +5,7 @@ from dursor_api.services.breakdown_service import BreakdownService
 from dursor_api.services.crypto_service import CryptoService
 from dursor_api.services.git_service import GitService
 from dursor_api.services.github_service import GitHubService
+from dursor_api.services.kanban_service import KanbanService
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.output_manager import OutputManager
 from dursor_api.services.pr_service import PRService
@@ -166,3 +167,12 @@ async def get_breakdown_service() -> BreakdownService:
         backlog_dao = await get_backlog_dao()
         _breakdown_service = BreakdownService(repo_dao, output_manager, backlog_dao)
     return _breakdown_service
+
+
+async def get_kanban_service() -> KanbanService:
+    """Get the kanban service."""
+    task_dao = await get_task_dao()
+    run_dao = await get_run_dao()
+    pr_dao = await get_pr_dao()
+    github_service = await get_github_service()
+    return KanbanService(task_dao, run_dao, pr_dao, github_service)
