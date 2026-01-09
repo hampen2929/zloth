@@ -517,6 +517,22 @@ class PRSyncResult(BaseModel):
     pr: "PRCreated | None" = None
 
 
+class PRLinkJob(BaseModel):
+    """Response for starting async PR link generation."""
+
+    job_id: str = Field(..., description="Job ID for polling status")
+    status: str = Field(default="pending", description="Job status: pending, completed, failed")
+
+
+class PRLinkJobResult(BaseModel):
+    """Result of async PR link generation job."""
+
+    job_id: str
+    status: str = Field(..., description="Job status: pending, completed, failed")
+    result: PRCreateLink | None = Field(None, description="Result if completed")
+    error: str | None = Field(None, description="Error message if failed")
+
+
 # ============================================================
 # Task Breakdown
 # ============================================================

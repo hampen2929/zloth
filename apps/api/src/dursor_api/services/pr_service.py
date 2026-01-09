@@ -7,9 +7,11 @@ pushed by RunService, so this service only handles GitHub API operations.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode, urlparse
@@ -22,6 +24,8 @@ from dursor_api.domain.models import (
     PRCreateAuto,
     PRCreated,
     PRCreateLink,
+    PRLinkJob,
+    PRLinkJobResult,
     PRSyncResult,
     PRUpdate,
     Repo,
@@ -47,6 +51,70 @@ class GitHubPermissionError(Exception):
     """Raised when GitHub App lacks required permissions."""
 
     pass
+
+
+@dataclass
+class PRLinkJobData:
+    """Data for a PR link generation job."""
+
+    job_id: str
+    task_id: str
+    selected_run_id: str
+    status: str = "pending"  # pending, completed, failed
+    result: PRCreateLink | None = None
+    error: str | None = None
+
+
+class PRLinkJobQueue:
+    """In-memory queue for PR link generation jobs."""
+
+    def __init__(self) -> None:
+        self._jobs: dict[str, PRLinkJobData] = {}
+        self._tasks: dict[str, asyncio.Task[None]] = {}
+
+    def create_job(self, task_id: str, selected_run_id: str) -> PRLinkJobData:
+        """Create a new job."""
+        job_id = str(uuid.uuid4())
+        job = PRLinkJobData(
+            job_id=job_id,
+            task_id=task_id,
+            selected_run_id=selected_run_id,
+        )
+        self._jobs[job_id] = job
+        return job
+
+    def get_job(self, job_id: str) -> PRLinkJobData | None:
+        """Get job by ID."""
+        return self._jobs.get(job_id)
+
+    def set_task(self, job_id: str, task: asyncio.Task[None]) -> None:
+        """Set asyncio task for job."""
+        self._tasks[job_id] = task
+
+    def complete_job(self, job_id: str, result: PRCreateLink) -> None:
+        """Mark job as completed with result."""
+        job = self._jobs.get(job_id)
+        if job:
+            job.status = "completed"
+            job.result = result
+
+    def fail_job(self, job_id: str, error: str) -> None:
+        """Mark job as failed with error."""
+        job = self._jobs.get(job_id)
+        if job:
+            job.status = "failed"
+            job.error = error
+
+    def cleanup_old_jobs(self, max_jobs: int = 100) -> None:
+        """Remove oldest jobs if too many."""
+        if len(self._jobs) > max_jobs:
+            # Remove oldest completed/failed jobs
+            completed = [
+                (k, v) for k, v in self._jobs.items() if v.status in ("completed", "failed")
+            ]
+            for job_id, _ in completed[: len(completed) - max_jobs // 2]:
+                del self._jobs[job_id]
+                self._tasks.pop(job_id, None)
 
 
 class PRService:
@@ -75,6 +143,8 @@ class PRService:
         self.github_service = github_service
         self.model_service = model_service
         self.git_service = git_service or GitService()
+        # Job queue for async PR link generation
+        self.link_job_queue = PRLinkJobQueue()
         # Initialize executors for PR description generation
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
@@ -455,6 +525,59 @@ class PRService:
                 branch=created.branch,
                 number=created.number,
             ),
+        )
+
+    def start_link_auto_job(self, task_id: str, data: PRCreateAuto) -> PRLinkJob:
+        """Start async PR link generation job.
+
+        This method returns immediately with a job ID that can be polled
+        to check the status of the PR link generation.
+
+        Args:
+            task_id: Task ID.
+            data: PR creation data.
+
+        Returns:
+            PRLinkJob with job ID and initial status.
+        """
+        # Create job
+        job = self.link_job_queue.create_job(task_id, data.selected_run_id)
+
+        # Start background task
+        async def run_job() -> None:
+            try:
+                result = await self.create_link_auto(task_id, data)
+                self.link_job_queue.complete_job(job.job_id, result)
+            except Exception as e:
+                logger.exception(f"PR link job {job.job_id} failed")
+                self.link_job_queue.fail_job(job.job_id, str(e))
+
+        task = asyncio.create_task(run_job())
+        self.link_job_queue.set_task(job.job_id, task)
+
+        # Cleanup old jobs
+        self.link_job_queue.cleanup_old_jobs()
+
+        return PRLinkJob(job_id=job.job_id, status=job.status)
+
+    def get_link_auto_job(self, job_id: str) -> PRLinkJobResult | None:
+        """Get status of PR link generation job.
+
+        Args:
+            job_id: Job ID.
+
+        Returns:
+            PRLinkJobResult or None if job not found.
+        """
+        job = self.link_job_queue.get_job(job_id)
+        if not job:
+            return None
+
+        return PRLinkJobResult(
+            job_id=job.job_id,
+            status=job.status,
+            result=job.result,
+            error=job.error,
         )
 
     async def _generate_title_and_description(
