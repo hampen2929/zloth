@@ -43,3 +43,30 @@ class PRCreationMode(str, Enum):
 
     CREATE = "create"  # Create PR immediately via GitHub API
     LINK = "link"  # Open a GitHub compare link; user creates PR manually
+
+
+class BreakdownStatus(str, Enum):
+    """Task breakdown status."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class BrokenDownTaskType(str, Enum):
+    """Type of broken down task."""
+
+    FEATURE = "feature"
+    BUG_FIX = "bug_fix"
+    REFACTORING = "refactoring"
+    DOCS = "docs"
+    TEST = "test"
+
+
+class EstimatedSize(str, Enum):
+    """Estimated size of a task."""
+
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"

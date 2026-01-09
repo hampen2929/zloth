@@ -5,7 +5,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from dursor_api.domain.enums import ExecutorType, MessageRole, PRCreationMode, Provider, RunStatus
+from dursor_api.domain.enums import (
+    BreakdownStatus,
+    BrokenDownTaskType,
+    EstimatedSize,
+    ExecutorType,
+    MessageRole,
+    PRCreationMode,
+    Provider,
+    RunStatus,
+)
 
 # ============================================================
 # Model Profile
@@ -477,3 +486,68 @@ class PRSyncResult(BaseModel):
 
     found: bool
     pr: "PRCreated | None" = None
+
+
+# ============================================================
+# Task Breakdown
+# ============================================================
+
+
+class TaskBreakdownRequest(BaseModel):
+    """Request for breaking down a task from hearing content."""
+
+    content: str = Field(..., description="Hearing content to break down into tasks")
+    executor_type: ExecutorType = Field(
+        default=ExecutorType.CLAUDE_CODE,
+        description="Agent tool to use for breakdown (CLI only)",
+    )
+    repo_id: str = Field(..., description="Target repository ID")
+    context: dict[str, Any] | None = Field(None, description="Additional context")
+
+
+class BrokenDownTask(BaseModel):
+    """A task broken down from hearing content."""
+
+    title: str = Field(..., description="Task title (max 50 chars)")
+    description: str = Field(..., description="Task description with implementation details")
+    type: BrokenDownTaskType = Field(..., description="Type of task")
+    estimated_size: EstimatedSize = Field(..., description="Estimated size")
+    target_files: list[str] = Field(default_factory=list, description="Files to modify")
+    implementation_hint: str | None = Field(None, description="Implementation hints")
+    tags: list[str] = Field(default_factory=list, description="Related tags")
+
+
+class CodebaseAnalysis(BaseModel):
+    """Result of codebase analysis during breakdown."""
+
+    files_analyzed: int = Field(..., description="Number of files analyzed")
+    relevant_modules: list[str] = Field(default_factory=list, description="Relevant modules")
+    tech_stack: list[str] = Field(default_factory=list, description="Detected tech stack")
+
+
+class TaskBreakdownResponse(BaseModel):
+    """Response from task breakdown."""
+
+    breakdown_id: str = Field(..., description="Breakdown session ID")
+    status: BreakdownStatus = Field(..., description="Breakdown status")
+    tasks: list[BrokenDownTask] = Field(default_factory=list, description="Broken down tasks")
+    summary: str | None = Field(None, description="Summary of breakdown")
+    original_content: str = Field(..., description="Original hearing content")
+    codebase_analysis: CodebaseAnalysis | None = Field(
+        None, description="Codebase analysis result"
+    )
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class TaskBulkCreate(BaseModel):
+    """Request for bulk creating tasks."""
+
+    repo_id: str = Field(..., description="Repository ID")
+    tasks: list[TaskCreate] = Field(..., description="Tasks to create")
+
+
+class TaskBulkCreated(BaseModel):
+    """Response from bulk task creation."""
+
+    created_tasks: list[Task] = Field(..., description="Created tasks")
+    count: int = Field(..., description="Number of tasks created")

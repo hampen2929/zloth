@@ -9,6 +9,8 @@ from dursor_api.domain.models import (
     PRSummary,
     RunSummary,
     Task,
+    TaskBulkCreate,
+    TaskBulkCreated,
     TaskCreate,
     TaskDetail,
 )
@@ -124,3 +126,35 @@ async def list_messages(
         raise HTTPException(status_code=404, detail="Task not found")
 
     return await message_dao.list(task_id)
+
+
+@router.post("/bulk", response_model=TaskBulkCreated, status_code=201)
+async def bulk_create_tasks(
+    data: TaskBulkCreate,
+    task_dao: TaskDAO = Depends(get_task_dao),
+) -> TaskBulkCreated:
+    """Bulk create multiple tasks.
+
+    This endpoint is typically used after task breakdown to register
+    multiple decomposed tasks at once.
+
+    Args:
+        data: Bulk create request with repo_id and list of tasks.
+        task_dao: Task data access object.
+
+    Returns:
+        TaskBulkCreated with created tasks and count.
+    """
+    created_tasks: list[Task] = []
+
+    for task_create in data.tasks:
+        task = await task_dao.create(
+            repo_id=data.repo_id,
+            title=task_create.title,
+        )
+        created_tasks.append(task)
+
+    return TaskBulkCreated(
+        created_tasks=created_tasks,
+        count=len(created_tasks),
+    )

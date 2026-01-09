@@ -11,6 +11,11 @@ import type {
   Task,
   TaskCreate,
   TaskDetail,
+  TaskBulkCreate,
+  TaskBulkCreated,
+  TaskBreakdownRequest,
+  TaskBreakdownResponse,
+  BreakdownLogsResponse,
   Message,
   MessageCreate,
   Run,
@@ -124,6 +129,12 @@ export const tasksApi = {
 
   create: (data: TaskCreate) =>
     fetchApi<Task>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  bulkCreate: (data: TaskBulkCreate) =>
+    fetchApi<TaskBulkCreated>('/tasks/bulk', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -290,6 +301,88 @@ export const preferencesApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+};
+
+// Breakdown
+export const breakdownApi = {
+  analyze: (data: TaskBreakdownRequest) =>
+    fetchApi<TaskBreakdownResponse>('/breakdown', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getResult: (breakdownId: string) =>
+    fetchApi<TaskBreakdownResponse>(`/breakdown/${breakdownId}`),
+
+  getLogs: (breakdownId: string, fromLine: number = 0) =>
+    fetchApi<BreakdownLogsResponse>(
+      `/breakdown/${breakdownId}/logs?from_line=${fromLine}`
+    ),
+
+  /**
+   * Stream breakdown logs by polling the logs endpoint.
+   *
+   * @param breakdownId - The breakdown ID to stream logs for
+   * @param options - Streaming options
+   * @returns Cleanup function to stop polling
+   */
+  streamLogs: (
+    breakdownId: string,
+    options: {
+      fromLine?: number;
+      onLine: (line: OutputLine) => void;
+      onComplete: () => void;
+      onError: (error: Error) => void;
+    }
+  ): (() => void) => {
+    let cancelled = false;
+    let nextLine = options.fromLine ?? 0;
+    const pollInterval = 500;
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      try {
+        const result = await breakdownApi.getLogs(breakdownId, nextLine);
+
+        // Send new lines
+        for (const log of result.logs) {
+          if (cancelled) break;
+          options.onLine(log);
+        }
+
+        // Update next line position
+        if (result.logs.length > 0) {
+          nextLine = result.total_lines;
+        }
+
+        // Check if complete
+        if (result.is_complete) {
+          options.onComplete();
+          return;
+        }
+
+        // Continue polling if still running
+        if (!cancelled) {
+          setTimeout(poll, pollInterval);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          options.onError(
+            error instanceof Error ? error : new Error('Failed to fetch logs')
+          );
+        }
+      }
+    };
+
+    // Start polling
+    poll();
+
+    // Return cleanup function
+    return () => {
+      cancelled = true;
+    };
+  },
 };
 
 export { ApiError };

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import SettingsModal from './SettingsModal';
+import BreakdownModal from './BreakdownModal';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 import { ToastProvider } from './ui/Toast';
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -19,6 +20,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'models' | 'github' | 'defaults' | undefined>(undefined);
 
   // Register keyboard shortcuts
@@ -134,6 +136,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
               setSettingsOpen(true);
               setSidebarOpen(false);
             }}
+            onBreakdownClick={() => {
+              setBreakdownOpen(true);
+              setSidebarOpen(false);
+            }}
           />
         </div>
 
@@ -151,6 +157,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         <KeyboardShortcutsHelp
           isOpen={shortcutsHelpOpen}
           onClose={() => setShortcutsHelpOpen(false)}
+        />
+
+        <BreakdownModal
+          isOpen={breakdownOpen}
+          onClose={() => setBreakdownOpen(false)}
         />
       </div>
     </ToastProvider>

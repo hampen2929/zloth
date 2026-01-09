@@ -10,6 +10,7 @@ import { formatRelativeTime } from '@/lib/utils';
 import { TaskListSkeleton } from './ui/Skeleton';
 import {
   PlusIcon,
+  SparklesIcon,
   UserCircleIcon,
   Cog6ToothIcon,
   ChevronUpIcon,
@@ -23,9 +24,10 @@ type SortOption = 'newest' | 'oldest' | 'alphabetical';
 
 interface SidebarProps {
   onSettingsClick: () => void;
+  onBreakdownClick: () => void;
 }
 
-export default function Sidebar({ onSettingsClick }: SidebarProps) {
+export default function Sidebar({ onSettingsClick, onBreakdownClick }: SidebarProps) {
   const pathname = usePathname();
   const { data: tasks, isLoading } = useSWR('tasks', () => tasksApi.list(), {
     refreshInterval: 5000,
@@ -105,7 +107,7 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
       <div className="lg:hidden h-14" />
 
       {/* New Task Button */}
-      <div className="p-3">
+      <div className="p-3 space-y-2">
         <Link
           href="/"
           className={cn(
@@ -118,6 +120,18 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
           <PlusIcon className="w-4 h-4" />
           New Task
         </Link>
+        <button
+          onClick={onBreakdownClick}
+          className={cn(
+            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
+            'bg-purple-600 hover:bg-purple-700 rounded-lg',
+            'text-sm font-medium transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900'
+          )}
+        >
+          <SparklesIcon className="w-4 h-4" />
+          Breakdown
+        </button>
       </div>
 
       {/* Search and Filter */}

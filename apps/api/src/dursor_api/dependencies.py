@@ -1,6 +1,7 @@
 """FastAPI dependency injection."""
 
 from dursor_api.config import settings
+from dursor_api.services.breakdown_service import BreakdownService
 from dursor_api.services.crypto_service import CryptoService
 from dursor_api.services.git_service import GitService
 from dursor_api.services.github_service import GitHubService
@@ -25,6 +26,7 @@ _crypto_service: CryptoService | None = None
 _run_service: RunService | None = None
 _git_service: GitService | None = None
 _output_manager: OutputManager | None = None
+_breakdown_service: BreakdownService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -146,3 +148,13 @@ async def get_user_preferences_dao() -> UserPreferencesDAO:
     """Get UserPreferences DAO."""
     db = await get_db()
     return UserPreferencesDAO(db)
+
+
+async def get_breakdown_service() -> BreakdownService:
+    """Get the breakdown service singleton."""
+    global _breakdown_service
+    if _breakdown_service is None:
+        repo_dao = await get_repo_dao()
+        output_manager = get_output_manager()
+        _breakdown_service = BreakdownService(repo_dao, output_manager)
+    return _breakdown_service

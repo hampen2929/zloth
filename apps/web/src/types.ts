@@ -253,3 +253,57 @@ export interface UserPreferencesSave {
   default_branch_prefix?: string | null;
   default_pr_creation_mode?: PRCreationMode | null;
 }
+
+// Task Breakdown
+export type BreakdownStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+export type BrokenDownTaskType = 'feature' | 'bug_fix' | 'refactoring' | 'docs' | 'test';
+export type EstimatedSize = 'small' | 'medium' | 'large';
+
+export interface TaskBreakdownRequest {
+  content: string;
+  executor_type: ExecutorType;
+  repo_id: string;
+  context?: Record<string, unknown>;
+}
+
+export interface BrokenDownTask {
+  title: string;
+  description: string;
+  type: BrokenDownTaskType;
+  estimated_size: EstimatedSize;
+  target_files: string[];
+  implementation_hint: string | null;
+  tags: string[];
+}
+
+export interface CodebaseAnalysis {
+  files_analyzed: number;
+  relevant_modules: string[];
+  tech_stack: string[];
+}
+
+export interface TaskBreakdownResponse {
+  breakdown_id: string;
+  status: BreakdownStatus;
+  tasks: BrokenDownTask[];
+  summary: string | null;
+  original_content: string;
+  codebase_analysis: CodebaseAnalysis | null;
+  error: string | null;
+}
+
+export interface BreakdownLogsResponse {
+  logs: OutputLine[];
+  is_complete: boolean;
+  total_lines: number;
+}
+
+export interface TaskBulkCreate {
+  repo_id: string;
+  tasks: TaskCreate[];
+}
+
+export interface TaskBulkCreated {
+  created_tasks: Task[];
+  count: number;
+}
