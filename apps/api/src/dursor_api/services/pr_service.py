@@ -870,7 +870,7 @@ DO NOT edit any files. Only output the title text.
     ) -> str | None:
         """Execute Agent Tool to generate PR description.
 
-        Writes the result to a temp file in /tmp and reads it back.
+        Writes the result to a temp file and reads it back.
 
         Args:
             worktree_path: Path to the worktree.
@@ -880,8 +880,10 @@ DO NOT edit any files. Only output the title text.
         Returns:
             Generated description or None if failed.
         """
-        # Create a unique temp file path (outside worktree)
-        temp_file = Path(f"/tmp/dursor_pr_desc_{uuid.uuid4().hex}.md")
+        # Create a unique temp file path inside the worktree
+        # This ensures CLI tools (especially Codex) can write to it
+        # Use a hidden file name to avoid git tracking
+        temp_file = worktree_path / f".dursor_pr_desc_{uuid.uuid4().hex}.md"
 
         # Wrap the prompt to write output to the temp file
         wrapped_prompt = f"""{prompt}
