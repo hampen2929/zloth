@@ -9,6 +9,9 @@ from datetime import datetime
 from typing import Any
 
 from dursor_api.domain.enums import (
+    BacklogStatus,
+    BrokenDownTaskType,
+    EstimatedSize,
     ExecutorType,
     MessageRole,
     PRCreationMode,
@@ -17,11 +20,13 @@ from dursor_api.domain.enums import (
 )
 from dursor_api.domain.models import (
     PR,
+    BacklogItem,
     FileDiff,
     Message,
     ModelProfile,
     Repo,
     Run,
+    SubTask,
     Task,
     UserPreferences,
 )
@@ -808,4 +813,249 @@ class UserPreferencesDAO:
                 if "default_pr_creation_mode" in row.keys() and row["default_pr_creation_mode"]
                 else "create"
             ),
+        )
+
+
+class BacklogDAO:
+    """DAO for BacklogItem."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        repo_id: str,
+        title: str,
+        description: str = "",
+        type: BrokenDownTaskType = BrokenDownTaskType.FEATURE,
+        estimated_size: EstimatedSize = EstimatedSize.MEDIUM,
+        target_files: list[str] | None = None,
+        implementation_hint: str | None = None,
+        tags: list[str] | None = None,
+        subtasks: list[dict[str, Any]] | None = None,
+    ) -> BacklogItem:
+        """Create a new backlog item.
+
+        Args:
+            repo_id: Repository ID.
+            title: Item title.
+            description: Item description.
+            type: Task type.
+            estimated_size: Size estimate.
+            target_files: Target files list.
+            implementation_hint: Implementation hints.
+            tags: Tags list.
+            subtasks: List of subtasks with title.
+
+        Returns:
+            Created BacklogItem.
+        """
+        id = generate_id()
+        now = now_iso()
+
+        # Generate IDs for subtasks
+        subtask_list = []
+        if subtasks:
+            for st in subtasks:
+                subtask_list.append(
+                    {
+                        "id": generate_id(),
+                        "title": st.get("title", ""),
+                        "completed": False,
+                    }
+                )
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO backlog_items (
+                id, repo_id, title, description, type, estimated_size,
+                target_files, implementation_hint, tags, subtasks,
+                status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                repo_id,
+                title,
+                description,
+                type.value,
+                estimated_size.value,
+                json.dumps(target_files or []),
+                implementation_hint,
+                json.dumps(tags or []),
+                json.dumps(subtask_list),
+                BacklogStatus.DRAFT.value,
+                now,
+                now,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return BacklogItem(
+            id=id,
+            repo_id=repo_id,
+            title=title,
+            description=description,
+            type=type,
+            estimated_size=estimated_size,
+            target_files=target_files or [],
+            implementation_hint=implementation_hint,
+            tags=tags or [],
+            subtasks=[SubTask(**st) for st in subtask_list],
+            status=BacklogStatus.DRAFT,
+            task_id=None,
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> BacklogItem | None:
+        """Get a backlog item by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM backlog_items WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list(
+        self,
+        repo_id: str | None = None,
+        status: BacklogStatus | None = None,
+    ) -> list[BacklogItem]:
+        """List backlog items with optional filters.
+
+        Args:
+            repo_id: Filter by repository ID.
+            status: Filter by status.
+
+        Returns:
+            List of BacklogItem.
+        """
+        query = "SELECT * FROM backlog_items WHERE 1=1"
+        params: list[Any] = []
+
+        if repo_id:
+            query += " AND repo_id = ?"
+            params.append(repo_id)
+
+        if status:
+            query += " AND status = ?"
+            params.append(status.value)
+
+        query += " ORDER BY created_at DESC"
+
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update(
+        self,
+        id: str,
+        title: str | None = None,
+        description: str | None = None,
+        type: BrokenDownTaskType | None = None,
+        estimated_size: EstimatedSize | None = None,
+        target_files: builtins.list[str] | None = None,
+        implementation_hint: str | None = None,
+        tags: builtins.list[str] | None = None,
+        subtasks: builtins.list[dict[str, Any]] | None = None,
+        status: BacklogStatus | None = None,
+        task_id: str | None = None,
+    ) -> BacklogItem | None:
+        """Update a backlog item.
+
+        Args:
+            id: Backlog item ID.
+            **kwargs: Fields to update.
+
+        Returns:
+            Updated BacklogItem or None if not found.
+        """
+        updates = ["updated_at = ?"]
+        params: list[Any] = [now_iso()]
+
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title)
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+        if type is not None:
+            updates.append("type = ?")
+            params.append(type.value)
+        if estimated_size is not None:
+            updates.append("estimated_size = ?")
+            params.append(estimated_size.value)
+        if target_files is not None:
+            updates.append("target_files = ?")
+            params.append(json.dumps(target_files))
+        if implementation_hint is not None:
+            updates.append("implementation_hint = ?")
+            params.append(implementation_hint)
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags))
+        if subtasks is not None:
+            updates.append("subtasks = ?")
+            params.append(json.dumps(subtasks))
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status.value)
+        if task_id is not None:
+            updates.append("task_id = ?")
+            params.append(task_id)
+
+        params.append(id)
+
+        await self.db.connection.execute(
+            f"UPDATE backlog_items SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.connection.commit()
+
+        return await self.get(id)
+
+    async def delete(self, id: str) -> bool:
+        """Delete a backlog item.
+
+        Args:
+            id: Backlog item ID.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        cursor = await self.db.connection.execute("DELETE FROM backlog_items WHERE id = ?", (id,))
+        await self.db.connection.commit()
+        return cursor.rowcount > 0
+
+    def _row_to_model(self, row: Any) -> BacklogItem:
+        """Convert database row to BacklogItem model."""
+        target_files = []
+        if row["target_files"]:
+            target_files = json.loads(row["target_files"])
+
+        tags = []
+        if row["tags"]:
+            tags = json.loads(row["tags"])
+
+        subtasks = []
+        if row["subtasks"]:
+            subtask_data = json.loads(row["subtasks"])
+            subtasks = [SubTask(**st) for st in subtask_data]
+
+        return BacklogItem(
+            id=row["id"],
+            repo_id=row["repo_id"],
+            title=row["title"],
+            description=row["description"],
+            type=BrokenDownTaskType(row["type"]),
+            estimated_size=EstimatedSize(row["estimated_size"]),
+            target_files=target_files,
+            implementation_hint=row["implementation_hint"],
+            tags=tags,
+            subtasks=subtasks,
+            status=BacklogStatus(row["status"]),
+            task_id=row["task_id"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )

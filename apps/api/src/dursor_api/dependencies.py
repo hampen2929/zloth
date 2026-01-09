@@ -12,6 +12,7 @@ from dursor_api.services.repo_service import RepoService
 from dursor_api.services.run_service import RunService
 from dursor_api.storage.dao import (
     PRDAO,
+    BacklogDAO,
     MessageDAO,
     ModelProfileDAO,
     RepoDAO,
@@ -150,11 +151,18 @@ async def get_user_preferences_dao() -> UserPreferencesDAO:
     return UserPreferencesDAO(db)
 
 
+async def get_backlog_dao() -> BacklogDAO:
+    """Get Backlog DAO."""
+    db = await get_db()
+    return BacklogDAO(db)
+
+
 async def get_breakdown_service() -> BreakdownService:
     """Get the breakdown service singleton."""
     global _breakdown_service
     if _breakdown_service is None:
         repo_dao = await get_repo_dao()
         output_manager = get_output_manager()
-        _breakdown_service = BreakdownService(repo_dao, output_manager)
+        backlog_dao = await get_backlog_dao()
+        _breakdown_service = BreakdownService(repo_dao, output_manager, backlog_dao)
     return _breakdown_service

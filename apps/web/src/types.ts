@@ -266,6 +266,10 @@ export interface TaskBreakdownRequest {
   context?: Record<string, unknown>;
 }
 
+export interface BrokenDownSubTask {
+  title: string;
+}
+
 export interface BrokenDownTask {
   title: string;
   description: string;
@@ -274,6 +278,7 @@ export interface BrokenDownTask {
   target_files: string[];
   implementation_hint: string | null;
   tags: string[];
+  subtasks: BrokenDownSubTask[];
 }
 
 export interface CodebaseAnalysis {
@@ -286,6 +291,7 @@ export interface TaskBreakdownResponse {
   breakdown_id: string;
   status: BreakdownStatus;
   tasks: BrokenDownTask[];
+  backlog_items: BacklogItem[];
   summary: string | null;
   original_content: string;
   codebase_analysis: CodebaseAnalysis | null;
@@ -306,4 +312,58 @@ export interface TaskBulkCreate {
 export interface TaskBulkCreated {
   created_tasks: Task[];
   count: number;
+}
+
+// Backlog
+export type BacklogStatus = 'draft' | 'ready' | 'in_progress' | 'done';
+
+export interface SubTask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface SubTaskCreate {
+  title: string;
+}
+
+export interface BacklogItem {
+  id: string;
+  repo_id: string;
+  title: string;
+  description: string;
+  type: BrokenDownTaskType;
+  estimated_size: EstimatedSize;
+  target_files: string[];
+  implementation_hint: string | null;
+  tags: string[];
+  subtasks: SubTask[];
+  status: BacklogStatus;
+  task_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BacklogItemCreate {
+  repo_id: string;
+  title: string;
+  description?: string;
+  type?: BrokenDownTaskType;
+  estimated_size?: EstimatedSize;
+  target_files?: string[];
+  implementation_hint?: string;
+  tags?: string[];
+  subtasks?: SubTaskCreate[];
+}
+
+export interface BacklogItemUpdate {
+  title?: string;
+  description?: string;
+  type?: BrokenDownTaskType;
+  estimated_size?: EstimatedSize;
+  target_files?: string[];
+  implementation_hint?: string;
+  tags?: string[];
+  subtasks?: SubTask[];
+  status?: BacklogStatus;
 }

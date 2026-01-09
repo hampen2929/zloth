@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from dursor_api.domain.enums import (
+    BacklogStatus,
     BreakdownStatus,
     BrokenDownTaskType,
     EstimatedSize,
@@ -505,6 +506,12 @@ class TaskBreakdownRequest(BaseModel):
     context: dict[str, Any] | None = Field(None, description="Additional context")
 
 
+class BrokenDownSubTask(BaseModel):
+    """A subtask within a broken down task."""
+
+    title: str = Field(..., description="Subtask title")
+
+
 class BrokenDownTask(BaseModel):
     """A task broken down from hearing content."""
 
@@ -515,6 +522,9 @@ class BrokenDownTask(BaseModel):
     target_files: list[str] = Field(default_factory=list, description="Files to modify")
     implementation_hint: str | None = Field(None, description="Implementation hints")
     tags: list[str] = Field(default_factory=list, description="Related tags")
+    subtasks: list[BrokenDownSubTask] = Field(
+        default_factory=list, description="Implementation steps"
+    )
 
 
 class CodebaseAnalysis(BaseModel):
@@ -531,11 +541,12 @@ class TaskBreakdownResponse(BaseModel):
     breakdown_id: str = Field(..., description="Breakdown session ID")
     status: BreakdownStatus = Field(..., description="Breakdown status")
     tasks: list[BrokenDownTask] = Field(default_factory=list, description="Broken down tasks")
+    backlog_items: list["BacklogItem"] = Field(
+        default_factory=list, description="Created backlog items (v2)"
+    )
     summary: str | None = Field(None, description="Summary of breakdown")
     original_content: str = Field(..., description="Original hearing content")
-    codebase_analysis: CodebaseAnalysis | None = Field(
-        None, description="Codebase analysis result"
-    )
+    codebase_analysis: CodebaseAnalysis | None = Field(None, description="Codebase analysis result")
     error: str | None = Field(None, description="Error message if failed")
 
 
@@ -551,3 +562,72 @@ class TaskBulkCreated(BaseModel):
 
     created_tasks: list[Task] = Field(..., description="Created tasks")
     count: int = Field(..., description="Number of tasks created")
+
+
+# ============================================================
+# Backlog
+# ============================================================
+
+
+class SubTask(BaseModel):
+    """Subtask within a backlog item."""
+
+    id: str = Field(..., description="Subtask ID")
+    title: str = Field(..., description="Subtask title")
+    completed: bool = Field(default=False, description="Whether subtask is completed")
+
+
+class SubTaskCreate(BaseModel):
+    """Request for creating a subtask."""
+
+    title: str = Field(..., description="Subtask title")
+
+
+class BacklogItemBase(BaseModel):
+    """Base model for BacklogItem."""
+
+    title: str = Field(..., description="Task title (max 50 chars)")
+    description: str = Field(default="", description="Task description")
+    type: BrokenDownTaskType = Field(default=BrokenDownTaskType.FEATURE, description="Task type")
+    estimated_size: EstimatedSize = Field(
+        default=EstimatedSize.MEDIUM, description="Estimated size"
+    )
+    target_files: list[str] = Field(default_factory=list, description="Target files")
+    implementation_hint: str | None = Field(None, description="Implementation hints")
+    tags: list[str] = Field(default_factory=list, description="Tags")
+
+
+class BacklogItemCreate(BacklogItemBase):
+    """Request for creating a BacklogItem."""
+
+    repo_id: str = Field(..., description="Repository ID")
+    subtasks: list[SubTaskCreate] = Field(default_factory=list, description="Subtasks")
+
+
+class BacklogItemUpdate(BaseModel):
+    """Request for updating a BacklogItem."""
+
+    title: str | None = Field(None, description="Task title")
+    description: str | None = Field(None, description="Task description")
+    type: BrokenDownTaskType | None = Field(None, description="Task type")
+    estimated_size: EstimatedSize | None = Field(None, description="Estimated size")
+    target_files: list[str] | None = Field(None, description="Target files")
+    implementation_hint: str | None = Field(None, description="Implementation hints")
+    tags: list[str] | None = Field(None, description="Tags")
+    subtasks: list[SubTask] | None = Field(None, description="Subtasks")
+    status: BacklogStatus | None = Field(None, description="Status")
+
+
+class BacklogItem(BacklogItemBase):
+    """BacklogItem response."""
+
+    id: str = Field(..., description="Backlog item ID")
+    repo_id: str = Field(..., description="Repository ID")
+    subtasks: list[SubTask] = Field(default_factory=list, description="Subtasks")
+    status: BacklogStatus = Field(default=BacklogStatus.DRAFT, description="Status")
+    task_id: str | None = Field(None, description="Linked task ID if promoted")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        from_attributes = True

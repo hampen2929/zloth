@@ -86,6 +86,16 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Handle custom event to open breakdown modal
+  useEffect(() => {
+    const handleOpenBreakdown = () => {
+      setBreakdownOpen(true);
+    };
+
+    window.addEventListener('openBreakdownModal', handleOpenBreakdown);
+    return () => window.removeEventListener('openBreakdownModal', handleOpenBreakdown);
+  }, []);
+
   const handleSettingsClose = () => {
     setSettingsOpen(false);
     setSettingsDefaultTab(undefined);
@@ -134,10 +144,6 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           <Sidebar
             onSettingsClick={() => {
               setSettingsOpen(true);
-              setSidebarOpen(false);
-            }}
-            onBreakdownClick={() => {
-              setBreakdownOpen(true);
               setSidebarOpen(false);
             }}
           />

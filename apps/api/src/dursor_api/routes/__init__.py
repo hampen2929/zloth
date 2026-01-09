@@ -1,5 +1,6 @@
 """API routes for dursor."""
 
+from dursor_api.routes.backlog import router as backlog_router
 from dursor_api.routes.breakdown import router as breakdown_router
 from dursor_api.routes.github import router as github_router
 from dursor_api.routes.models import router as models_router
@@ -10,6 +11,7 @@ from dursor_api.routes.runs import router as runs_router
 from dursor_api.routes.tasks import router as tasks_router
 
 __all__ = [
+    "backlog_router",
     "breakdown_router",
     "github_router",
     "models_router",

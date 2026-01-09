@@ -116,3 +116,26 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Backlog items (feature-level tasks from breakdown)
+CREATE TABLE IF NOT EXISTS backlog_items (
+    id TEXT PRIMARY KEY,
+    repo_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    type TEXT NOT NULL DEFAULT 'feature',          -- feature, bug_fix, refactoring, docs, test
+    estimated_size TEXT NOT NULL DEFAULT 'medium', -- small, medium, large
+    target_files TEXT NOT NULL DEFAULT '[]',       -- JSON array
+    implementation_hint TEXT,
+    tags TEXT NOT NULL DEFAULT '[]',               -- JSON array
+    subtasks TEXT NOT NULL DEFAULT '[]',           -- JSON array of SubTask
+    status TEXT NOT NULL DEFAULT 'draft',          -- draft, ready, in_progress, done
+    task_id TEXT,                                  -- Reference to task if promoted
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (repo_id) REFERENCES repos(id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_backlog_items_repo_id ON backlog_items(repo_id);
+CREATE INDEX IF NOT EXISTS idx_backlog_items_status ON backlog_items(status);

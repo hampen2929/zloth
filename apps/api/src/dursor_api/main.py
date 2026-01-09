@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from dursor_api.config import settings
 from dursor_api.routes import (
+    backlog_router,
     breakdown_router,
     github_router,
     models_router,
@@ -51,6 +52,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(backlog_router, prefix="/v1")
 app.include_router(breakdown_router, prefix="/v1")
 app.include_router(github_router, prefix="/v1")
 app.include_router(models_router, prefix="/v1")

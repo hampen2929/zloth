@@ -22,6 +22,8 @@ from dursor_api.domain.enums import (
     ExecutorType,
 )
 from dursor_api.domain.models import (
+    BacklogItem,
+    BrokenDownSubTask,
     BrokenDownTask,
     CodebaseAnalysis,
     Repo,
@@ -32,14 +34,14 @@ from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, Claude
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from dursor_api.services.output_manager import OutputManager
-from dursor_api.storage.dao import RepoDAO
+from dursor_api.storage.dao import BacklogDAO, RepoDAO
 
 logger = logging.getLogger(__name__)
 
 # JSON file name for breakdown result
 BREAKDOWN_RESULT_FILE = ".dursor-breakdown.json"
 
-# Prompt template for task breakdown
+# Prompt template for task breakdown (v1 - deprecated)
 BREAKDOWN_INSTRUCTION_TEMPLATE = """
 You are a software development task decomposition expert.
 Break down the following requirements into specific development tasks.
@@ -90,6 +92,81 @@ Output the result as a JSON file at `.dursor-breakdown.json`:
 8. IMPORTANT: Create the `.dursor-breakdown.json` file with your analysis
 """
 
+# Prompt template for task breakdown v2 (feature-level granularity)
+BREAKDOWN_INSTRUCTION_TEMPLATE_V2 = """
+You are a software development requirements analysis expert.
+Organize the following requirements into **feature-level** development tasks.
+
+## Important Guidelines
+
+### About Granularity
+- **1 feature request = 1 task** is the principle
+- Examples: "Dark mode support", "Add search feature", "Implement authentication"
+- Detailed implementation steps should be listed as `subtasks`
+- Guideline: 1 task = 1 Pull Request that can be completed independently
+
+### Granularity Examples
+❌ Bad example (too granular):
+- Task 1: Create ThemeContext
+- Task 2: Implement useTheme hook
+- Task 3: Define dark mode CSS variables
+- Task 4: Create ToggleButton component
+
+✅ Good example (appropriate granularity):
+- Task: Dark mode support
+  - subtask: Create theme context
+  - subtask: Define color variables
+  - subtask: Implement toggle component
+
+### Breakdown Rules
+1. Classify user requirements at the feature level
+2. Technical implementation steps go in subtasks
+3. Group related elements into a single task
+4. Think in terms of units that can be explained in a PR
+
+## Requirements
+{content}
+
+## Output Format
+Output the result as a JSON file at `.dursor-breakdown.json`:
+
+```json
+{{
+  "codebase_analysis": {{
+    "files_analyzed": <number>,
+    "relevant_modules": ["relevant modules"],
+    "tech_stack": ["technology stack"]
+  }},
+  "tasks": [
+    {{
+      "title": "Feature-level title (max 30 chars)",
+      "description": "What this feature achieves and why it's needed",
+      "type": "feature | bug_fix | refactoring | docs | test",
+      "estimated_size": "small | medium | large",
+      "target_files": ["file paths to change"],
+      "implementation_hint": "Overall implementation approach (referencing existing code)",
+      "tags": ["tags"],
+      "subtasks": [
+        {{ "title": "Implementation step 1" }},
+        {{ "title": "Implementation step 2" }}
+      ]
+    }}
+  ]
+}}
+```
+
+## Size Guidelines (per task)
+- small: Completes in 1-2 days, simple changes
+- medium: 3-5 days, affects multiple modules
+- large: 1+ week, major feature addition or refactoring
+
+## Important
+1. **Read existing code first** before creating tasks
+2. target_files must be actual existing file paths
+3. implementation_hint should reference existing code patterns
+4. IMPORTANT: Create the `.dursor-breakdown.json` file with your analysis
+"""
+
 
 class BreakdownService:
     """Service for breaking down hearing content into development tasks.
@@ -97,22 +174,25 @@ class BreakdownService:
     This service:
     1. Starts breakdown in background (non-blocking)
     2. Runs an executor to analyze codebase and decompose tasks
-    3. Stores results for later retrieval
+    3. Stores results as BacklogItems for later retrieval
     """
 
     def __init__(
         self,
         repo_dao: RepoDAO,
         output_manager: OutputManager,
+        backlog_dao: BacklogDAO | None = None,
     ):
         """Initialize BreakdownService.
 
         Args:
             repo_dao: Repository data access object.
             output_manager: Manager for streaming output.
+            backlog_dao: Backlog data access object (optional, for v2).
         """
         self.repo_dao = repo_dao
         self.output_manager = output_manager
+        self.backlog_dao = backlog_dao
 
         # In-memory storage for breakdown results
         self._results: dict[str, TaskBreakdownResponse] = {}
@@ -138,9 +218,7 @@ class BreakdownService:
         )
 
         # Executor map
-        self._executors: dict[
-            ExecutorType, ClaudeCodeExecutor | CodexExecutor | GeminiExecutor
-        ] = {
+        self._executors: dict[ExecutorType, ClaudeCodeExecutor | CodexExecutor | GeminiExecutor] = {
             ExecutorType.CLAUDE_CODE: self._claude_executor,
             ExecutorType.CODEX_CLI: self._codex_executor,
             ExecutorType.GEMINI_CLI: self._gemini_executor,
@@ -151,9 +229,7 @@ class BreakdownService:
     ) -> ClaudeCodeExecutor | CodexExecutor | GeminiExecutor:
         """Get executor for the given type."""
         if executor_type == ExecutorType.PATCH_AGENT:
-            raise ValueError(
-                "patch_agent is not supported for task breakdown. Use CLI executors."
-            )
+            raise ValueError("patch_agent is not supported for task breakdown. Use CLI executors.")
 
         executor = self._executors.get(executor_type)
         if not executor:
@@ -250,8 +326,8 @@ class BreakdownService:
         executor = self._get_executor(request.executor_type)
         workspace_path = Path(repo.workspace_path)
 
-        # Build instruction
-        instruction = BREAKDOWN_INSTRUCTION_TEMPLATE.format(content=request.content)
+        # Build instruction using v2 template
+        instruction = BREAKDOWN_INSTRUCTION_TEMPLATE_V2.format(content=request.content)
 
         # Add context if provided
         if request.context:
@@ -262,7 +338,7 @@ class BreakdownService:
         async def on_output(line: str) -> None:
             await self.output_manager.publish_async(breakdown_id, line)
 
-        await on_output("Starting task breakdown analysis...")
+        await on_output("Starting task breakdown analysis (v2)...")
         await on_output(f"Using executor: {request.executor_type.value}")
         await on_output(f"Repository: {repo.repo_url}")
 
@@ -312,10 +388,30 @@ class BreakdownService:
         task_count = len(tasks)
         await on_output(f"Breakdown complete: {task_count} task(s) identified")
 
+        # Save tasks as backlog items if backlog_dao is available
+        backlog_items: list[BacklogItem] = []
+        if self.backlog_dao:
+            for task in tasks:
+                subtasks = [{"title": st.title} for st in task.subtasks]
+                item = await self.backlog_dao.create(
+                    repo_id=repo.id,
+                    title=task.title,
+                    description=task.description,
+                    type=task.type,
+                    estimated_size=task.estimated_size,
+                    target_files=task.target_files,
+                    implementation_hint=task.implementation_hint,
+                    tags=task.tags,
+                    subtasks=subtasks,
+                )
+                backlog_items.append(item)
+            await on_output(f"Created {len(backlog_items)} backlog item(s)")
+
         return TaskBreakdownResponse(
             breakdown_id=breakdown_id,
             status=BreakdownStatus.SUCCEEDED,
             tasks=tasks,
+            backlog_items=backlog_items,
             summary=f"Analyzed codebase and identified {task_count} task(s)",
             original_content=request.content,
             codebase_analysis=codebase_analysis,
@@ -409,6 +505,14 @@ class BreakdownService:
             except ValueError:
                 estimated_size = EstimatedSize.MEDIUM
 
+            # Parse subtasks
+            subtasks = []
+            for st_data in task_data.get("subtasks", []):
+                if isinstance(st_data, dict) and "title" in st_data:
+                    subtasks.append(BrokenDownSubTask(title=st_data["title"]))
+                elif isinstance(st_data, str):
+                    subtasks.append(BrokenDownSubTask(title=st_data))
+
             task = BrokenDownTask(
                 title=task_data.get("title", "Untitled Task")[:50],
                 description=task_data.get("description", ""),
@@ -417,6 +521,7 @@ class BreakdownService:
                 target_files=task_data.get("target_files", []),
                 implementation_hint=task_data.get("implementation_hint"),
                 tags=task_data.get("tags", []),
+                subtasks=subtasks,
             )
             tasks.append(task)
 

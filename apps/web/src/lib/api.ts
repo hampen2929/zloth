@@ -35,6 +35,10 @@ import type {
   GitHubRepository,
   UserPreferences,
   UserPreferencesSave,
+  BacklogItem,
+  BacklogItemCreate,
+  BacklogItemUpdate,
+  BacklogStatus,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -383,6 +387,37 @@ export const breakdownApi = {
       cancelled = true;
     };
   },
+};
+
+// Backlog
+export const backlogApi = {
+  list: (repoId?: string, status?: BacklogStatus) => {
+    const params = new URLSearchParams();
+    if (repoId) params.set('repo_id', repoId);
+    if (status) params.set('status', status);
+    const query = params.toString();
+    return fetchApi<BacklogItem[]>(`/backlog${query ? `?${query}` : ''}`);
+  },
+
+  create: (data: BacklogItemCreate) =>
+    fetchApi<BacklogItem>('/backlog', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  get: (id: string) => fetchApi<BacklogItem>(`/backlog/${id}`),
+
+  update: (id: string, data: BacklogItemUpdate) =>
+    fetchApi<BacklogItem>(`/backlog/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    fetchApi<void>(`/backlog/${id}`, { method: 'DELETE' }),
+
+  startWork: (id: string) =>
+    fetchApi<Task>(`/backlog/${id}/start`, { method: 'POST' }),
 };
 
 export { ApiError };

@@ -10,7 +10,6 @@ import { formatRelativeTime } from '@/lib/utils';
 import { TaskListSkeleton } from './ui/Skeleton';
 import {
   PlusIcon,
-  SparklesIcon,
   UserCircleIcon,
   Cog6ToothIcon,
   ChevronUpIcon,
@@ -18,16 +17,16 @@ import {
   MagnifyingGlassIcon,
   XMarkIcon,
   ArrowsUpDownIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 
 type SortOption = 'newest' | 'oldest' | 'alphabetical';
 
 interface SidebarProps {
   onSettingsClick: () => void;
-  onBreakdownClick: () => void;
 }
 
-export default function Sidebar({ onSettingsClick, onBreakdownClick }: SidebarProps) {
+export default function Sidebar({ onSettingsClick }: SidebarProps) {
   const pathname = usePathname();
   const { data: tasks, isLoading } = useSWR('tasks', () => tasksApi.list(), {
     refreshInterval: 5000,
@@ -106,7 +105,7 @@ export default function Sidebar({ onSettingsClick, onBreakdownClick }: SidebarPr
       {/* Mobile spacing to account for mobile header */}
       <div className="lg:hidden h-14" />
 
-      {/* New Task Button */}
+      {/* New Task & Backlog Buttons */}
       <div className="p-3 space-y-2">
         <Link
           href="/"
@@ -120,18 +119,19 @@ export default function Sidebar({ onSettingsClick, onBreakdownClick }: SidebarPr
           <PlusIcon className="w-4 h-4" />
           New Task
         </Link>
-        <button
-          onClick={onBreakdownClick}
+        <Link
+          href="/backlog"
           className={cn(
             'flex items-center justify-center gap-2 w-full py-2.5 px-3',
             'bg-purple-600 hover:bg-purple-700 rounded-lg',
             'text-sm font-medium transition-colors',
-            'focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900'
+            'focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/backlog' && 'ring-2 ring-purple-400'
           )}
         >
-          <SparklesIcon className="w-4 h-4" />
-          Breakdown
-        </button>
+          <ClipboardDocumentListIcon className="w-4 h-4" />
+          Backlog
+        </Link>
       </div>
 
       {/* Search and Filter */}

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import useSWR, { mutate } from 'swr';
-import { githubApi, breakdownApi, tasksApi, reposApi } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import useSWR from 'swr';
+import { githubApi, breakdownApi, reposApi } from '@/lib/api';
 import type {
   ExecutorType,
   TaskBreakdownResponse,
@@ -19,6 +20,7 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ArrowPathIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 
 type BreakdownPhase = 'input' | 'analyzing' | 'result';
@@ -47,6 +49,7 @@ interface BreakdownModalProps {
 }
 
 export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps) {
+  const router = useRouter();
   const { data: githubConfig } = useSWR('github-config', githubApi.getConfig);
   const { data: repos, isLoading: reposLoading } = useSWR(
     githubConfig?.is_configured ? 'github-repos' : null,
@@ -64,11 +67,10 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
   const [breakdownResult, setBreakdownResult] = useState<TaskBreakdownResponse | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
   const [logs, setLogs] = useState<OutputLine[]>([]);
-  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const { success, error: toastError } = useToast();
+  const { success } = useToast();
 
   // Reset state when modal closes
   useEffect(() => {
@@ -254,42 +256,13 @@ export default function BreakdownModal({ isOpen, onClose }: BreakdownModalProps)
     }
   };
 
-  const handleCreateTasks = async () => {
-    if (!breakdownResult || selectedTasks.size === 0) return;
+  const handleViewBacklog = () => {
+    if (!breakdownResult) return;
 
-    setIsCreating(true);
-    try {
-      // Get repo from the breakdown result context
-      const [owner, repo] = selectedRepo.split('/');
-      const repoResult = await reposApi.select({
-        owner,
-        repo,
-        branch: selectedBranch,
-      });
-
-      // Get selected tasks
-      const tasksToCreate = breakdownResult.tasks
-        .filter((_, i) => selectedTasks.has(i))
-        .map((task) => ({
-          title: task.title,
-          description: task.description,
-        }));
-
-      // Bulk create tasks
-      const result = await tasksApi.bulkCreate({
-        repo_id: repoResult.id,
-        tasks: tasksToCreate.map((t) => ({ repo_id: repoResult.id, title: t.title })),
-      });
-
-      success(`Created ${result.count} task(s) successfully`);
-      mutate('tasks');
-      onClose();
-    } catch (err) {
-      console.error('Failed to create tasks:', err);
-      toastError(err instanceof Error ? err.message : 'Failed to create tasks');
-    } finally {
-      setIsCreating(false);
-    }
+    const itemCount = breakdownResult.backlog_items?.length || breakdownResult.tasks.length;
+    success(`${itemCount} item(s) added to backlog`);
+    onClose();
+    router.push('/backlog');
   };
 
   const handleBack = () => {
@@ -558,11 +531,10 @@ Example:
               Back
             </Button>
             <Button
-              onClick={handleCreateTasks}
-              disabled={selectedTasks.size === 0}
-              isLoading={isCreating}
+              onClick={handleViewBacklog}
+              leftIcon={<ClipboardDocumentListIcon className="w-4 h-4" />}
             >
-              Create {selectedTasks.size} Task{selectedTasks.size !== 1 ? 's' : ''}
+              View Backlog
             </Button>
           </>
         )}
