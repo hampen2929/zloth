@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode, urlparse
 
-from dursor_api.agents.llm_router import LLMConfig, LLMRouter
-from dursor_api.domain.enums import Provider
+from dursor_api.config import settings
+from dursor_api.domain.enums import ExecutorType
 from dursor_api.domain.models import (
     PR,
     PRCreate,
@@ -27,6 +27,9 @@ from dursor_api.domain.models import (
     Run,
     Task,
 )
+from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
+from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
+from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
 from dursor_api.services.model_service import ModelService
@@ -63,7 +66,6 @@ class PRService:
         github_service: GitHubService,
         model_service: ModelService,
         git_service: GitService | None = None,
-        llm_router: LLMRouter | None = None,
     ):
         self.pr_dao = pr_dao
         self.task_dao = task_dao
@@ -72,7 +74,14 @@ class PRService:
         self.github_service = github_service
         self.model_service = model_service
         self.git_service = git_service or GitService()
-        self.llm_router = llm_router or LLMRouter()
+        # Initialize executors for PR description generation
+        self.claude_executor = ClaudeCodeExecutor(
+            ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
+        )
+        self.codex_executor = CodexExecutor(CodexOptions(codex_cli_path=settings.codex_cli_path))
+        self.gemini_executor = GeminiExecutor(
+            GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
+        )
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
         """Parse owner and repo from GitHub URL.
@@ -427,7 +436,7 @@ class PRService:
         )
 
     async def _generate_title(self, diff: str, task: Task, run: Run) -> str:
-        """Generate PR title using LLM.
+        """Generate PR title using Agent Tool (executor).
 
         Args:
             diff: Unified diff string.
@@ -437,10 +446,20 @@ class PRService:
         Returns:
             Generated title string.
         """
+        # Need worktree_path to run executor
+        if not run.worktree_path:
+            return self._generate_fallback_title(run)
+
+        worktree_path = Path(run.worktree_path)
+        if not worktree_path.exists():
+            return self._generate_fallback_title(run)
+
         # Truncate diff if too long
         truncated_diff = diff[:5000] if len(diff) > 5000 else diff
 
         prompt = f"""Generate a concise Pull Request title based on the following information.
+
+DO NOT edit any files. Only output the title text.
 
 ## Task Description
 {task.title or "(None)"}
@@ -461,31 +480,30 @@ class PRService:
 """
 
         try:
-            config = LLMConfig(
-                provider=Provider.ANTHROPIC,
-                model_name="claude-3-haiku-20240307",
-                api_key="",  # Will be loaded from environment
+            result = await self._execute_for_description(
+                worktree_path=worktree_path,
+                executor_type=run.executor_type,
+                prompt=prompt,
             )
-            llm_client = self.llm_router.get_client(config)
-            response = await llm_client.generate(
-                messages=[{"role": "user", "content": prompt}],
-                system=(
-                    "You are a helpful assistant that generates clear and concise "
-                    "PR titles. Output only the title text."
-                ),
-            )
-            # Clean up the response - remove quotes and extra whitespace
-            title = response.strip().strip("\"'")
-            # Ensure title is not too long
-            if len(title) > 72:
-                title = title[:69] + "..."
-            return title
+            if result:
+                # Clean up the response - remove quotes and extra whitespace
+                title = result.strip().strip("\"'")
+                # Take only the first line
+                title = title.split("\n")[0].strip()
+                # Ensure title is not too long
+                if len(title) > 72:
+                    title = title[:69] + "..."
+                return title
+            return self._generate_fallback_title(run)
         except Exception:
-            # Fallback to a simple title
-            if run.summary:
-                summary_title = run.summary.split("\n")[0][:69]
-                return summary_title if len(summary_title) <= 72 else summary_title[:69] + "..."
-            return "Update code changes"
+            return self._generate_fallback_title(run)
+
+    def _generate_fallback_title(self, run: Run) -> str:
+        """Generate a fallback title from run summary."""
+        if run.summary:
+            summary_title = run.summary.split("\n")[0][:69]
+            return summary_title if len(summary_title) <= 72 else summary_title[:69] + "..."
+        return "Update code changes"
 
     async def _generate_description_for_new_pr(
         self,
@@ -495,10 +513,9 @@ class PRService:
         title: str,
         run: Run,
     ) -> str:
-        """Generate PR description for new PR using LLM.
+        """Generate PR description for new PR using Agent Tool (executor).
 
-        Similar to _generate_description but takes title as input
-        instead of PR object.
+        Uses the same executor type as the Run to generate the PR description.
 
         Args:
             diff: Unified diff string.
@@ -510,37 +527,81 @@ class PRService:
         Returns:
             Generated description string.
         """
+        # Need worktree_path to run executor
+        if not run.worktree_path:
+            logger.warning("No worktree_path available, using fallback description")
+            return self._generate_fallback_description_for_new_pr(diff, title, run, template)
+
+        worktree_path = Path(run.worktree_path)
+        if not worktree_path.exists():
+            logger.warning(f"Worktree path does not exist: {worktree_path}")
+            return self._generate_fallback_description_for_new_pr(diff, title, run, template)
+
         prompt = self._build_description_prompt_for_new_pr(diff, template, task, title, run)
 
         try:
-            # Use the same model as the Run for consistency
-            provider = run.provider or Provider.ANTHROPIC
-            model_name = run.model_name or "claude-3-haiku-20240307"
-
-            # Get API key from the Run's model profile
-            api_key = ""
-            if run.model_id:
-                api_key = await self.model_service.get_decrypted_key(run.model_id) or ""
-
-            config = LLMConfig(
-                provider=provider,
-                model_name=model_name,
-                api_key=api_key,
+            result = await self._execute_for_description(
+                worktree_path=worktree_path,
+                executor_type=run.executor_type,
+                prompt=prompt,
             )
-            llm_client = self.llm_router.get_client(config)
-            response = await llm_client.generate(
-                messages=[{"role": "user", "content": prompt}],
-                system=(
-                    "You generate PR descriptions by filling in templates. "
-                    "You MUST fill in every section with actual content. "
-                    "Never leave placeholders or HTML comments in your output."
-                ),
-            )
-            return response
-        except Exception as e:
-            logger.warning(f"Failed to generate PR description with LLM: {e}")
-            # Fallback to a simple description
+            if result:
+                return result
+            logger.warning("Executor returned empty result, using fallback")
             return self._generate_fallback_description_for_new_pr(diff, title, run, template)
+        except Exception as e:
+            logger.warning(f"Failed to generate PR description with executor: {e}")
+            return self._generate_fallback_description_for_new_pr(diff, title, run, template)
+
+    async def _execute_for_description(
+        self,
+        worktree_path: Path,
+        executor_type: ExecutorType,
+        prompt: str,
+    ) -> str | None:
+        """Execute Agent Tool to generate PR description.
+
+        Args:
+            worktree_path: Path to the worktree.
+            executor_type: Type of executor to use.
+            prompt: Prompt for description generation.
+
+        Returns:
+            Generated description or None if failed.
+        """
+        # Wrap the prompt to ensure the executor only outputs text, no file edits
+        wrapped_prompt = f"""DO NOT edit any files. Only output text.
+
+{prompt}
+
+IMPORTANT: Output ONLY the PR description text. Do not create or modify any files."""
+
+        if executor_type == ExecutorType.CLAUDE_CODE:
+            result = await self.claude_executor.execute(worktree_path, wrapped_prompt)
+        elif executor_type == ExecutorType.CODEX_CLI:
+            result = await self.codex_executor.execute(worktree_path, wrapped_prompt)
+        elif executor_type == ExecutorType.GEMINI_CLI:
+            result = await self.gemini_executor.execute(worktree_path, wrapped_prompt)
+        else:
+            logger.warning(f"Unsupported executor type for description: {executor_type}")
+            return None
+
+        if not result.success:
+            logger.warning(f"Executor failed: {result.error}")
+            return None
+
+        # Extract the description from executor output (logs)
+        # Filter out system messages and keep the actual content
+        output_lines = []
+        for line in result.logs:
+            # Skip common CLI output prefixes
+            if line.startswith("Executing:") or line.startswith("Working directory:"):
+                continue
+            if line.startswith("Instruction length:"):
+                continue
+            output_lines.append(line)
+
+        return "\n".join(output_lines).strip() if output_lines else None
 
     def _build_description_prompt_for_new_pr(
         self,
@@ -727,7 +788,6 @@ class PRService:
         commit_message = data.message or f"Update: {run.summary or ''}"
         commit_message = await ensure_english_commit_message(
             commit_message,
-            llm_router=self.llm_router,
             hint=run.summary or "",
         )
         commit_sha = await self.git_service.commit(workspace_path, commit_message)
@@ -907,48 +967,42 @@ class PRService:
         pr: PR,
         run: Run | None = None,
     ) -> str:
-        """Generate PR description using LLM.
+        """Generate PR description using Agent Tool (executor).
 
         Args:
             diff: Unified diff string.
             template: Optional PR template.
             task: Task object.
             pr: PR object.
-            run: Optional Run object for model settings.
+            run: Optional Run object for executor settings.
 
         Returns:
             Generated description string.
         """
+        # Need run with worktree_path to use executor
+        if not run or not run.worktree_path:
+            logger.warning("No run/worktree_path available, using fallback description")
+            return self._generate_fallback_description(diff, pr, template)
+
+        worktree_path = Path(run.worktree_path)
+        if not worktree_path.exists():
+            logger.warning(f"Worktree path does not exist: {worktree_path}")
+            return self._generate_fallback_description(diff, pr, template)
+
         prompt = self._build_description_prompt(diff, template, task, pr)
 
         try:
-            # Use the Run's model settings if available
-            provider = (run.provider if run else None) or Provider.ANTHROPIC
-            model_name = (run.model_name if run else None) or "claude-3-haiku-20240307"
-
-            # Get API key from the Run's model profile
-            api_key = ""
-            if run and run.model_id:
-                api_key = await self.model_service.get_decrypted_key(run.model_id) or ""
-
-            config = LLMConfig(
-                provider=provider,
-                model_name=model_name,
-                api_key=api_key,
+            result = await self._execute_for_description(
+                worktree_path=worktree_path,
+                executor_type=run.executor_type,
+                prompt=prompt,
             )
-            llm_client = self.llm_router.get_client(config)
-            response = await llm_client.generate(
-                messages=[{"role": "user", "content": prompt}],
-                system=(
-                    "You generate PR descriptions by filling in templates. "
-                    "You MUST fill in every section with actual content. "
-                    "Never leave placeholders or HTML comments in your output."
-                ),
-            )
-            return response
+            if result:
+                return result
+            logger.warning("Executor returned empty result, using fallback")
+            return self._generate_fallback_description(diff, pr, template)
         except Exception as e:
-            logger.warning(f"Failed to generate PR description with LLM: {e}")
-            # Fallback to a simple description if LLM fails
+            logger.warning(f"Failed to generate PR description with executor: {e}")
             return self._generate_fallback_description(diff, pr, template)
 
     def _build_description_prompt(
