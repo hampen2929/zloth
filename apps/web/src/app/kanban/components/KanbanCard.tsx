@@ -94,13 +94,9 @@ export function KanbanCard({
       case 'todo':
         return (
           <div className="flex gap-2">
-            <Link
-              href={`/tasks/${task.id}`}
-              className="text-xs text-green-400 hover:text-green-300 transition-colors"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <span className="text-xs text-green-400">
               Start AI
-            </Link>
+            </span>
             <button
               onClick={(e) => {
                 e.preventDefault();
@@ -125,13 +121,9 @@ export function KanbanCard({
       case 'in_review':
         return (
           <div className="flex gap-2">
-            <Link
-              href={`/tasks/${task.id}`}
-              className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <span className="text-xs text-purple-400">
               Review
-            </Link>
+            </span>
             <button
               onClick={(e) => {
                 e.preventDefault();
