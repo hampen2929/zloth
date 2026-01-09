@@ -227,7 +227,7 @@ class PRService:
         """Create a Pull Request with AI-generated title and description.
 
         This method automatically generates the PR title and description
-        using LLM based on the diff and task context.
+        using Agent Tool based on the diff and task context.
 
         Args:
             task_id: Task ID.
@@ -281,14 +281,12 @@ class PRService:
         if not diff and run.patch:
             diff = run.patch
 
-        # Generate title and description with AI
-        title = await self._generate_title(diff, task, run)
+        # Generate title and description with AI in a single call
         template = await self._load_pr_template(repo_obj)
-        description = await self._generate_description_for_new_pr(
+        title, description = await self._generate_title_and_description(
             diff=diff,
             template=template,
             task=task,
-            title=title,
             run=run,
         )
 
@@ -376,14 +374,12 @@ class PRService:
         if not diff and run.patch:
             diff = run.patch
 
-        # Generate title and description with AI
-        title = await self._generate_title(diff, task, run)
+        # Generate title and description with AI in a single call
         template = await self._load_pr_template(repo_obj)
-        description = await self._generate_description_for_new_pr(
+        title, description = await self._generate_title_and_description(
             diff=diff,
             template=template,
             task=task,
-            title=title,
             run=run,
         )
 
@@ -461,8 +457,172 @@ class PRService:
             ),
         )
 
+    async def _generate_title_and_description(
+        self,
+        diff: str,
+        template: str | None,
+        task: Task,
+        run: Run,
+    ) -> tuple[str, str]:
+        """Generate PR title and description in a single Agent Tool call.
+
+        This method combines title and description generation to avoid
+        multiple executor calls that can cause timeouts.
+
+        Args:
+            diff: Unified diff string.
+            template: Optional PR template.
+            task: Task object.
+            run: Run object.
+
+        Returns:
+            Tuple of (title, description).
+        """
+        # Need worktree_path to run executor
+        if not run.worktree_path:
+            logger.warning("No worktree_path available, using fallback")
+            fallback_title = self._generate_fallback_title(run)
+            fallback_desc = self._generate_fallback_description_for_new_pr(
+                diff, fallback_title, run, template
+            )
+            return fallback_title, fallback_desc
+
+        worktree_path = Path(run.worktree_path)
+        if not worktree_path.exists():
+            logger.warning(f"Worktree path does not exist: {worktree_path}")
+            fallback_title = self._generate_fallback_title(run)
+            fallback_desc = self._generate_fallback_description_for_new_pr(
+                diff, fallback_title, run, template
+            )
+            return fallback_title, fallback_desc
+
+        # Truncate diff if too long
+        truncated_diff = diff[:10000] if len(diff) > 10000 else diff
+
+        # Build combined prompt
+        prompt_parts = [
+            "Generate a PR Title and PR Description based on the following information.",
+            "",
+            "## User Instruction",
+            task.title or "(None)",
+            "",
+            "## Run Summary",
+            run.summary or "(None)",
+            "",
+            "## Diff",
+            "```diff",
+            truncated_diff,
+            "```",
+        ]
+
+        if template:
+            prompt_parts.extend(
+                [
+                    "",
+                    "## Template",
+                    "```markdown",
+                    template,
+                    "```",
+                ]
+            )
+
+        prompt_parts.extend(
+            [
+                "",
+                "## Output Format",
+                "Output MUST be in this exact format:",
+                "```",
+                "TITLE: <your title here>",
+                "---DESCRIPTION---",
+                "<your description here>",
+                "```",
+                "",
+                "## Rules for Title",
+                "- Keep it under 72 characters",
+                "- Use imperative mood (e.g., 'Add feature X' not 'Added feature X')",
+                "- Be specific but concise",
+                "",
+                "## Rules for Description",
+            ]
+        )
+
+        if template:
+            prompt_parts.extend(
+                [
+                    "- Fill in each section of the template with actual content",
+                    "- Replace placeholders and HTML comments with real content",
+                    "- Keep the template structure (headings, checkboxes, etc.)",
+                    "- Base all content on the user instruction and diff",
+                ]
+            )
+        else:
+            prompt_parts.extend(
+                [
+                    "- Create a concise PR description",
+                    "- Base the content on the user instruction and diff",
+                ]
+            )
+
+        prompt = "\n".join(prompt_parts)
+
+        try:
+            result = await self._execute_for_description(
+                worktree_path=worktree_path,
+                executor_type=run.executor_type,
+                prompt=prompt,
+            )
+            if result:
+                # Parse the output
+                title, description = self._parse_title_and_description(result)
+                if title and description:
+                    return title, description
+            logger.warning("Failed to parse title/description, using fallback")
+        except Exception as e:
+            logger.warning(f"Failed to generate title/description: {e}")
+
+        fallback_title = self._generate_fallback_title(run)
+        return fallback_title, self._generate_fallback_description_for_new_pr(
+            diff, fallback_title, run, template
+        )
+
+    def _parse_title_and_description(self, output: str) -> tuple[str | None, str | None]:
+        """Parse title and description from executor output.
+
+        Args:
+            output: Raw output string from executor.
+
+        Returns:
+            Tuple of (title, description), either can be None if parsing fails.
+        """
+        # Try to find TITLE: line
+        title = None
+        description = None
+
+        lines = output.strip().split("\n")
+        for i, line in enumerate(lines):
+            if line.startswith("TITLE:"):
+                title = line[6:].strip().strip("\"'")
+                # Ensure title is not too long
+                if len(title) > 72:
+                    title = title[:69] + "..."
+                break
+
+        # Try to find ---DESCRIPTION--- separator
+        separator_idx = -1
+        for i, line in enumerate(lines):
+            if "---DESCRIPTION---" in line:
+                separator_idx = i
+                break
+
+        if separator_idx >= 0:
+            description = "\n".join(lines[separator_idx + 1 :]).strip()
+
+        return title, description
+
     async def _generate_title(self, diff: str, task: Task, run: Run) -> str:
         """Generate PR title using Agent Tool (executor).
+
+        Note: Prefer using _generate_title_and_description() for efficiency.
 
         Args:
             diff: Unified diff string.
