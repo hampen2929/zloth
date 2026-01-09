@@ -35,26 +35,25 @@ flowchart TD
         J -->|成功| L[👁️ InReview]
     end
 
-    subgraph レビューフェーズ
-        L --> M[人間がコードレビュー]
-        M --> N{レビュー結果}
-        N -->|修正が必要| O[追加指示を送信]
-        O --> I
-        N -->|承認| P[🔀 PR 作成]
+    subgraph PR作成フェーズ
+        L --> M[🔀 人間が PR 作成]
     end
 
-    subgraph マージフェーズ
-        P --> Q[GitHub で PR レビュー]
-        Q --> R{マージ承認?}
-        R -->|修正が必要| O
-        R -->|承認| S[✅ Done]
+    subgraph レビュー・マージフェーズ
+        M --> N[👁️ 人間がコードレビュー]
+        N --> O{レビュー結果}
+        O -->|修正が必要| P[追加指示を送信]
+        P --> I
+        O -->|承認| Q[✅ PR マージ]
+        Q --> R[Done]
     end
 
     style A fill:#e1f5fe
     style C fill:#f3e5f5
     style H fill:#fff3e0
     style L fill:#e8f5e9
-    style S fill:#c8e6c9
+    style M fill:#dbeafe
+    style R fill:#c8e6c9
 ```
 
 ## 各フェーズの詳細
@@ -244,20 +243,62 @@ flowchart TD
 
 ---
 
-### 6. レビューフェーズ（Kanban: InProgress → InReview）
+### 6. PR 作成フェーズ（Kanban: InProgress → InReview）
 
-AI の実装結果を人間がレビューします。
+AI の実装が完了したら、人間が PR を作成します。
 
 ```mermaid
 flowchart TD
     A[Run 完了] --> B[InReview に自動遷移]
-    B --> C{Diff を確認}
-    C -->|問題あり| D[追加指示を送信]
-    D --> E[新しい Run を作成]
-    E --> F[InProgress に戻る]
-    C -->|OK| G[PR 作成へ]
+    B --> C[Diff を確認]
+    C --> D{PR 作成可能?}
+    D -->|問題あり| E[追加指示を送信]
+    E --> F[新しい Run を作成]
+    F --> G[InProgress に戻る]
+    D -->|OK| H[🔀 PR を作成]
 
     style B fill:#8b5cf6,color:#fff
+    style H fill:#3b82f6,color:#fff
+```
+
+**PR 作成前の確認:**
+- Diff の内容が要件を満たしているか
+- 明らかなバグやエラーがないか
+- PR を作成する準備が整っているか
+
+**PR 作成機能:**
+- Task 詳細画面の「Create PR」ボタン
+- タイトル・説明文の自動生成
+- テンプレートに基づく PR 説明
+
+---
+
+### 7. レビュー・マージフェーズ（GitHub PR レビュー → Done）
+
+PR 作成後、GitHub 上でコードレビューを行い、マージします。
+
+```mermaid
+sequenceDiagram
+    participant D as dursor
+    participant G as GitHub
+    participant H as 人間（PR作成者）
+    participant R as レビュアー
+
+    D->>G: PR を作成
+    Note over G: - ブランチ作成<br/>- Diff をコミット<br/>- PR をオープン
+    H->>R: レビュー依頼
+    R->>G: コードレビュー
+    alt 修正が必要
+        R->>H: 修正リクエスト
+        H->>D: 追加指示を送信
+        D->>D: 新しい Run を作成
+        D->>G: PR を更新
+        R->>G: 再レビュー
+    end
+    R->>G: Approve
+    H->>G: Merge
+    G->>D: マージ検出
+    D->>D: Done に自動遷移
 ```
 
 **レビュー観点:**
@@ -266,40 +307,13 @@ flowchart TD
 - セキュリティ上の問題
 - テストの有無
 
-**フィードバックの送信:**
+**フィードバックの送信（修正が必要な場合）:**
 ```
 修正してください:
 - エラーハンドリングを追加
 - 入力バリデーションを強化
 - コメントを追加
 ```
-
----
-
-### 7. PR 作成・マージフェーズ（Kanban: InReview → Done）
-
-レビューが完了したら PR を作成し、GitHub でマージします。
-
-```mermaid
-sequenceDiagram
-    participant D as dursor
-    participant G as GitHub
-    participant R as レビュアー
-
-    D->>G: PR を作成
-    Note over G: - ブランチ作成<br/>- Diff をコミット<br/>- PR をオープン
-    G->>R: レビュー依頼
-    R->>G: コードレビュー
-    R->>G: Approve
-    R->>G: Merge
-    G->>D: マージ検出
-    D->>D: Done に自動遷移
-```
-
-**PR 作成機能:**
-- Task 詳細画面の「Create PR」ボタン
-- タイトル・説明文の自動生成
-- テンプレートに基づく PR 説明
 
 **Done への遷移:**
 - GitHub で PR がマージされると自動的に Done に遷移
@@ -361,11 +375,11 @@ timeline
     section 4. 実装
         AI にアサイン : Claude Code で実装
         Diff 確認 : setError 呼び出し追加を確認
-    section 5. レビュー
-        コードレビュー : 実装内容を承認
+    section 5. PR 作成
+        Diff を確認 : 実装内容が正しいことを確認
         PR 作成 : GitHub に PR を作成
-    section 6. マージ
-        GitHub レビュー : チームメンバーが承認
+    section 6. レビュー・マージ
+        コードレビュー : チームメンバーがレビュー
         マージ完了 : Done に自動遷移
 ```
 
@@ -388,15 +402,16 @@ timeline
 - 追加指示は具体的に記述する
 - テストの追加も指示に含める
 
-### 4. レビュー時
-- Diff を丁寧に確認する
-- セキュリティ上の問題がないか確認する
-- 不明点は追加質問する
-
-### 5. PR 作成時
+### 4. PR 作成時
+- Diff を丁寧に確認してから PR を作成する
 - PR テンプレートを活用する
 - テスト手順を明記する
 - 関連 Issue をリンクする
+
+### 5. レビュー時
+- コードの品質・可読性を確認する
+- セキュリティ上の問題がないか確認する
+- 不明点は追加質問する
 
 ---
 
