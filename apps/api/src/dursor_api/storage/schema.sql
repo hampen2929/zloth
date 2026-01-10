@@ -140,3 +140,45 @@ CREATE TABLE IF NOT EXISTS backlog_items (
 
 CREATE INDEX IF NOT EXISTS idx_backlog_items_repo_id ON backlog_items(repo_id);
 CREATE INDEX IF NOT EXISTS idx_backlog_items_status ON backlog_items(status);
+
+-- Reviews table
+CREATE TABLE IF NOT EXISTS reviews (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    target_run_ids TEXT NOT NULL,  -- JSON array
+    executor_type TEXT NOT NULL,
+    model_id TEXT,
+    model_name TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    overall_summary TEXT,
+    overall_score REAL,
+    logs TEXT,  -- JSON array
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT,
+    completed_at TEXT,
+
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+-- Review feedbacks table
+CREATE TABLE IF NOT EXISTS review_feedbacks (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    line_start INTEGER,
+    line_end INTEGER,
+    severity TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    suggestion TEXT,
+    code_snippet TEXT,
+
+    FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_task ON reviews(task_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_review ON review_feedbacks(review_id);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_severity ON review_feedbacks(severity);

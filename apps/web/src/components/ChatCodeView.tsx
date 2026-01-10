@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
-import { tasksApi, runsApi, prsApi, preferencesApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType, Run, RunStatus } from '@/types';
+import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi } from '@/lib/api';
+import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -20,6 +20,8 @@ import {
   ClipboardDocumentIcon,
   CodeBracketSquareIcon,
 } from '@heroicons/react/24/outline';
+import { ReviewButton } from './ReviewButton';
+import { ReviewResultCard } from './ReviewResultCard';
 
 interface ChatCodeViewProps {
   taskId: string;
@@ -50,6 +52,7 @@ export function ChatCodeView({
   const [creatingPR, setCreatingPR] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
   const [prLinkResult, setPRLinkResult] = useState<{ url: string } | null>(null);
+  const [reviewExpanded, setReviewExpanded] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -59,35 +62,40 @@ export function ChatCodeView({
     refreshInterval: prLinkResult ? 2000 : 0,
   });
 
-  // Determine executor types used in this task
-  const sortedRuns = [...runs].reverse();
+  // Fetch reviews for the task
+  const { data: reviewSummaries, mutate: mutateReviews } = useSWR(
+    `reviews-${taskId}`,
+    () => reviewsApi.list(taskId),
+    { refreshInterval: 3000 }
+  );
 
-  // Get unique CLI executor types from existing runs (for continuation)
-  const cliExecutorTypes: ExecutorType[] = [
-    ...new Set(
-      sortedRuns
-        .map((r) => r.executor_type)
-        .filter(
-          (et): et is ExecutorType =>
-            et === 'claude_code' || et === 'codex_cli' || et === 'gemini_cli'
-        )
-    ),
-  ];
+  // Fetch full review data for each review summary
+  const { data: reviews } = useSWR<Review[]>(
+    reviewSummaries ? `reviews-full-${taskId}` : null,
+    async () => {
+      if (!reviewSummaries) return [];
+      const fullReviews = await Promise.all(
+        reviewSummaries.map((s) => reviewsApi.get(s.id))
+      );
+      return fullReviews;
+    },
+    { refreshInterval: 3000 }
+  );
+
+  // Determine executor types used in this task
+  const sortedRuns = useMemo(() => [...runs].reverse(), [runs]);
 
   // Check if patch_agent is used
   const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
 
-  // For backwards compatibility, determine if we're in CLI mode or patch_agent mode
-  const isCLIExecutor = cliExecutorTypes.length > 0;
-  const cliDisplayName = isCLIExecutor
-    ? cliExecutorTypes.length === 1
-      ? getExecutorDisplayName(cliExecutorTypes[0])
-      : `${cliExecutorTypes.length} CLIs`
-    : undefined;
-
   // Get branch name from selected run (each executor has its own branch)
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
   const latestPR = prs && prs.length > 0 ? prs[0] : null;
+
+  // Get successful run IDs for review
+  const successfulRunIds = sortedRuns
+    .filter((r) => r.status === 'succeeded')
+    .map((r) => r.id);
 
   // Sync PR result from backend
   useEffect(() => {
@@ -100,7 +108,7 @@ export function ChatCodeView({
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, runs]);
+  }, [messages, runs, reviews]);
 
   // Select all models by default if none specified (patch_agent only)
   useEffect(() => {
@@ -110,9 +118,10 @@ export function ChatCodeView({
   }, [models, selectedModels.length, initialModelIds, hasPatchAgent]);
 
   // Get unique executor types from runs (for executor selector cards)
-  const uniqueExecutorTypes: ExecutorType[] = [
-    ...new Set(sortedRuns.map((r) => r.executor_type)),
-  ];
+  const uniqueExecutorTypes = useMemo(
+    () => [...new Set(sortedRuns.map((r) => r.executor_type))] as ExecutorType[],
+    [sortedRuns]
+  );
 
   // Auto-select the first executor type when runs change
   useEffect(() => {
@@ -288,6 +297,18 @@ export function ChatCodeView({
     setRunTabs((prev) => ({ ...prev, [runId]: tab }));
   };
 
+  // Review expansion helpers
+  const isReviewExpanded = (reviewId: string): boolean => reviewExpanded[reviewId] ?? true;
+  const toggleReviewExpanded = (reviewId: string) => {
+    setReviewExpanded((prev) => ({ ...prev, [reviewId]: !isReviewExpanded(reviewId) }));
+  };
+
+  // Filter reviews for the selected executor type
+  const reviewsForSelectedExecutor = useMemo(() => {
+    if (!reviews || !selectedExecutorType) return [];
+    return reviews.filter((r) => r.executor_type === selectedExecutorType);
+  }, [reviews, selectedExecutorType]);
+
   // Get aggregate stats for an executor type
   const getExecutorStats = (executorType: ExecutorType) => {
     const executorRuns = sortedRuns.filter((r) => r.executor_type === executorType);
@@ -313,9 +334,17 @@ export function ChatCodeView({
           prResult={prResult}
           prLinkResult={prLinkResult}
           latestSuccessfulRun={latestSuccessfulRun}
+          successfulRunIds={successfulRunIds}
+          taskId={taskId}
+          executorType={latestRunForSelectedExecutor.executor_type}
           creatingPR={creatingPR}
           onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
+          onReviewCreated={() => {
+            mutateReviews();
+            success('Review started');
+          }}
+          onReviewError={(message) => error(message)}
         />
       )}
 
@@ -339,7 +368,7 @@ export function ChatCodeView({
         </div>
       )}
 
-      {/* Interleaved Conversation Area: User message -> AI output */}
+      {/* Interleaved Conversation Area: User message -> AI output -> Review */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && runs.length === 0 ? (
           <EmptyState />
@@ -367,6 +396,21 @@ export function ChatCodeView({
                   </div>
                 );
               })}
+
+            {/* Reviews for the selected executor */}
+            {reviewsForSelectedExecutor.map((review) => (
+              <div key={review.id} className="ml-4 border-l-2 border-blue-500/30 pl-4">
+                <ReviewResultCard
+                  review={review}
+                  expanded={isReviewExpanded(review.id)}
+                  onToggleExpand={() => toggleReviewExpanded(review.id)}
+                  onApplyFix={(instruction) => {
+                    setInput(instruction);
+                    success('Fix instruction added to input');
+                  }}
+                />
+              </div>
+            ))}
           </>
         )}
         <div ref={messagesEndRef} />
@@ -391,6 +435,7 @@ export function ChatCodeView({
         disabled={!selectedExecutorType || (selectedExecutorType === 'patch_agent' && selectedModels.length === 0)}
         selectedModelCount={selectedExecutorType === 'patch_agent' ? selectedModels.length : undefined}
       />
+
     </div>
   );
 }
@@ -402,9 +447,14 @@ interface SessionHeaderProps {
   prResult: { url: string; number: number } | null;
   prLinkResult: { url: string } | null;
   latestSuccessfulRun: Run | undefined;
+  successfulRunIds: string[];
+  taskId: string;
+  executorType: ExecutorType;
   creatingPR: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
+  onReviewCreated: () => void;
+  onReviewError: (message: string) => void;
 }
 
 function SessionHeader({
@@ -412,9 +462,14 @@ function SessionHeader({
   prResult,
   prLinkResult,
   latestSuccessfulRun,
+  successfulRunIds,
+  taskId,
+  executorType,
   creatingPR,
   onCopyBranch,
   onCreatePR,
+  onReviewCreated,
+  onReviewError,
 }: SessionHeaderProps) {
   return (
     <div className="flex items-center justify-end gap-3 px-4 py-2 border-b border-gray-800 bg-gray-900/50">
@@ -429,6 +484,17 @@ function SessionHeader({
         </span>
         <ClipboardDocumentIcon className="w-3.5 h-3.5 text-gray-500 group-hover:text-gray-300" />
       </button>
+
+      {/* Review Button */}
+      {successfulRunIds.length > 0 && (
+        <ReviewButton
+          taskId={taskId}
+          runIds={successfulRunIds}
+          executorType={executorType}
+          onReviewCreated={onReviewCreated}
+          onError={onReviewError}
+        />
+      )}
 
       {prResult ? (
         <a

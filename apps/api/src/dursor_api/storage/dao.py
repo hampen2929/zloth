@@ -16,6 +16,9 @@ from dursor_api.domain.enums import (
     MessageRole,
     PRCreationMode,
     Provider,
+    ReviewCategory,
+    ReviewSeverity,
+    ReviewStatus,
     RunStatus,
     TaskBaseKanbanStatus,
 )
@@ -26,6 +29,9 @@ from dursor_api.domain.models import (
     Message,
     ModelProfile,
     Repo,
+    Review,
+    ReviewFeedbackItem,
+    ReviewSummary,
     Run,
     SubTask,
     Task,
@@ -1152,4 +1158,207 @@ class BacklogDAO:
             task_id=row["task_id"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class ReviewDAO:
+    """DAO for Review."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    async def create(self, review: Review) -> Review:
+        """Create a new review."""
+        await self.db.connection.execute(
+            """
+            INSERT INTO reviews (
+                id, task_id, target_run_ids, executor_type, model_id, model_name,
+                status, logs, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                review.id,
+                review.task_id,
+                json.dumps(review.target_run_ids),
+                review.executor_type.value,
+                review.model_id,
+                review.model_name,
+                review.status.value,
+                json.dumps(review.logs),
+                review.created_at.isoformat(),
+            ),
+        )
+        await self.db.connection.commit()
+        return review
+
+    async def get(self, review_id: str) -> Review | None:
+        """Get a review by ID."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM reviews WHERE id = ?", (review_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+
+        # Get feedbacks
+        feedbacks = await self._get_feedbacks(review_id)
+        return self._row_to_model(row, feedbacks)
+
+    async def list_by_task(self, task_id: str) -> builtins.list[ReviewSummary]:
+        """List reviews for a task."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT r.*, COUNT(f.id) as feedback_count,
+                SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) as critical_count,
+                SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) as high_count,
+                SUM(CASE WHEN f.severity = 'medium' THEN 1 ELSE 0 END) as medium_count,
+                SUM(CASE WHEN f.severity = 'low' THEN 1 ELSE 0 END) as low_count
+            FROM reviews r
+            LEFT JOIN review_feedbacks f ON r.id = f.review_id
+            WHERE r.task_id = ?
+            GROUP BY r.id
+            ORDER BY r.created_at DESC
+            """,
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_summary(row) for row in rows]
+
+    async def update_status(
+        self,
+        review_id: str,
+        status: ReviewStatus,
+        summary: str | None = None,
+        score: float | None = None,
+        feedbacks: builtins.list[ReviewFeedbackItem] | None = None,
+        logs: builtins.list[str] | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update review status and results."""
+        updates = ["status = ?"]
+        params: builtins.list[Any] = [status.value]
+
+        if status == ReviewStatus.RUNNING:
+            updates.append("started_at = ?")
+            params.append(now_iso())
+        elif status in (ReviewStatus.SUCCEEDED, ReviewStatus.FAILED):
+            updates.append("completed_at = ?")
+            params.append(now_iso())
+
+        if summary is not None:
+            updates.append("overall_summary = ?")
+            params.append(summary)
+        if score is not None:
+            updates.append("overall_score = ?")
+            params.append(score)
+        if logs is not None:
+            updates.append("logs = ?")
+            params.append(json.dumps(logs))
+        if error is not None:
+            updates.append("error = ?")
+            params.append(error)
+
+        params.append(review_id)
+
+        await self.db.connection.execute(
+            f"UPDATE reviews SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+
+        # Save feedbacks if provided
+        if feedbacks is not None:
+            # Clear existing feedbacks
+            await self.db.connection.execute(
+                "DELETE FROM review_feedbacks WHERE review_id = ?",
+                (review_id,),
+            )
+            # Insert new feedbacks
+            for fb in feedbacks:
+                await self.db.connection.execute(
+                    """
+                    INSERT INTO review_feedbacks (
+                        id, review_id, file_path, line_start, line_end,
+                        severity, category, title, description, suggestion, code_snippet
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        fb.id,
+                        review_id,
+                        fb.file_path,
+                        fb.line_start,
+                        fb.line_end,
+                        fb.severity.value,
+                        fb.category.value,
+                        fb.title,
+                        fb.description,
+                        fb.suggestion,
+                        fb.code_snippet,
+                    ),
+                )
+
+        await self.db.connection.commit()
+
+    async def _get_feedbacks(self, review_id: str) -> builtins.list[ReviewFeedbackItem]:
+        """Get feedbacks for a review."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM review_feedbacks WHERE review_id = ? ORDER BY severity",
+            (review_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            ReviewFeedbackItem(
+                id=row["id"],
+                file_path=row["file_path"],
+                line_start=row["line_start"],
+                line_end=row["line_end"],
+                severity=ReviewSeverity(row["severity"]),
+                category=ReviewCategory(row["category"]),
+                title=row["title"],
+                description=row["description"],
+                suggestion=row["suggestion"],
+                code_snippet=row["code_snippet"],
+            )
+            for row in rows
+        ]
+
+    def _row_to_model(self, row: Any, feedbacks: builtins.list[ReviewFeedbackItem]) -> Review:
+        """Convert database row to Review model."""
+        target_run_ids = json.loads(row["target_run_ids"]) if row["target_run_ids"] else []
+        logs = json.loads(row["logs"]) if row["logs"] else []
+
+        return Review(
+            id=row["id"],
+            task_id=row["task_id"],
+            target_run_ids=target_run_ids,
+            executor_type=ExecutorType(row["executor_type"]),
+            model_id=row["model_id"],
+            model_name=row["model_name"],
+            status=ReviewStatus(row["status"]),
+            overall_summary=row["overall_summary"],
+            overall_score=row["overall_score"],
+            feedbacks=feedbacks,
+            logs=logs,
+            error=row["error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            ),
+        )
+
+    def _row_to_summary(self, row: Any) -> ReviewSummary:
+        """Convert database row to ReviewSummary model."""
+        return ReviewSummary(
+            id=row["id"],
+            task_id=row["task_id"],
+            status=ReviewStatus(row["status"]),
+            executor_type=ExecutorType(row["executor_type"]),
+            feedback_count=row["feedback_count"] or 0,
+            critical_count=row["critical_count"] or 0,
+            high_count=row["high_count"] or 0,
+            medium_count=row["medium_count"] or 0,
+            low_count=row["low_count"] or 0,
+            created_at=datetime.fromisoformat(row["created_at"]),
         )

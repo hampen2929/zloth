@@ -1,0 +1,306 @@
+'use client';
+
+import { useState } from 'react';
+import type { Review, ReviewSeverity } from '@/types';
+import { cn } from '@/lib/utils';
+import { reviewsApi } from '@/lib/api';
+import { Button } from './ui/Button';
+import { ReviewFeedbackCard } from './ReviewFeedbackCard';
+import {
+  MagnifyingGlassIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ArrowPathIcon,
+  WrenchScrewdriverIcon,
+  ClipboardDocumentIcon,
+} from '@heroicons/react/24/outline';
+import { useClipboard } from '@/hooks';
+
+interface ReviewResultCardProps {
+  review: Review;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onApplyFix?: (instruction: string) => void;
+}
+
+export function ReviewResultCard({
+  review,
+  expanded,
+  onToggleExpand,
+  onApplyFix,
+}: ReviewResultCardProps) {
+  const [selectedFeedbacks, setSelectedFeedbacks] = useState<Set<string>>(new Set());
+  const [generatingFix, setGeneratingFix] = useState(false);
+  const { copy } = useClipboard();
+
+  const handleSelectFeedback = (id: string, selected: boolean) => {
+    setSelectedFeedbacks((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedFeedbacks.size === review.feedbacks.length) {
+      setSelectedFeedbacks(new Set());
+    } else {
+      setSelectedFeedbacks(new Set(review.feedbacks.map((f) => f.id)));
+    }
+  };
+
+  const handleSelectBySeverity = (severity: ReviewSeverity) => {
+    const feedbackIds = review.feedbacks
+      .filter((f) => f.severity === severity)
+      .map((f) => f.id);
+    setSelectedFeedbacks((prev) => {
+      const next = new Set(prev);
+      feedbackIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const handleGenerateFix = async () => {
+    if (selectedFeedbacks.size === 0 || !onApplyFix) return;
+
+    setGeneratingFix(true);
+    try {
+      const response = await reviewsApi.generateFix(review.id, {
+        feedback_ids: Array.from(selectedFeedbacks),
+      });
+      onApplyFix(response.instruction);
+    } catch (err) {
+      console.error('Failed to generate fix:', err);
+    } finally {
+      setGeneratingFix(false);
+    }
+  };
+
+  // Count feedbacks by severity
+  const severityCounts = {
+    critical: review.feedbacks.filter((f) => f.severity === 'critical').length,
+    high: review.feedbacks.filter((f) => f.severity === 'high').length,
+    medium: review.feedbacks.filter((f) => f.severity === 'medium').length,
+    low: review.feedbacks.filter((f) => f.severity === 'low').length,
+  };
+
+  const getStatusColor = () => {
+    switch (review.status) {
+      case 'succeeded':
+        return 'border-green-500/30 bg-green-900/10';
+      case 'failed':
+        return 'border-red-500/30 bg-red-900/10';
+      case 'running':
+      case 'queued':
+        return 'border-yellow-500/30 bg-yellow-900/10';
+      default:
+        return 'border-gray-700 bg-gray-800/50';
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border animate-in fade-in slide-in-from-top-2 duration-300',
+        getStatusColor()
+      )}
+    >
+      {/* Header */}
+      <button
+        onClick={onToggleExpand}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-800/30 transition-colors rounded-t-lg"
+      >
+        <div className="flex items-center gap-3">
+          <MagnifyingGlassIcon className="w-5 h-5 text-blue-400" />
+          <div className="text-left">
+            <div className="font-medium text-gray-200 text-sm">Code Review</div>
+            {review.overall_score !== null && (
+              <div className={cn(
+                'text-xs font-medium',
+                review.overall_score >= 0.8
+                  ? 'text-green-400'
+                  : review.overall_score >= 0.6
+                    ? 'text-yellow-400'
+                    : 'text-red-400'
+              )}>
+                Score: {Math.round(review.overall_score * 100)}%
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              'px-2 py-0.5 text-xs font-medium rounded',
+              review.status === 'succeeded'
+                ? 'bg-green-500/20 text-green-400'
+                : review.status === 'failed'
+                  ? 'bg-red-500/20 text-red-400'
+                  : 'bg-yellow-500/20 text-yellow-400'
+            )}
+          >
+            {review.status}
+          </span>
+          {expanded ? (
+            <ChevronUpIcon className="w-4 h-4 text-gray-400" />
+          ) : (
+            <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+          )}
+        </div>
+      </button>
+
+      {/* Expanded Content */}
+      {expanded && (
+        <div className="border-t border-gray-700/50 p-4">
+          {/* Running/Queued State */}
+          {(review.status === 'running' || review.status === 'queued') && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <ArrowPathIcon className="w-8 h-8 text-blue-400 animate-spin" />
+              <p className="mt-3 text-gray-400">Running code review...</p>
+            </div>
+          )}
+
+          {/* Failed State */}
+          {review.status === 'failed' && (
+            <div className="p-3 bg-red-900/20 border border-red-800/50 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <ExclamationTriangleIcon className="w-4 h-4 text-red-400" />
+                <h3 className="font-medium text-red-400 text-sm">Review Failed</h3>
+              </div>
+              {review.error && (
+                <p className="text-sm text-red-300">{review.error}</p>
+              )}
+            </div>
+          )}
+
+          {/* Succeeded State */}
+          {review.status === 'succeeded' && (
+            <div className="space-y-4">
+              {/* Summary */}
+              {review.overall_summary && (
+                <div className="p-3 bg-gray-800 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <CheckCircleIcon className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-gray-200 text-sm">{review.overall_summary}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Severity Summary */}
+              {review.feedbacks.length > 0 && (
+                <div className="flex items-center gap-4 flex-wrap">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('critical'); }}
+                    className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300"
+                  >
+                    <span className="font-medium">{severityCounts.critical}</span>
+                    <span>Critical</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('high'); }}
+                    className="flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-300"
+                  >
+                    <span className="font-medium">{severityCounts.high}</span>
+                    <span>High</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('medium'); }}
+                    className="flex items-center gap-1.5 text-xs text-yellow-400 hover:text-yellow-300"
+                  >
+                    <span className="font-medium">{severityCounts.medium}</span>
+                    <span>Medium</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('low'); }}
+                    className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    <span className="font-medium">{severityCounts.low}</span>
+                    <span>Low</span>
+                  </button>
+                  <span className="text-gray-500">|</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSelectAll(); }}
+                    className="text-xs text-gray-400 hover:text-white"
+                  >
+                    {selectedFeedbacks.size === review.feedbacks.length
+                      ? 'Deselect All'
+                      : 'Select All'}
+                  </button>
+                </div>
+              )}
+
+              {/* Feedbacks */}
+              {review.feedbacks.length === 0 ? (
+                <div className="py-4 text-center">
+                  <CheckCircleIcon className="w-8 h-8 text-green-400 mx-auto" />
+                  <p className="mt-2 text-green-400 font-medium text-sm">No issues found</p>
+                  <p className="text-gray-400 text-xs mt-1">The code looks good!</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {review.feedbacks.map((feedback) => (
+                    <ReviewFeedbackCard
+                      key={feedback.id}
+                      feedback={feedback}
+                      selected={selectedFeedbacks.has(feedback.id)}
+                      onSelect={handleSelectFeedback}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Actions */}
+              {review.feedbacks.length > 0 && onApplyFix && (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-700/50">
+                  <span className="text-xs text-gray-400">
+                    {selectedFeedbacks.size} of {review.feedbacks.length} selected
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const text = review.feedbacks
+                          .filter((f) => selectedFeedbacks.has(f.id))
+                          .map(
+                            (f) =>
+                              `[${f.severity.toUpperCase()}] ${f.title}\nFile: ${f.file_path}${f.line_start ? `:${f.line_start}` : ''}\n${f.description}`
+                          )
+                          .join('\n\n');
+                        copy(text, 'Selected feedbacks');
+                      }}
+                      disabled={selectedFeedbacks.size === 0}
+                    >
+                      <ClipboardDocumentIcon className="w-4 h-4 mr-1" />
+                      Copy
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleGenerateFix();
+                      }}
+                      disabled={selectedFeedbacks.size === 0 || generatingFix}
+                      isLoading={generatingFix}
+                    >
+                      <WrenchScrewdriverIcon className="w-4 h-4 mr-1" />
+                      Generate Fix
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

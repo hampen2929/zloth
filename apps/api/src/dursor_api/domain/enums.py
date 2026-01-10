@@ -110,3 +110,34 @@ class BacklogStatus(str, Enum):
     READY = "ready"  # Ready to be worked on
     IN_PROGRESS = "in_progress"  # Task created and work started
     DONE = "done"  # Completed
+
+
+class ReviewSeverity(str, Enum):
+    """Review feedback severity level."""
+
+    CRITICAL = "critical"  # Security vulnerabilities, data loss risks
+    HIGH = "high"  # Significant bugs, performance issues
+    MEDIUM = "medium"  # Code quality, maintainability concerns
+    LOW = "low"  # Style suggestions, minor improvements
+
+
+class ReviewCategory(str, Enum):
+    """Review feedback category."""
+
+    SECURITY = "security"  # Security issues
+    BUG = "bug"  # Bugs and logic errors
+    PERFORMANCE = "performance"  # Performance issues
+    MAINTAINABILITY = "maintainability"  # Code maintainability
+    BEST_PRACTICE = "best_practice"  # Best practices
+    STYLE = "style"  # Code style
+    DOCUMENTATION = "documentation"  # Documentation issues
+    TEST = "test"  # Test-related issues
+
+
+class ReviewStatus(str, Enum):
+    """Review execution status."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"

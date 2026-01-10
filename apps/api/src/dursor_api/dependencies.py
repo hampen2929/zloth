@@ -10,6 +10,7 @@ from dursor_api.services.model_service import ModelService
 from dursor_api.services.output_manager import OutputManager
 from dursor_api.services.pr_service import PRService
 from dursor_api.services.repo_service import RepoService
+from dursor_api.services.review_service import ReviewService
 from dursor_api.services.run_service import RunService
 from dursor_api.storage.dao import (
     PRDAO,
@@ -17,6 +18,7 @@ from dursor_api.storage.dao import (
     MessageDAO,
     ModelProfileDAO,
     RepoDAO,
+    ReviewDAO,
     RunDAO,
     TaskDAO,
     UserPreferencesDAO,
@@ -29,6 +31,7 @@ _run_service: RunService | None = None
 _git_service: GitService | None = None
 _output_manager: OutputManager | None = None
 _breakdown_service: BreakdownService | None = None
+_review_service: ReviewService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -179,3 +182,28 @@ async def get_kanban_service() -> KanbanService:
     pr_dao = await get_pr_dao()
     github_service = await get_github_service()
     return KanbanService(task_dao, run_dao, pr_dao, github_service)
+
+
+async def get_review_dao() -> ReviewDAO:
+    """Get Review DAO."""
+    db = await get_db()
+    return ReviewDAO(db)
+
+
+async def get_review_service() -> ReviewService:
+    """Get the review service singleton."""
+    global _review_service
+    if _review_service is None:
+        review_dao = await get_review_dao()
+        run_dao = await get_run_dao()
+        task_dao = await get_task_dao()
+        message_dao = await get_message_dao()
+        output_manager = get_output_manager()
+        _review_service = ReviewService(
+            review_dao,
+            run_dao,
+            task_dao,
+            message_dao,
+            output_manager,
+        )
+    return _review_service
