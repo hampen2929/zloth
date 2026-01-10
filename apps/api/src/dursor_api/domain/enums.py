@@ -11,14 +11,18 @@ class Provider(str, Enum):
     GOOGLE = "google"
 
 
-class RunStatus(str, Enum):
-    """Run execution status."""
+class RoleExecutionStatus(str, Enum):
+    """AI Role execution status. All Roles share this common status lifecycle."""
 
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELED = "canceled"
+    QUEUED = "queued"  # Waiting in queue
+    RUNNING = "running"  # Currently executing
+    SUCCEEDED = "succeeded"  # Completed successfully
+    FAILED = "failed"  # Execution failed
+    CANCELED = "canceled"  # Canceled by user
+
+
+# Backward compatibility aliases
+RunStatus = RoleExecutionStatus
 
 
 class MessageRole(str, Enum):
@@ -110,3 +114,29 @@ class BacklogStatus(str, Enum):
     READY = "ready"  # Ready to be worked on
     IN_PROGRESS = "in_progress"  # Task created and work started
     DONE = "done"  # Completed
+
+
+class ReviewSeverity(str, Enum):
+    """Review feedback severity level."""
+
+    CRITICAL = "critical"  # Security vulnerabilities, data loss risks
+    HIGH = "high"  # Significant bugs, performance issues
+    MEDIUM = "medium"  # Code quality, maintainability concerns
+    LOW = "low"  # Style suggestions, minor improvements
+
+
+class ReviewCategory(str, Enum):
+    """Review feedback category."""
+
+    SECURITY = "security"  # Security issues
+    BUG = "bug"  # Bugs and logic errors
+    PERFORMANCE = "performance"  # Performance issues
+    MAINTAINABILITY = "maintainability"  # Code maintainability
+    BEST_PRACTICE = "best_practice"  # Best practices
+    STYLE = "style"  # Code style
+    DOCUMENTATION = "documentation"  # Documentation issues
+    TEST = "test"  # Test-related issues
+
+
+# ReviewStatus alias for backward compatibility
+ReviewStatus = RoleExecutionStatus

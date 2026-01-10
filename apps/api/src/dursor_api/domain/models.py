@@ -14,6 +14,9 @@ from dursor_api.domain.enums import (
     MessageRole,
     PRCreationMode,
     Provider,
+    ReviewCategory,
+    ReviewSeverity,
+    ReviewStatus,
     RunStatus,
     TaskKanbanStatus,
 )
@@ -174,6 +177,10 @@ class RunCreate(BaseModel):
     executor_type: ExecutorType = Field(
         default=ExecutorType.PATCH_AGENT,
         description="Executor type: patch_agent (LLM) or claude_code (CLI)",
+    )
+    executor_types: list[ExecutorType] | None = Field(
+        None,
+        description="List of executor types to run in parallel (overrides executor_type)",
     )
     message_id: str | None = Field(None, description="ID of the triggering message")
 
@@ -398,6 +405,60 @@ class AgentResult(BaseModel):
     files_changed: list[FileDiff] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+# ============================================================
+# Role Execution Results (Common Interface)
+# ============================================================
+
+
+class RoleExecutionResult(BaseModel):
+    """Base result interface for all AI Role executions.
+
+    All AI Roles output this common data structure. Role-specific results
+    extend this base class with additional fields.
+    """
+
+    success: bool = Field(..., description="Whether execution succeeded")
+    summary: str | None = Field(None, description="Human-readable summary")
+    logs: list[str] = Field(default_factory=list, description="Execution logs")
+    warnings: list[str] = Field(default_factory=list, description="Warning messages")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class ImplementationResult(RoleExecutionResult):
+    """Result specific to Implementation Role (RunService).
+
+    Contains patch/diff data for file changes.
+    """
+
+    patch: str | None = Field(None, description="Unified diff patch")
+    files_changed: list[FileDiff] = Field(default_factory=list, description="Changed files")
+    session_id: str | None = Field(None, description="CLI session ID for continuation")
+
+
+class ReviewExecutionResult(RoleExecutionResult):
+    """Result specific to Review Role (ReviewService).
+
+    Contains review feedbacks and scoring.
+    """
+
+    overall_score: float | None = Field(None, description="Overall score (0.0-1.0)")
+    feedbacks: list["ReviewFeedbackItem"] = Field(
+        default_factory=list, description="Review feedback items"
+    )
+
+
+class BreakdownExecutionResult(RoleExecutionResult):
+    """Result specific to Breakdown Role (BreakdownService).
+
+    Contains decomposed tasks and codebase analysis.
+    """
+
+    tasks: list["BrokenDownTask"] = Field(default_factory=list, description="Broken down tasks")
+    codebase_analysis: "CodebaseAnalysis | None" = Field(
+        None, description="Codebase analysis result"
+    )
 
 
 # ============================================================
@@ -675,3 +736,100 @@ class BacklogItem(BacklogItemBase):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================
+# Code Review
+# ============================================================
+
+
+class ReviewFeedbackItem(BaseModel):
+    """Single feedback item in a review."""
+
+    id: str
+    file_path: str = Field(..., description="Target file path")
+    line_start: int | None = Field(None, description="Start line number")
+    line_end: int | None = Field(None, description="End line number")
+    severity: ReviewSeverity
+    category: ReviewCategory
+    title: str = Field(..., description="Feedback title (1 line)")
+    description: str = Field(..., description="Detailed description")
+    suggestion: str | None = Field(None, description="Suggested fix")
+    code_snippet: str | None = Field(None, description="Problematic code snippet")
+
+
+class ReviewCreate(BaseModel):
+    """Request for creating a Review."""
+
+    target_run_ids: list[str] = Field(..., description="Run IDs to review")
+    executor_type: ExecutorType = Field(
+        default=ExecutorType.CLAUDE_CODE,
+        description="Executor to use for review",
+    )
+    model_id: str | None = Field(None, description="Model ID for patch_agent executor")
+    focus_areas: list[ReviewCategory] | None = Field(None, description="Areas to focus on")
+
+
+class ReviewSummary(BaseModel):
+    """Summary of a Review."""
+
+    id: str
+    task_id: str
+    status: ReviewStatus
+    executor_type: ExecutorType
+    feedback_count: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    created_at: datetime
+
+
+class Review(BaseModel):
+    """Complete Review information."""
+
+    id: str
+    task_id: str
+    target_run_ids: list[str]
+    executor_type: ExecutorType
+    model_id: str | None
+    model_name: str | None
+    status: ReviewStatus
+    overall_summary: str | None = Field(None, description="Overall review summary")
+    overall_score: float | None = Field(None, description="Overall score (0.0-1.0)")
+    feedbacks: list[ReviewFeedbackItem] = []
+    logs: list[str] = []
+    error: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ReviewCreated(BaseModel):
+    """Response for review creation."""
+
+    review_id: str
+
+
+class FixInstructionRequest(BaseModel):
+    """Request for generating fix instruction from review."""
+
+    review_id: str | None = Field(None, description="Review ID (set from URL path)")
+    feedback_ids: list[str] | None = Field(
+        None, description="Specific feedbacks to fix (None = all)"
+    )
+    severity_filter: list[ReviewSeverity] | None = Field(
+        None, description="Filter by severity (None = all)"
+    )
+    additional_instruction: str | None = Field(None, description="Additional user instruction")
+
+
+class FixInstructionResponse(BaseModel):
+    """Generated fix instruction."""
+
+    instruction: str
+    target_feedbacks: list[ReviewFeedbackItem]
+    estimated_changes: int

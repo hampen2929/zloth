@@ -126,6 +126,7 @@ export interface RunCreate {
   model_ids?: string[];
   base_ref?: string;
   executor_type?: ExecutorType;
+  executor_types?: ExecutorType[];  // Multiple CLI executors for parallel execution
   message_id?: string;
 }
 
@@ -396,4 +397,84 @@ export interface BacklogItemUpdate {
   tags?: string[];
   subtasks?: SubTask[];
   status?: BacklogStatus;
+}
+
+// Code Review
+export type ReviewSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type ReviewCategory =
+  | 'security'
+  | 'bug'
+  | 'performance'
+  | 'maintainability'
+  | 'best_practice'
+  | 'style'
+  | 'documentation'
+  | 'test';
+export type ReviewStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface ReviewFeedbackItem {
+  id: string;
+  file_path: string;
+  line_start: number | null;
+  line_end: number | null;
+  severity: ReviewSeverity;
+  category: ReviewCategory;
+  title: string;
+  description: string;
+  suggestion: string | null;
+  code_snippet: string | null;
+}
+
+export interface ReviewSummary {
+  id: string;
+  task_id: string;
+  status: ReviewStatus;
+  executor_type: ExecutorType;
+  feedback_count: number;
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+  created_at: string;
+}
+
+export interface Review {
+  id: string;
+  task_id: string;
+  target_run_ids: string[];
+  executor_type: ExecutorType;
+  model_id: string | null;
+  model_name: string | null;
+  status: ReviewStatus;
+  overall_summary: string | null;
+  overall_score: number | null;
+  feedbacks: ReviewFeedbackItem[];
+  logs: string[];
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ReviewCreate {
+  target_run_ids: string[];
+  executor_type?: ExecutorType;
+  model_id?: string;
+  focus_areas?: ReviewCategory[];
+}
+
+export interface ReviewCreated {
+  review_id: string;
+}
+
+export interface FixInstructionRequest {
+  feedback_ids?: string[];
+  severity_filter?: ReviewSeverity[];
+  additional_instruction?: string;
+}
+
+export interface FixInstructionResponse {
+  instruction: string;
+  target_feedbacks: ReviewFeedbackItem[];
+  estimated_changes: number;
 }

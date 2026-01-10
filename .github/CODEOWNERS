@@ -1,0 +1,22 @@
+# CODEOWNERS - Defines code owners for automatic review requests
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @hampen2929
+
+# Backend (Python/FastAPI)
+/apps/api/ @hampen2929
+
+# Frontend (Next.js/React)
+/apps/web/ @hampen2929
+
+# Documentation
+/docs/ @hampen2929
+/*.md @hampen2929
+
+# CI/CD and GitHub configuration
+/.github/ @hampen2929
+
+# Docker configuration
+/docker-compose.yml @hampen2929
+/apps/*/Dockerfile @hampen2929
