@@ -244,6 +244,12 @@ docker compose down
 - **Linter**: ESLint
 - **Types**: Use strict type definitions
 
+### Documentation
+- **Diagrams**: All diagrams must be written in Mermaid format
+  - Use fenced code blocks with `mermaid` language identifier
+  - Prefer flowcharts, sequence diagrams, and ER diagrams as appropriate
+  - Keep diagrams simple and readable
+
 ### mypy Best Practices
 
 This project uses mypy in strict mode. Follow these patterns to avoid common type errors:
