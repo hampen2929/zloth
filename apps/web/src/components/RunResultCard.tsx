@@ -88,25 +88,71 @@ export function RunResultCard({
       {/* Expanded Content */}
       {expanded && (
         <div className="border-t border-gray-700/50">
-          {/* Running State - Show streaming logs */}
-          {run.status === 'running' && (
-            <div className="p-4">
-              <StreamingLogs runId={run.id} isRunning={true} initialLogs={run.logs} />
-            </div>
-          )}
-
-          {/* Queued State - Show waiting message with any existing logs */}
-          {run.status === 'queued' && (
-            <div className="p-4">
-              <div className="flex flex-col items-center justify-center py-4 mb-4">
-                <ClockIcon className="w-8 h-8 text-gray-500 mb-3" />
-                <p className="text-gray-400 font-medium text-sm">Waiting in queue...</p>
-                <p className="text-gray-500 text-xs mt-1">Your run will start soon</p>
+          {/* Tabs - shown for running, queued, and succeeded states */}
+          {(run.status === 'running' || run.status === 'queued' || run.status === 'succeeded') && (
+            <>
+              <div className="flex border-b border-gray-700/50 mt-3 px-4" role="tablist">
+                {runTabConfig.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => onTabChange(tab.id)}
+                    role="tab"
+                    aria-selected={activeTab === tab.id}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
+                      'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset',
+                      activeTab === tab.id
+                        ? 'text-blue-400 border-b-2 border-blue-500 -mb-[1px]'
+                        : 'text-gray-400 hover:text-gray-300'
+                    )}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                    {/* Streaming indicator for logs tab when running */}
+                    {tab.id === 'logs' && run.status === 'running' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ml-1" />
+                    )}
+                  </button>
+                ))}
               </div>
-              {run.logs && run.logs.length > 0 && (
-                <StreamingLogs runId={run.id} isRunning={false} initialLogs={run.logs} />
-              )}
-            </div>
+
+              {/* Tab Content */}
+              <div className="p-4 max-h-96 overflow-y-auto" role="tabpanel">
+                {activeTab === 'summary' && (
+                  run.status === 'succeeded' ? (
+                    <SummaryTab run={run} />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <ClockIcon className="w-8 h-8 text-gray-500 mb-3" />
+                      <p className="text-gray-400 font-medium text-sm">
+                        {run.status === 'running' ? 'Running...' : 'Waiting in queue...'}
+                      </p>
+                      <p className="text-gray-500 text-xs mt-1">Summary will be available when completed</p>
+                    </div>
+                  )
+                )}
+                {activeTab === 'diff' && (
+                  run.status === 'succeeded' ? (
+                    <DiffViewer patch={run.patch || ''} />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <ClockIcon className="w-8 h-8 text-gray-500 mb-3" />
+                      <p className="text-gray-400 font-medium text-sm">
+                        {run.status === 'running' ? 'Running...' : 'Waiting in queue...'}
+                      </p>
+                      <p className="text-gray-500 text-xs mt-1">Diff will be available when completed</p>
+                    </div>
+                  )
+                )}
+                {activeTab === 'logs' && (
+                  <StreamingLogs
+                    runId={run.id}
+                    isRunning={run.status === 'running' || run.status === 'queued'}
+                    initialLogs={run.logs}
+                  />
+                )}
+              </div>
+            </>
           )}
 
           {/* Failed State */}
@@ -131,40 +177,6 @@ export function RunResultCard({
                 </div>
               )}
             </div>
-          )}
-
-          {/* Succeeded State */}
-          {run.status === 'succeeded' && (
-            <>
-              {/* Tabs */}
-              <div className="flex border-b border-gray-700/50 mt-3 px-4" role="tablist">
-                {runTabConfig.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => onTabChange(tab.id)}
-                    role="tab"
-                    aria-selected={activeTab === tab.id}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
-                      'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset',
-                      activeTab === tab.id
-                        ? 'text-blue-400 border-b-2 border-blue-500 -mb-[1px]'
-                        : 'text-gray-400 hover:text-gray-300'
-                    )}
-                  >
-                    {tab.icon}
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tab Content */}
-              <div className="p-4 max-h-96 overflow-y-auto" role="tabpanel">
-                {activeTab === 'summary' && <SummaryTab run={run} />}
-                {activeTab === 'diff' && <DiffViewer patch={run.patch || ''} />}
-                {activeTab === 'logs' && <LogsTab logs={run.logs} />}
-              </div>
-            </>
           )}
         </div>
       )}
@@ -228,19 +240,3 @@ function SummaryTab({ run }: { run: Run }) {
   );
 }
 
-function LogsTab({ logs }: { logs?: string[] }) {
-  if (!logs || logs.length === 0) {
-    return <p className="text-gray-500 text-center py-4">No logs available.</p>;
-  }
-
-  return (
-    <div className="font-mono text-xs space-y-0.5 bg-gray-800/50 rounded-lg p-3">
-      {logs.map((log, i) => (
-        <div key={i} className="text-gray-400 leading-relaxed">
-          <span className="text-gray-600 mr-2 select-none">{i + 1}</span>
-          {log}
-        </div>
-      ))}
-    </div>
-  );
-}

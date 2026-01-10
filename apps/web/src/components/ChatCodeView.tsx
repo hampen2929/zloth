@@ -173,6 +173,24 @@ export function ChatCodeView({
     });
   }, [runs, error, success]);
 
+  // Auto-switch to logs tab when run is running/queued, switch to summary when succeeded
+  useEffect(() => {
+    runs.forEach((run) => {
+      const currentTab = runTabs[run.id];
+      if (run.status === 'running' || run.status === 'queued') {
+        // Auto-switch to logs tab when running/queued
+        if (currentTab !== 'logs') {
+          setRunTab(run.id, 'logs');
+        }
+      } else if (run.status === 'succeeded') {
+        // Auto-switch to summary tab when succeeded (only if currently on logs)
+        if (currentTab === 'logs' || currentTab === undefined) {
+          setRunTab(run.id, 'summary');
+        }
+      }
+    });
+  }, [runs, runTabs]);
+
   const handleCreatePR = async () => {
     if (!latestSuccessfulRun) return;
 
