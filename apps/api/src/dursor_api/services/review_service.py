@@ -426,9 +426,7 @@ class ReviewService:
             try:
                 data = json.loads(candidate)
                 # Check if this looks like our expected review format
-                if isinstance(data, dict) and (
-                    "feedbacks" in data or "overall_summary" in data
-                ):
+                if isinstance(data, dict) and ("feedbacks" in data or "overall_summary" in data):
                     logs.append(f"Successfully parsed JSON object #{i + 1}")
                     return self._process_review_data(data, logs)
             except json.JSONDecodeError:
@@ -506,9 +504,7 @@ class ReviewService:
                     line_start=fb_data.get("line_start"),
                     line_end=fb_data.get("line_end"),
                     severity=ReviewSeverity(fb_data.get("severity", "medium").lower()),
-                    category=ReviewCategory(
-                        fb_data.get("category", "maintainability").lower()
-                    ),
+                    category=ReviewCategory(fb_data.get("category", "maintainability").lower()),
                     title=fb_data.get("title", "Review finding"),
                     description=fb_data.get("description", ""),
                     suggestion=fb_data.get("suggestion"),
