@@ -100,6 +100,16 @@ Provide your detailed review with severity levels and actionable feedback.
 Output ONLY the JSON response, no additional text.
 """
 
+REVIEW_USER_PROMPT_FILE_TEMPLATE = """Please review the code changes in the file at: {file_path}
+
+Provide your detailed review with severity levels and actionable feedback.
+Output ONLY the JSON response, no additional text.
+"""
+
+# Maximum patch size to embed directly in the prompt (in characters)
+# Larger patches will be written to a file
+MAX_INLINE_PATCH_SIZE = 50000
+
 
 class ReviewQueueAdapter:
     """Simple in-memory queue adapter for reviews."""
@@ -334,6 +344,8 @@ class ReviewService:
         worktree_path: Path | None,
     ) -> dict[str, Any]:
         """Execute review using CLI executor."""
+        import tempfile as tmpfile
+
         # Select executor
         executor_map: dict[
             ExecutorType, tuple[ClaudeCodeExecutor | CodexExecutor | GeminiExecutor, str]
@@ -345,39 +357,54 @@ class ReviewService:
 
         executor, executor_name = executor_map[review.executor_type]
         logs.append(f"Using {executor_name} for review")
+        logs.append(f"Patch size: {len(patch)} characters")
 
-        # Build review prompt
-        review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
+        # Determine working directory
+        if worktree_path and worktree_path.exists():
+            work_dir = worktree_path
+            logs.append(f"Using worktree: {work_dir}")
+        else:
+            # Create a temporary directory for review if no worktree
+            work_dir = Path(tmpfile.mkdtemp(prefix="review_"))
+            logs.append(f"Using temporary directory: {work_dir}")
+
+        try:
+            # For large patches, write to a file and reference it
+            if len(patch) > MAX_INLINE_PATCH_SIZE:
+                patch_file = work_dir / "review_patch.diff"
+                patch_file.write_text(patch, encoding="utf-8")
+                logs.append(f"Patch too large for inline, written to: {patch_file}")
+
+                review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
+
+{REVIEW_USER_PROMPT_FILE_TEMPLATE.format(file_path=str(patch_file))}"""
+            else:
+                review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
 
 {REVIEW_USER_PROMPT_TEMPLATE.format(patch=patch)}"""
 
-        # Execute CLI
-        if worktree_path and worktree_path.exists():
-            logs.append(f"Executing in worktree: {worktree_path}")
+            logs.append(f"Prompt size: {len(review_prompt)} characters")
+
             result = await executor.execute(
-                worktree_path=worktree_path,
+                worktree_path=work_dir,
                 instruction=review_prompt,
                 on_output=lambda line: self._log_output(review.id, line, logs),
             )
-        else:
-            # Create a temporary directory for review if no worktree
-            import tempfile
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmppath = Path(tmpdir)
-                logs.append(f"Executing in temporary directory: {tmppath}")
-                result = await executor.execute(
-                    worktree_path=tmppath,
-                    instruction=review_prompt,
-                    on_output=lambda line: self._log_output(review.id, line, logs),
-                )
+            if not result.success:
+                raise RuntimeError(f"CLI execution failed: {result.error}")
 
-        if not result.success:
-            raise RuntimeError(f"CLI execution failed: {result.error}")
+            # Parse response to extract JSON
+            response_text = "\n".join(result.logs)
+            return self._parse_review_response(response_text, logs)
 
-        # Parse response to extract JSON
-        response_text = "\n".join(result.logs)
-        return self._parse_review_response(response_text, logs)
+        finally:
+            # Cleanup temporary directory if we created one
+            if not worktree_path or not worktree_path.exists():
+                import shutil
+
+                if work_dir.exists():
+                    shutil.rmtree(work_dir, ignore_errors=True)
 
     def _parse_review_response(self, response_text: str, logs: list[str]) -> dict[str, Any]:
         """Parse the review response from CLI output."""
