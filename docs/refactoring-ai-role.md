@@ -13,6 +13,114 @@
 
 ---
 
+## AI Role 共通仕様
+
+すべてのAI Roleは、Taskのチャット欄に表示され、以下の共通の入力・出力・表示仕様に従う。
+
+### 入力（Input）
+
+| 入力形式 | 説明 | 例 |
+|----------|------|-----|
+| **テキスト指示** | ユーザーがチャット欄に入力する自然言語の指示 | 「認証機能を追加して」 |
+| **ボタン入力** | UIボタンによるアクション発火 | 「Review Code」ボタン |
+| **コンテキスト** | 対象Run、対象ファイル、ブランチなどの追加情報 | `target_run_ids`, `base_ref` |
+
+```typescript
+// 共通の入力インターフェース
+interface RoleInput {
+  instruction: string;          // テキスト指示（必須）
+  executor_type: ExecutorType;  // 実行するExecutor
+  context?: {                   // Role固有のコンテキスト（オプション）
+    target_run_ids?: string[];  // Review: レビュー対象のRun
+    base_ref?: string;          // Implementation: ベースブランチ
+    // ... Role固有の追加フィールド
+  };
+}
+```
+
+### 出力（Output）
+
+すべてのAI Roleは以下の出力を生成する。
+
+| 出力項目 | 必須 | 説明 |
+|----------|------|------|
+| **Diff（パッチ）** | ❌ | Gitに反映するファイル変更（Unified diff形式）。Roleによっては出力しない（例: Review） |
+| **ログ** | ✅ | 実行中のストリーミングログ。すべてのRoleで必須 |
+| **サマリー** | ✅ | 実行結果の要約テキスト |
+| **Role固有データ** | ❌ | Review: feedbacks, score / Breakdown: tasks など |
+
+```python
+# 共通の出力インターフェース
+class RoleOutput(BaseModel):
+    """すべてのAI Roleが出力する共通データ。"""
+
+    # 必須フィールド
+    success: bool                    # 実行成功/失敗
+    summary: str | None              # 実行結果のサマリー
+    logs: list[str]                  # 実行ログ（ストリーミング対応）
+
+    # オプションフィールド（あれば）
+    patch: str | None = None         # Gitに反映するDiff
+    files_changed: list[FileDiff] = []  # 変更ファイル一覧
+    warnings: list[str] = []         # 警告メッセージ
+    error: str | None = None         # エラーメッセージ（失敗時）
+```
+
+### 表示（Display）
+
+TaskのチャットUIにおいて、すべてのAI Roleは以下の表示構成を持つ。
+
+```
+┌─────────────────────────────────────────────────────┐
+│ [Role Icon] Role Name           [Status Badge] [▼] │  ← ヘッダー（展開/折りたたみ）
+├─────────────────────────────────────────────────────┤
+│ ┌─────────┬─────────┬─────────┐                     │
+│ │ Summary │  Diff   │  Logs   │  ← タブ（Role固有のタブ追加可）
+│ └─────────┴─────────┴─────────┘                     │
+│                                                     │
+│  [タブコンテンツ]                                    │
+│  - Summary: 実行結果のサマリー表示                    │
+│  - Diff: ファイル変更のDiff表示（あれば）             │
+│  - Logs: ストリーミングログ表示                       │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+#### 共通タブ
+
+| タブ | 必須 | 内容 |
+|------|------|------|
+| **Summary** | ✅ | 実行結果のサマリー。成功/失敗状態、主要な結果を表示 |
+| **Logs** | ✅ | 実行ログ。実行中はストリーミング表示（リアルタイム更新） |
+| **Diff** | ❌ | ファイル変更がある場合のみ表示。Unified diff形式 |
+
+#### Role固有タブ（例）
+
+| Role | 追加タブ | 内容 |
+|------|----------|------|
+| Review | Results | フィードバック一覧（severity別グループ化） |
+| Breakdown | Tasks | 分解されたタスク一覧 |
+
+#### ステータス表示
+
+| ステータス | 表示 | Logsタブの挙動 |
+|------------|------|----------------|
+| `queued` | 待機中バッジ | 「Waiting...」表示 |
+| `running` | 実行中バッジ（アニメーション） | **ストリーミング表示**（自動スクロール） |
+| `succeeded` | 成功バッジ（緑） | 完了ログ表示 |
+| `failed` | 失敗バッジ（赤） | エラーログ表示 |
+
+### Role別の入出力マッピング
+
+| Role | 入力 | Diff出力 | 固有出力 |
+|------|------|----------|----------|
+| **Implementation** | テキスト指示 | ✅ あり | `session_id`, `files_changed` |
+| **Review** | ボタン + target_run_ids | ❌ なし | `feedbacks`, `overall_score` |
+| **Breakdown** | テキスト指示 | ❌ なし | `tasks`, `codebase_analysis` |
+| **（将来）Fix** | Review feedback選択 | ✅ あり | `applied_feedbacks` |
+
+---
+
 ## 現状分析
 
 ### 既存のAI Role サービス
