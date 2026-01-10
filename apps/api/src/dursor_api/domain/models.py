@@ -173,7 +173,11 @@ class RunCreate(BaseModel):
     base_ref: str | None = Field(None, description="Base branch/commit")
     executor_type: ExecutorType = Field(
         default=ExecutorType.PATCH_AGENT,
-        description="Executor type: patch_agent (LLM) or claude_code (CLI)",
+        description="Executor type (for backward compatibility)",
+    )
+    executor_types: list[ExecutorType] | None = Field(
+        None,
+        description="List of CLI executor types to run in parallel",
     )
     message_id: str | None = Field(None, description="ID of the triggering message")
 

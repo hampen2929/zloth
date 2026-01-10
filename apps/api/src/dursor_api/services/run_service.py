@@ -38,6 +38,13 @@ from dursor_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
 
 logger = logging.getLogger(__name__)
 
+# Valid CLI Agent Types for parallel execution
+CLI_AGENT_TYPES = {
+    ExecutorType.CLAUDE_CODE,
+    ExecutorType.CODEX_CLI,
+    ExecutorType.GEMINI_CLI,
+}
+
 if TYPE_CHECKING:
     from dursor_api.services.github_service import GitHubService
     from dursor_api.services.output_manager import OutputManager
@@ -134,11 +141,11 @@ class RunService:
         )
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
-        """Create runs for multiple models or Claude Code.
+        """Create runs for multiple CLI agents (parallel execution) or models.
 
         Args:
             task_id: Task ID.
-            data: Run creation data with model IDs or executor type.
+            data: Run creation data with executor_types (parallel) or executor_type/model_ids.
 
         Returns:
             List of created Run objects.
@@ -153,7 +160,39 @@ class RunService:
         if not repo:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        runs = []
+        runs: list[Run] = []
+
+        # Handle multiple executor_types (parallel execution of CLI agents)
+        if data.executor_types and len(data.executor_types) > 0:
+            # CLI Agent Types only
+            valid_types = [et for et in data.executor_types if et in CLI_AGENT_TYPES]
+            if not valid_types:
+                raise ValueError(
+                    f"Invalid executor types. Must be one of: {[e.value for e in CLI_AGENT_TYPES]}"
+                )
+
+            errors: list[str] = []
+            for executor_type in valid_types:
+                try:
+                    run = await self._create_cli_run(
+                        task_id=task_id,
+                        repo=repo,
+                        instruction=data.instruction,
+                        base_ref=data.base_ref or repo.default_branch,
+                        executor_type=executor_type,
+                        message_id=data.message_id,
+                        force_new_worktree=True,  # Each parallel run gets its own worktree
+                    )
+                    runs.append(run)
+                except Exception as e:
+                    errors.append(f"{executor_type.value}: {e!s}")
+                    logger.error(f"Failed to create run for {executor_type}: {e}")
+
+            # Only fail if all agents failed
+            if not runs and errors:
+                raise ValueError(f"All agent runs failed: {', '.join(errors)}")
+
+            return runs
 
         # Lock executor after the first run in the task.
         # Users expect "resume" style conversations to keep using the initially chosen executor.
@@ -260,6 +299,7 @@ class RunService:
         base_ref: str,
         executor_type: ExecutorType,
         message_id: str | None = None,
+        force_new_worktree: bool = False,
     ) -> Run:
         """Create and start a CLI-based run (Claude Code, Codex, or Gemini).
 
@@ -274,6 +314,7 @@ class RunService:
             base_ref: Base branch to work from.
             executor_type: Type of CLI executor to use.
             message_id: ID of the triggering message.
+            force_new_worktree: If True, always create a new worktree (for parallel execution).
 
         Returns:
             Created Run object.
@@ -282,16 +323,20 @@ class RunService:
 
         # Get the latest session ID for this task and executor type
         # This enables conversation persistence across multiple runs
-        previous_session_id = await self.run_dao.get_latest_session_id(
-            task_id=task_id,
-            executor_type=executor_type,
-        )
+        previous_session_id: str | None = None
+        if not force_new_worktree:
+            previous_session_id = await self.run_dao.get_latest_session_id(
+                task_id=task_id,
+                executor_type=executor_type,
+            )
 
-        # Check for existing worktree to reuse
-        existing_run = await self.run_dao.get_latest_worktree_run(
-            task_id=task_id,
-            executor_type=executor_type,
-        )
+        # Check for existing worktree to reuse (skip if force_new_worktree)
+        existing_run = None
+        if not force_new_worktree:
+            existing_run = await self.run_dao.get_latest_worktree_run(
+                task_id=task_id,
+                executor_type=executor_type,
+            )
 
         worktree_info = None
 

@@ -126,6 +126,7 @@ export interface RunCreate {
   model_ids?: string[];
   base_ref?: string;
   executor_type?: ExecutorType;
+  executor_types?: ExecutorType[];  // For parallel execution of CLI agents
   message_id?: string;
 }
 
