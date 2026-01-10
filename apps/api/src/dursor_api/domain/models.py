@@ -14,6 +14,9 @@ from dursor_api.domain.enums import (
     MessageRole,
     PRCreationMode,
     Provider,
+    ReviewCategory,
+    ReviewSeverity,
+    ReviewStatus,
     RunStatus,
     TaskKanbanStatus,
 )
@@ -675,3 +678,100 @@ class BacklogItem(BacklogItemBase):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================
+# Code Review
+# ============================================================
+
+
+class ReviewFeedbackItem(BaseModel):
+    """Single feedback item in a review."""
+
+    id: str
+    file_path: str = Field(..., description="Target file path")
+    line_start: int | None = Field(None, description="Start line number")
+    line_end: int | None = Field(None, description="End line number")
+    severity: ReviewSeverity
+    category: ReviewCategory
+    title: str = Field(..., description="Feedback title (1 line)")
+    description: str = Field(..., description="Detailed description")
+    suggestion: str | None = Field(None, description="Suggested fix")
+    code_snippet: str | None = Field(None, description="Problematic code snippet")
+
+
+class ReviewCreate(BaseModel):
+    """Request for creating a Review."""
+
+    target_run_ids: list[str] = Field(..., description="Run IDs to review")
+    executor_type: ExecutorType = Field(
+        default=ExecutorType.CLAUDE_CODE,
+        description="Executor to use for review",
+    )
+    model_id: str | None = Field(None, description="Model ID for patch_agent executor")
+    focus_areas: list[ReviewCategory] | None = Field(None, description="Areas to focus on")
+
+
+class ReviewSummary(BaseModel):
+    """Summary of a Review."""
+
+    id: str
+    task_id: str
+    status: ReviewStatus
+    executor_type: ExecutorType
+    feedback_count: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    created_at: datetime
+
+
+class Review(BaseModel):
+    """Complete Review information."""
+
+    id: str
+    task_id: str
+    target_run_ids: list[str]
+    executor_type: ExecutorType
+    model_id: str | None
+    model_name: str | None
+    status: ReviewStatus
+    overall_summary: str | None = Field(None, description="Overall review summary")
+    overall_score: float | None = Field(None, description="Overall score (0.0-1.0)")
+    feedbacks: list[ReviewFeedbackItem] = []
+    logs: list[str] = []
+    error: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ReviewCreated(BaseModel):
+    """Response for review creation."""
+
+    review_id: str
+
+
+class FixInstructionRequest(BaseModel):
+    """Request for generating fix instruction from review."""
+
+    review_id: str | None = Field(None, description="Review ID (set from URL path)")
+    feedback_ids: list[str] | None = Field(
+        None, description="Specific feedbacks to fix (None = all)"
+    )
+    severity_filter: list[ReviewSeverity] | None = Field(
+        None, description="Filter by severity (None = all)"
+    )
+    additional_instruction: str | None = Field(None, description="Additional user instruction")
+
+
+class FixInstructionResponse(BaseModel):
+    """Generated fix instruction."""
+
+    instruction: str
+    target_feedbacks: list[ReviewFeedbackItem]
+    estimated_changes: int

@@ -20,6 +20,8 @@ import {
   ClipboardDocumentIcon,
   CodeBracketSquareIcon,
 } from '@heroicons/react/24/outline';
+import { ReviewButton } from './ReviewButton';
+import { ReviewPanel } from './ReviewPanel';
 
 interface ChatCodeViewProps {
   taskId: string;
@@ -50,6 +52,7 @@ export function ChatCodeView({
   const [creatingPR, setCreatingPR] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
   const [prLinkResult, setPRLinkResult] = useState<{ url: string } | null>(null);
+  const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -68,6 +71,11 @@ export function ChatCodeView({
   const sessionBranch = sortedRuns.find((r) => r.working_branch)?.working_branch || null;
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
   const latestPR = prs && prs.length > 0 ? prs[0] : null;
+
+  // Get successful run IDs for review
+  const successfulRunIds = sortedRuns
+    .filter((r) => r.status === 'succeeded')
+    .map((r) => r.id);
 
   // Sync PR result from backend
   useEffect(() => {
@@ -280,9 +288,17 @@ export function ChatCodeView({
           prResult={prResult}
           prLinkResult={prLinkResult}
           latestSuccessfulRun={latestSuccessfulRun}
+          successfulRunIds={successfulRunIds}
+          taskId={taskId}
+          executorType={lockedExecutor}
           creatingPR={creatingPR}
           onCopyBranch={() => copy(sessionBranch, 'Branch name')}
           onCreatePR={handleCreatePR}
+          onReviewCreated={(reviewId) => {
+            setActiveReviewId(reviewId);
+            success('Review started');
+          }}
+          onReviewError={(message) => error(message)}
         />
       )}
 
@@ -331,6 +347,19 @@ export function ChatCodeView({
         disabled={!isCLIExecutor && selectedModels.length === 0}
         selectedModelCount={isCLIExecutor ? undefined : selectedModels.length}
       />
+
+      {/* Review Panel */}
+      {activeReviewId && (
+        <ReviewPanel
+          reviewId={activeReviewId}
+          onClose={() => setActiveReviewId(null)}
+          onApplyFix={(instruction) => {
+            setInput(instruction);
+            setActiveReviewId(null);
+            success('Fix instruction added to input');
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -342,9 +371,14 @@ interface SessionHeaderProps {
   prResult: { url: string; number: number } | null;
   prLinkResult: { url: string } | null;
   latestSuccessfulRun: Run | undefined;
+  successfulRunIds: string[];
+  taskId: string;
+  executorType: ExecutorType;
   creatingPR: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
+  onReviewCreated: (reviewId: string) => void;
+  onReviewError: (message: string) => void;
 }
 
 function SessionHeader({
@@ -352,9 +386,14 @@ function SessionHeader({
   prResult,
   prLinkResult,
   latestSuccessfulRun,
+  successfulRunIds,
+  taskId,
+  executorType,
   creatingPR,
   onCopyBranch,
   onCreatePR,
+  onReviewCreated,
+  onReviewError,
 }: SessionHeaderProps) {
   return (
     <div className="flex items-center justify-end gap-3 px-4 py-2 border-b border-gray-800 bg-gray-900/50">
@@ -369,6 +408,17 @@ function SessionHeader({
         </span>
         <ClipboardDocumentIcon className="w-3.5 h-3.5 text-gray-500 group-hover:text-gray-300" />
       </button>
+
+      {/* Review Button */}
+      {successfulRunIds.length > 0 && (
+        <ReviewButton
+          taskId={taskId}
+          runIds={successfulRunIds}
+          executorType={executorType}
+          onReviewCreated={onReviewCreated}
+          onError={onReviewError}
+        />
+      )}
 
       {prResult ? (
         <a
