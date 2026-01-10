@@ -214,7 +214,7 @@ export default function HomePage() {
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
       <div className="w-full max-w-3xl px-4">
         {/* Main Input Area */}
-        <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-lg">
+        <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-lg">
           {/* Textarea */}
           <div className="p-4">
             <textarea
