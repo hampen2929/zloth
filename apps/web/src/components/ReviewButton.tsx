@@ -11,7 +11,7 @@ interface ReviewButtonProps {
   runIds: string[];
   executorType: ExecutorType;
   disabled?: boolean;
-  onReviewCreated: (reviewId: string) => void;
+  onReviewCreated: () => void;
   onError: (message: string) => void;
 }
 
@@ -33,11 +33,11 @@ export function ReviewButton({
 
     setLoading(true);
     try {
-      const result = await reviewsApi.create(taskId, {
+      await reviewsApi.create(taskId, {
         target_run_ids: runIds,
         executor_type: executorType,
       });
-      onReviewCreated(result.review_id);
+      onReviewCreated();
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to start review');
     } finally {

@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
-import { tasksApi, runsApi, prsApi, preferencesApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType, Run, RunStatus } from '@/types';
+import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi } from '@/lib/api';
+import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -21,7 +21,7 @@ import {
   CodeBracketSquareIcon,
 } from '@heroicons/react/24/outline';
 import { ReviewButton } from './ReviewButton';
-import { ReviewPanel } from './ReviewPanel';
+import { ReviewResultCard } from './ReviewResultCard';
 
 interface ChatCodeViewProps {
   taskId: string;
@@ -52,7 +52,7 @@ export function ChatCodeView({
   const [creatingPR, setCreatingPR] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
   const [prLinkResult, setPRLinkResult] = useState<{ url: string } | null>(null);
-  const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
+  const [reviewExpanded, setReviewExpanded] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -61,6 +61,26 @@ export function ChatCodeView({
   const { data: prs } = useSWR(`prs-${taskId}`, () => prsApi.list(taskId), {
     refreshInterval: prLinkResult ? 2000 : 0,
   });
+
+  // Fetch reviews for the task
+  const { data: reviewSummaries, mutate: mutateReviews } = useSWR(
+    `reviews-${taskId}`,
+    () => reviewsApi.list(taskId),
+    { refreshInterval: 3000 }
+  );
+
+  // Fetch full review data for each review summary
+  const { data: reviews } = useSWR<Review[]>(
+    reviewSummaries ? `reviews-full-${taskId}` : null,
+    async () => {
+      if (!reviewSummaries) return [];
+      const fullReviews = await Promise.all(
+        reviewSummaries.map((s) => reviewsApi.get(s.id))
+      );
+      return fullReviews;
+    },
+    { refreshInterval: 3000 }
+  );
 
   // Determine executor types used in this task
   const sortedRuns = useMemo(() => [...runs].reverse(), [runs]);
@@ -88,7 +108,7 @@ export function ChatCodeView({
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, runs]);
+  }, [messages, runs, reviews]);
 
   // Select all models by default if none specified (patch_agent only)
   useEffect(() => {
@@ -277,6 +297,18 @@ export function ChatCodeView({
     setRunTabs((prev) => ({ ...prev, [runId]: tab }));
   };
 
+  // Review expansion helpers
+  const isReviewExpanded = (reviewId: string): boolean => reviewExpanded[reviewId] ?? true;
+  const toggleReviewExpanded = (reviewId: string) => {
+    setReviewExpanded((prev) => ({ ...prev, [reviewId]: !isReviewExpanded(reviewId) }));
+  };
+
+  // Filter reviews for the selected executor type
+  const reviewsForSelectedExecutor = useMemo(() => {
+    if (!reviews || !selectedExecutorType) return [];
+    return reviews.filter((r) => r.executor_type === selectedExecutorType);
+  }, [reviews, selectedExecutorType]);
+
   // Get aggregate stats for an executor type
   const getExecutorStats = (executorType: ExecutorType) => {
     const executorRuns = sortedRuns.filter((r) => r.executor_type === executorType);
@@ -308,8 +340,8 @@ export function ChatCodeView({
           creatingPR={creatingPR}
           onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
-          onReviewCreated={(reviewId) => {
-            setActiveReviewId(reviewId);
+          onReviewCreated={() => {
+            mutateReviews();
             success('Review started');
           }}
           onReviewError={(message) => error(message)}
@@ -336,7 +368,7 @@ export function ChatCodeView({
         </div>
       )}
 
-      {/* Interleaved Conversation Area: User message -> AI output */}
+      {/* Interleaved Conversation Area: User message -> AI output -> Review */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && runs.length === 0 ? (
           <EmptyState />
@@ -364,6 +396,21 @@ export function ChatCodeView({
                   </div>
                 );
               })}
+
+            {/* Reviews for the selected executor */}
+            {reviewsForSelectedExecutor.map((review) => (
+              <div key={review.id} className="ml-4 border-l-2 border-blue-500/30 pl-4">
+                <ReviewResultCard
+                  review={review}
+                  expanded={isReviewExpanded(review.id)}
+                  onToggleExpand={() => toggleReviewExpanded(review.id)}
+                  onApplyFix={(instruction) => {
+                    setInput(instruction);
+                    success('Fix instruction added to input');
+                  }}
+                />
+              </div>
+            ))}
           </>
         )}
         <div ref={messagesEndRef} />
@@ -389,18 +436,6 @@ export function ChatCodeView({
         selectedModelCount={selectedExecutorType === 'patch_agent' ? selectedModels.length : undefined}
       />
 
-      {/* Review Panel */}
-      {activeReviewId && (
-        <ReviewPanel
-          reviewId={activeReviewId}
-          onClose={() => setActiveReviewId(null)}
-          onApplyFix={(instruction) => {
-            setInput(instruction);
-            setActiveReviewId(null);
-            success('Fix instruction added to input');
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -418,7 +453,7 @@ interface SessionHeaderProps {
   creatingPR: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
-  onReviewCreated: (reviewId: string) => void;
+  onReviewCreated: () => void;
   onReviewError: (message: string) => void;
 }
 
