@@ -8,7 +8,7 @@ import type { GitHubRepository, ExecutorType } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
-import { useClickOutside, isCLIExecutor } from '@/hooks';
+import { useClickOutside } from '@/hooks';
 import { ExecutorSelector } from '@/components/ExecutorSelector';
 import { BranchSelector } from '@/components/BranchSelector';
 import {
@@ -31,7 +31,7 @@ export default function HomePage() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [executorType, setExecutorType] = useState<ExecutorType>('claude_code');
+  const [selectedCLIs, setSelectedCLIs] = useState<ExecutorType[]>(['claude_code']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +46,7 @@ export default function HomePage() {
   useClickOutside(repoDropdownRef, () => setShowRepoDropdown(false), showRepoDropdown);
 
   // Data fetching
-  const { data: models, isLoading: modelsLoading } = useSWR('models', modelsApi.list);
+  const { data: models } = useSWR('models', modelsApi.list);
   const { data: repos, isLoading: reposLoading } = useSWR('github-repos', githubApi.listRepos);
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
@@ -89,19 +89,24 @@ export default function HomePage() {
     );
   };
 
+  // Toggle CLI selection
+  const toggleCLI = (cli: ExecutorType) => {
+    setSelectedCLIs((prev) =>
+      prev.includes(cli) ? prev.filter((c) => c !== cli) : [...prev, cli]
+    );
+  };
+
   const handleSubmit = async () => {
-    // Validate based on executor type
+    // Validate: need instruction, repo, branch, and at least one executor (CLI or model)
     if (!instruction.trim() || !selectedRepo || !selectedBranch) {
       return;
     }
-    if (executorType === 'patch_agent' && selectedModels.length === 0) {
+    if (selectedCLIs.length === 0 && selectedModels.length === 0) {
       return;
     }
 
     setLoading(true);
     setError(null);
-
-    const isCLI = isCLIExecutor(executorType);
 
     try {
       // Clone/select the repository
@@ -117,30 +122,32 @@ export default function HomePage() {
         title: instruction.slice(0, 50) + (instruction.length > 50 ? '...' : ''),
       });
 
-      // Add the instruction as the first message
-      await tasksApi.addMessage(task.id, {
+      // Add the instruction as the first message and get its ID
+      const message = await tasksApi.addMessage(task.id, {
         role: 'user',
         content: instruction,
       });
 
-      // Create runs based on executor type
-      if (isCLI) {
-        await runsApi.create(task.id, {
-          instruction: instruction,
-          executor_type: executorType,
-        });
-      } else if (selectedModels.length > 0) {
-        await runsApi.create(task.id, {
-          instruction: instruction,
-          model_ids: selectedModels,
-          executor_type: 'patch_agent',
-        });
+      // Build executor_types array for the API
+      const executorTypesToRun: ExecutorType[] = [...selectedCLIs];
+      if (selectedModels.length > 0) {
+        executorTypesToRun.push('patch_agent');
       }
 
-      // Navigate to the task page with executor type
+      // Create runs with executor_types for parallel execution, linked to the message
+      await runsApi.create(task.id, {
+        instruction: instruction,
+        executor_types: executorTypesToRun,
+        model_ids: selectedModels.length > 0 ? selectedModels : undefined,
+        message_id: message.id,
+      });
+
+      // Navigate to the task page with executor info
       const params = new URLSearchParams();
-      params.set('executor', executorType);
-      if (executorType === 'patch_agent') {
+      if (selectedCLIs.length > 0) {
+        params.set('executors', selectedCLIs.join(','));
+      }
+      if (selectedModels.length > 0) {
         params.set('models', selectedModels.join(','));
       }
       router.push(`/tasks/${task.id}?${params.toString()}`);
@@ -170,13 +177,13 @@ export default function HomePage() {
     }
   };
 
-  const isCLI = isCLIExecutor(executorType);
+  const hasExecutor = selectedCLIs.length > 0 || selectedModels.length > 0;
   const canSubmit =
     instruction.trim() &&
     selectedRepo &&
     selectedBranch &&
     !loading &&
-    (isCLI || selectedModels.length > 0);
+    hasExecutor;
 
   // Compute validation errors for display
   // Don't show errors while data is still loading
@@ -195,16 +202,9 @@ export default function HomePage() {
     if (selectedRepo && !selectedBranch) {
       errors.push({ message: 'ブランチを選択してください' });
     }
-    // Only show model errors after loading completes
-    if (!isCLI && selectedModels.length === 0) {
-      if (!modelsLoading && (!models || models.length === 0)) {
-        errors.push({
-          message: 'モデルが未登録です',
-          action: { label: '設定する', href: '#settings-models' },
-        });
-      } else if (!modelsLoading && models && models.length > 0) {
-        errors.push({ message: 'モデルを選択してください' });
-      }
+    // Show executor selection error if nothing is selected
+    if (selectedCLIs.length === 0 && selectedModels.length === 0) {
+      errors.push({ message: 'エグゼキューターを選択してください (CLI または モデル)' });
     }
     return errors;
   };
@@ -215,7 +215,7 @@ export default function HomePage() {
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
       <div className="w-full max-w-3xl px-4">
         {/* Main Input Area */}
-        <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-lg">
+        <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-lg">
           {/* Textarea */}
           <div className="p-4">
             <textarea
@@ -240,10 +240,11 @@ export default function HomePage() {
             <div className="flex items-center gap-4">
               {/* Executor Selector */}
               <ExecutorSelector
-                executorType={executorType}
+                selectedCLIs={selectedCLIs}
                 selectedModels={selectedModels}
                 models={models || []}
-                onExecutorChange={setExecutorType}
+                onCLIToggle={toggleCLI}
+                onCLIsChange={setSelectedCLIs}
                 onModelToggle={toggleModel}
                 onModelsChange={setSelectedModels}
               />

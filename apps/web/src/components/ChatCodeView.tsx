@@ -8,7 +8,7 @@ import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
 import { cn } from '@/lib/utils';
-import { useExecutorType, useClipboard, getExecutorDisplayName } from '@/hooks';
+import { useClipboard, getExecutorDisplayName } from '@/hooks';
 import { RunResultCard, type RunTab } from './RunResultCard';
 import {
   UserIcon,
@@ -37,7 +37,7 @@ export function ChatCodeView({
   messages,
   runs,
   models,
-  executorType = 'patch_agent',
+  // executorType prop kept for backwards compatibility but not used
   initialModelIds,
   onRunsCreated,
   onPRCreated,
@@ -45,7 +45,7 @@ export function ChatCodeView({
   const [input, setInput] = useState('');
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
   const [loading, setLoading] = useState(false);
-  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
+  const [selectedExecutorType, setSelectedExecutorType] = useState<ExecutorType | null>(null);
   const [runTabs, setRunTabs] = useState<Record<string, RunTab>>({});
   const [creatingPR, setCreatingPR] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
@@ -59,13 +59,33 @@ export function ChatCodeView({
     refreshInterval: prLinkResult ? 2000 : 0,
   });
 
-  // Determine the locked executor and its properties
+  // Determine executor types used in this task
   const sortedRuns = [...runs].reverse();
-  const lockedExecutor: ExecutorType = (sortedRuns[0]?.executor_type || executorType) as ExecutorType;
-  const { isCLI: isCLIExecutor, displayName: cliDisplayName } = useExecutorType(lockedExecutor);
 
-  // Get session-level branch name
-  const sessionBranch = sortedRuns.find((r) => r.working_branch)?.working_branch || null;
+  // Get unique CLI executor types from existing runs (for continuation)
+  const cliExecutorTypes: ExecutorType[] = [
+    ...new Set(
+      sortedRuns
+        .map((r) => r.executor_type)
+        .filter(
+          (et): et is ExecutorType =>
+            et === 'claude_code' || et === 'codex_cli' || et === 'gemini_cli'
+        )
+    ),
+  ];
+
+  // Check if patch_agent is used
+  const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
+
+  // For backwards compatibility, determine if we're in CLI mode or patch_agent mode
+  const isCLIExecutor = cliExecutorTypes.length > 0;
+  const cliDisplayName = isCLIExecutor
+    ? cliExecutorTypes.length === 1
+      ? getExecutorDisplayName(cliExecutorTypes[0])
+      : `${cliExecutorTypes.length} CLIs`
+    : undefined;
+
+  // Get branch name from selected run (each executor has its own branch)
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
   const latestPR = prs && prs.length > 0 ? prs[0] : null;
 
@@ -84,27 +104,38 @@ export function ChatCodeView({
 
   // Select all models by default if none specified (patch_agent only)
   useEffect(() => {
-    if (!isCLIExecutor && models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
+    if (hasPatchAgent && models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
       setSelectedModels(models.map((m) => m.id));
     }
-  }, [models, selectedModels.length, initialModelIds, isCLIExecutor]);
+  }, [models, selectedModels.length, initialModelIds, hasPatchAgent]);
 
-  // Auto-expand new runs
+  // Get unique executor types from runs (for executor selector cards)
+  const uniqueExecutorTypes: ExecutorType[] = [
+    ...new Set(sortedRuns.map((r) => r.executor_type)),
+  ];
+
+  // Auto-select the first executor type when runs change
   useEffect(() => {
-    if (runs.length > 0) {
-      setExpandedRuns((prev) => {
-        const newExpanded = new Set(prev);
-        let hasNew = false;
-        runs.forEach((run) => {
-          if (!prev.has(run.id)) {
-            newExpanded.add(run.id);
-            hasNew = true;
-          }
-        });
-        return hasNew ? newExpanded : prev;
-      });
+    if (uniqueExecutorTypes.length > 0 && (!selectedExecutorType || !uniqueExecutorTypes.includes(selectedExecutorType))) {
+      setSelectedExecutorType(uniqueExecutorTypes[0]);
     }
-  }, [runs]);
+  }, [uniqueExecutorTypes, selectedExecutorType]);
+
+  // Get runs for selected executor type, grouped by message_id
+  const runsForSelectedExecutor = sortedRuns.filter(
+    (r) => r.executor_type === selectedExecutorType
+  );
+
+  // Get the latest run for the selected executor (for branch info, PR creation)
+  const latestRunForSelectedExecutor = runsForSelectedExecutor[0];
+
+  // Build a map of message_id -> run for the selected executor
+  const runByMessageId = new Map<string, Run>();
+  runsForSelectedExecutor.forEach((run) => {
+    if (run.message_id) {
+      runByMessageId.set(run.message_id, run);
+    }
+  });
 
   // Track run status changes and show toast notifications
   const prevRunStatuses = useRef<Map<string, RunStatus>>(new Map());
@@ -189,27 +220,44 @@ export function ChatCodeView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    if (!isCLIExecutor && selectedModels.length === 0) return;
+    // Need a selected executor type or models selected (for patch_agent)
+    if (!selectedExecutorType && selectedModels.length === 0) return;
 
     setLoading(true);
 
     try {
-      await tasksApi.addMessage(taskId, { role: 'user', content: input.trim() });
+      // Create message and get its ID for linking to runs
+      const message = await tasksApi.addMessage(taskId, { role: 'user', content: input.trim() });
 
-      if (isCLIExecutor) {
-        await runsApi.create(taskId, {
-          instruction: input.trim(),
-          executor_type: lockedExecutor,
-        });
-        success(`Started ${cliDisplayName} run`);
-      } else {
-        await runsApi.create(taskId, {
-          instruction: input.trim(),
-          model_ids: selectedModels,
-          executor_type: 'patch_agent',
-        });
-        success(`Started ${selectedModels.length} run${selectedModels.length > 1 ? 's' : ''}`);
+      // Only send to the currently selected executor type (not all executors)
+      const executorTypesToRun: ExecutorType[] = [];
+
+      // Check if selected executor is a CLI type
+      const isCLISelected = selectedExecutorType &&
+        (selectedExecutorType === 'claude_code' ||
+         selectedExecutorType === 'codex_cli' ||
+         selectedExecutorType === 'gemini_cli');
+
+      if (isCLISelected) {
+        executorTypesToRun.push(selectedExecutorType);
       }
+
+      // If patch_agent is selected, add it with models
+      if (selectedExecutorType === 'patch_agent' && selectedModels.length > 0) {
+        executorTypesToRun.push('patch_agent');
+      }
+
+      // Create run for the selected executor only, linked to the message
+      await runsApi.create(taskId, {
+        instruction: input.trim(),
+        executor_types: executorTypesToRun,
+        model_ids: selectedExecutorType === 'patch_agent' && selectedModels.length > 0 ? selectedModels : undefined,
+        message_id: message.id,
+      });
+
+      // Show success message
+      const executorName = getExecutorDisplayName(selectedExecutorType!) || selectedExecutorType;
+      success(`Started ${executorName} run`);
 
       setInput('');
       onRunsCreated();
@@ -235,85 +283,97 @@ export function ChatCodeView({
     }
   };
 
-  const toggleRunExpanded = (runId: string) => {
-    setExpandedRuns((prev) => {
-      const next = new Set(prev);
-      if (next.has(runId)) {
-        next.delete(runId);
-      } else {
-        next.add(runId);
-      }
-      return next;
-    });
-  };
-
   const getRunTab = (runId: string): RunTab => runTabs[runId] || 'summary';
   const setRunTab = (runId: string, tab: RunTab) => {
     setRunTabs((prev) => ({ ...prev, [runId]: tab }));
   };
 
-  // Calculate runs per user message for distribution
-  const userMessageIndices = messages
-    .map((msg, idx) => (msg.role === 'user' ? idx : -1))
-    .filter((idx) => idx !== -1);
-
-  const getRunsForUserMessage = (msgIndex: number): Run[] => {
-    const userMsgOrder = userMessageIndices.indexOf(msgIndex);
-    if (userMsgOrder === -1) return [];
-
-    const totalUserMessages = userMessageIndices.length;
-    if (totalUserMessages === 0 || sortedRuns.length === 0) return [];
-
-    const runsPerMessage = Math.ceil(sortedRuns.length / totalUserMessages);
-    const startIdx = userMsgOrder * runsPerMessage;
-    const endIdx = Math.min(startIdx + runsPerMessage, sortedRuns.length);
-
-    return sortedRuns.slice(startIdx, endIdx);
+  // Get aggregate stats for an executor type
+  const getExecutorStats = (executorType: ExecutorType) => {
+    const executorRuns = sortedRuns.filter((r) => r.executor_type === executorType);
+    const latestRun = executorRuns[0];
+    const totalFiles = executorRuns.reduce((acc, r) => acc + (r.files_changed?.length || 0), 0);
+    const totalAdded = executorRuns.reduce(
+      (acc, r) => acc + (r.files_changed?.reduce((a, f) => a + f.added_lines, 0) || 0),
+      0
+    );
+    const totalRemoved = executorRuns.reduce(
+      (acc, r) => acc + (r.files_changed?.reduce((a, f) => a + f.removed_lines, 0) || 0),
+      0
+    );
+    return { latestRun, totalFiles, totalAdded, totalRemoved, runCount: executorRuns.length };
   };
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
-      {/* Session Header */}
-      {sessionBranch && (
+      {/* Session Header - shows selected executor's branch */}
+      {latestRunForSelectedExecutor?.working_branch && (
         <SessionHeader
-          sessionBranch={sessionBranch}
+          sessionBranch={latestRunForSelectedExecutor.working_branch}
           prResult={prResult}
           prLinkResult={prLinkResult}
           latestSuccessfulRun={latestSuccessfulRun}
           creatingPR={creatingPR}
-          onCopyBranch={() => copy(sessionBranch, 'Branch name')}
+          onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
         />
       )}
 
-      {/* Conversation Area */}
+      {/* Executor Selector Cards - one per executor type */}
+      {uniqueExecutorTypes.length > 0 && (
+        <div className="px-4 py-3 border-b border-gray-800">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {uniqueExecutorTypes.map((executorType) => {
+              const stats = getExecutorStats(executorType);
+              return (
+                <ExecutorSelectorCard
+                  key={executorType}
+                  executorType={executorType}
+                  stats={stats}
+                  isSelected={selectedExecutorType === executorType}
+                  onClick={() => setSelectedExecutorType(executorType)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Interleaved Conversation Area: User message -> AI output */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && runs.length === 0 ? (
           <EmptyState />
         ) : (
           <>
-            {messages.map((msg, msgIndex) => (
-              <div key={msg.id} className="space-y-3">
-                <MessageBubble message={msg} />
-                {getRunsForUserMessage(msgIndex).map((run) => (
-                  <RunResultCard
-                    key={run.id}
-                    run={run}
-                    expanded={expandedRuns.has(run.id)}
-                    onToggleExpand={() => toggleRunExpanded(run.id)}
-                    activeTab={getRunTab(run.id)}
-                    onTabChange={(tab) => setRunTab(run.id, tab)}
-                  />
-                ))}
-              </div>
-            ))}
+            {/* Only show messages that have a corresponding run for the selected executor */}
+            {messages
+              .filter((msg) => runByMessageId.has(msg.id))
+              .map((msg) => {
+                const correspondingRun = runByMessageId.get(msg.id)!;
+                return (
+                  <div key={msg.id} className="space-y-3">
+                    {/* User message */}
+                    <MessageBubble message={msg} />
+                    {/* AI output for this message */}
+                    <div className="ml-4 border-l-2 border-purple-500/30 pl-4">
+                      <RunResultCard
+                        run={correspondingRun}
+                        expanded={true}
+                        onToggleExpand={() => {}}
+                        activeTab={getRunTab(correspondingRun.id)}
+                        onTabChange={(tab) => setRunTab(correspondingRun.id, tab)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
           </>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Model Selection (patch_agent only) */}
-      {!isCLIExecutor && (
+      {/* Model Selection (only when patch_agent is selected) */}
+      {selectedExecutorType === 'patch_agent' && (
         <ModelSelector
           models={models}
           selectedModels={selectedModels}
@@ -328,8 +388,8 @@ export function ChatCodeView({
         onChange={setInput}
         onSubmit={handleSubmit}
         loading={loading}
-        disabled={!isCLIExecutor && selectedModels.length === 0}
-        selectedModelCount={isCLIExecutor ? undefined : selectedModels.length}
+        disabled={!selectedExecutorType || (selectedExecutorType === 'patch_agent' && selectedModels.length === 0)}
+        selectedModelCount={selectedExecutorType === 'patch_agent' ? selectedModels.length : undefined}
       />
     </div>
   );
@@ -416,6 +476,83 @@ function EmptyState() {
         Your messages and code changes will appear here.
       </p>
     </div>
+  );
+}
+
+interface ExecutorStats {
+  latestRun: Run | undefined;
+  totalFiles: number;
+  totalAdded: number;
+  totalRemoved: number;
+  runCount: number;
+}
+
+interface ExecutorSelectorCardProps {
+  executorType: ExecutorType;
+  stats: ExecutorStats;
+  isSelected: boolean;
+  onClick: () => void;
+}
+
+function ExecutorSelectorCard({ executorType, stats, isSelected, onClick }: ExecutorSelectorCardProps) {
+  const displayName = getExecutorDisplayName(executorType) || executorType;
+  const { latestRun, totalAdded, totalRemoved } = stats;
+
+  const getStatusInfo = () => {
+    if (!latestRun) {
+      return { text: 'No runs', color: 'text-gray-500' };
+    }
+    switch (latestRun.status) {
+      case 'running':
+        return { text: 'Running...', color: 'text-blue-400' };
+      case 'queued':
+        return { text: 'Queued', color: 'text-gray-400' };
+      case 'succeeded':
+        if (totalAdded === 0 && totalRemoved === 0) {
+          return { text: 'No changes', color: 'text-gray-400' };
+        }
+        return { text: '', color: 'text-gray-300' };
+      case 'failed':
+        return { text: 'Failed', color: 'text-red-400' };
+      case 'canceled':
+        return { text: 'Canceled', color: 'text-gray-500' };
+      default:
+        return { text: '', color: 'text-gray-400' };
+    }
+  };
+
+  const statusInfo = getStatusInfo();
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex-shrink-0 px-4 py-2.5 rounded-lg border transition-all text-left min-w-[140px]',
+        isSelected
+          ? 'bg-gray-800 border-purple-500 shadow-lg shadow-purple-500/10'
+          : 'bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800'
+      )}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        {latestRun?.status === 'running' && (
+          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+        )}
+        {latestRun?.status === 'succeeded' && (
+          <CheckCircleIcon className="w-4 h-4 text-green-500" />
+        )}
+        <span className="text-sm font-medium text-white truncate">{displayName}</span>
+      </div>
+      <div className={cn('text-xs', statusInfo.color)}>
+        {latestRun?.status === 'succeeded' && (totalAdded > 0 || totalRemoved > 0) ? (
+          <span>
+            {totalAdded > 0 && <span className="text-green-400">+{totalAdded}</span>}
+            {totalRemoved > 0 && <span className="text-red-400 ml-1">-{totalRemoved}</span>}
+          </span>
+        ) : (
+          statusInfo.text
+        )}
+      </div>
+    </button>
   );
 }
 
