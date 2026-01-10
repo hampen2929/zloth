@@ -309,71 +309,157 @@ export function ReviewResultCard({
                       <div className="p-3 bg-gray-800 rounded-lg">
                         <div className="flex items-start gap-3">
                           <CheckCircleIcon className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                          <p className="text-gray-200 text-sm">{review.overall_summary}</p>
+                          <div>
+                            <p className="text-gray-200 text-sm">{review.overall_summary}</p>
+                            {review.overall_score !== null && (
+                              <p className={cn(
+                                'text-xs mt-1 font-medium',
+                                review.overall_score >= 0.8
+                                  ? 'text-green-400'
+                                  : review.overall_score >= 0.6
+                                    ? 'text-yellow-400'
+                                    : 'text-red-400'
+                              )}>
+                                Score: {Math.round(review.overall_score * 100)}%
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Severity Summary */}
-                    {review.feedbacks.length > 0 && (
-                      <div className="flex items-center gap-4 flex-wrap">
+                    {/* Severity Summary - Always show counts */}
+                    <div className="p-3 bg-gray-800/50 rounded-lg">
+                      <h4 className="text-xs font-medium text-gray-400 mb-2">Issues by Severity</h4>
+                      <div className="grid grid-cols-4 gap-2">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('critical'); }}
-                          className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300"
+                          className="flex flex-col items-center p-2 rounded bg-gray-800 hover:bg-gray-700 transition-colors"
                         >
-                          <span className="font-medium">{severityCounts.critical}</span>
-                          <span>Critical</span>
+                          <span className="text-lg font-bold text-red-400">{severityCounts.critical}</span>
+                          <span className="text-[10px] text-red-400/80">Critical</span>
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('high'); }}
-                          className="flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-300"
+                          className="flex flex-col items-center p-2 rounded bg-gray-800 hover:bg-gray-700 transition-colors"
                         >
-                          <span className="font-medium">{severityCounts.high}</span>
-                          <span>High</span>
+                          <span className="text-lg font-bold text-orange-400">{severityCounts.high}</span>
+                          <span className="text-[10px] text-orange-400/80">High</span>
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('medium'); }}
-                          className="flex items-center gap-1.5 text-xs text-yellow-400 hover:text-yellow-300"
+                          className="flex flex-col items-center p-2 rounded bg-gray-800 hover:bg-gray-700 transition-colors"
                         >
-                          <span className="font-medium">{severityCounts.medium}</span>
-                          <span>Medium</span>
+                          <span className="text-lg font-bold text-yellow-400">{severityCounts.medium}</span>
+                          <span className="text-[10px] text-yellow-400/80">Medium</span>
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleSelectBySeverity('low'); }}
-                          className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300"
+                          className="flex flex-col items-center p-2 rounded bg-gray-800 hover:bg-gray-700 transition-colors"
                         >
-                          <span className="font-medium">{severityCounts.low}</span>
-                          <span>Low</span>
-                        </button>
-                        <span className="text-gray-500">|</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleSelectAll(); }}
-                          className="text-xs text-gray-400 hover:text-white"
-                        >
-                          {selectedFeedbacks.size === review.feedbacks.length
-                            ? 'Deselect All'
-                            : 'Select All'}
+                          <span className="text-lg font-bold text-blue-400">{severityCounts.low}</span>
+                          <span className="text-[10px] text-blue-400/80">Low</span>
                         </button>
                       </div>
-                    )}
+                      <p className="text-[10px] text-gray-500 mt-2 text-center">
+                        Total: {review.feedbacks.length} issue{review.feedbacks.length !== 1 ? 's' : ''}
+                        {review.feedbacks.length > 0 && ' (click severity to select)'}
+                      </p>
+                    </div>
 
-                    {/* Feedbacks */}
+                    {/* Feedbacks grouped by severity */}
                     {review.feedbacks.length === 0 ? (
-                      <div className="py-4 text-center">
+                      <div className="py-4 text-center border border-green-500/20 rounded-lg bg-green-900/10">
                         <CheckCircleIcon className="w-8 h-8 text-green-400 mx-auto" />
                         <p className="mt-2 text-green-400 font-medium text-sm">No issues found</p>
                         <p className="text-gray-400 text-xs mt-1">The code looks good!</p>
                       </div>
                     ) : (
-                      <div className="space-y-2 max-h-80 overflow-y-auto">
-                        {review.feedbacks.map((feedback) => (
-                          <ReviewFeedbackCard
-                            key={feedback.id}
-                            feedback={feedback}
-                            selected={selectedFeedbacks.has(feedback.id)}
-                            onSelect={handleSelectFeedback}
-                          />
-                        ))}
+                      <div className="space-y-3 max-h-80 overflow-y-auto">
+                        {/* Selection controls */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">Detailed Findings</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleSelectAll(); }}
+                            className="text-xs text-blue-400 hover:text-blue-300"
+                          >
+                            {selectedFeedbacks.size === review.feedbacks.length
+                              ? 'Deselect All'
+                              : 'Select All'}
+                          </button>
+                        </div>
+
+                        {/* Critical issues */}
+                        {severityCounts.critical > 0 && (
+                          <div className="space-y-2">
+                            <h5 className="text-xs font-medium text-red-400 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-red-400" />
+                              Critical ({severityCounts.critical})
+                            </h5>
+                            {review.feedbacks.filter(f => f.severity === 'critical').map((feedback) => (
+                              <ReviewFeedbackCard
+                                key={feedback.id}
+                                feedback={feedback}
+                                selected={selectedFeedbacks.has(feedback.id)}
+                                onSelect={handleSelectFeedback}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* High issues */}
+                        {severityCounts.high > 0 && (
+                          <div className="space-y-2">
+                            <h5 className="text-xs font-medium text-orange-400 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-orange-400" />
+                              High ({severityCounts.high})
+                            </h5>
+                            {review.feedbacks.filter(f => f.severity === 'high').map((feedback) => (
+                              <ReviewFeedbackCard
+                                key={feedback.id}
+                                feedback={feedback}
+                                selected={selectedFeedbacks.has(feedback.id)}
+                                onSelect={handleSelectFeedback}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Medium issues */}
+                        {severityCounts.medium > 0 && (
+                          <div className="space-y-2">
+                            <h5 className="text-xs font-medium text-yellow-400 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-yellow-400" />
+                              Medium ({severityCounts.medium})
+                            </h5>
+                            {review.feedbacks.filter(f => f.severity === 'medium').map((feedback) => (
+                              <ReviewFeedbackCard
+                                key={feedback.id}
+                                feedback={feedback}
+                                selected={selectedFeedbacks.has(feedback.id)}
+                                onSelect={handleSelectFeedback}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Low issues */}
+                        {severityCounts.low > 0 && (
+                          <div className="space-y-2">
+                            <h5 className="text-xs font-medium text-blue-400 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-blue-400" />
+                              Low ({severityCounts.low})
+                            </h5>
+                            {review.feedbacks.filter(f => f.severity === 'low').map((feedback) => (
+                              <ReviewFeedbackCard
+                                key={feedback.id}
+                                feedback={feedback}
+                                selected={selectedFeedbacks.has(feedback.id)}
+                                onSelect={handleSelectFeedback}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 

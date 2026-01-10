@@ -63,10 +63,11 @@ documentation, test
 
 5. **Suggestion**: Recommended fix (if applicable)
 
-Output your review in the following JSON format:
-```json
+IMPORTANT: You MUST output ONLY valid JSON in the following format. Do not include any text \
+before or after the JSON. Do not use markdown code blocks. Output raw JSON only.
+
 {
-  "overall_summary": "Brief summary of the review",
+  "overall_summary": "Brief summary of the code review findings",
   "overall_score": 0.85,
   "feedbacks": [
     {
@@ -76,13 +77,20 @@ Output your review in the following JSON format:
       "severity": "high",
       "category": "bug",
       "title": "Potential null pointer exception",
-      "description": "The variable 'user' may be None...",
-      "suggestion": "Add null check before accessing...",
+      "description": "The variable 'user' may be None when accessed here.",
+      "suggestion": "Add null check before accessing user properties.",
       "code_snippet": "user.name"
     }
   ]
 }
-```
+
+Rules:
+- overall_score: A number between 0.0 and 1.0 (1.0 = perfect code)
+- severity: Must be one of: "critical", "high", "medium", "low"
+- category: Must be one of: "security", "bug", "performance", "maintainability", \
+"best_practice", "style", "documentation", "test"
+- If no issues found, return empty feedbacks array: "feedbacks": []
+- Always provide overall_summary and overall_score
 
 Focus on:
 - Security vulnerabilities
