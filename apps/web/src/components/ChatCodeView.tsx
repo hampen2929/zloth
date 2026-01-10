@@ -277,9 +277,23 @@ export function ChatCodeView({
         />
       )}
 
-      {/* Run Selector Cards */}
+      {/* Conversation Area (User messages first) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && runs.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <>
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} message={msg} />
+            ))}
+          </>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Run Selector Cards (AI output) */}
       {sortedRuns.length > 0 && (
-        <div className="px-4 py-3 border-b border-gray-800">
+        <div className="px-4 py-3 border-t border-gray-800">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {sortedRuns.map((run) => (
               <RunSelectorCard
@@ -305,20 +319,6 @@ export function ChatCodeView({
           />
         </div>
       )}
-
-      {/* Conversation Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && runs.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <>
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
-          </>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
 
       {/* Model Selection (when patch_agent is used in the task) */}
       {hasPatchAgent && (
