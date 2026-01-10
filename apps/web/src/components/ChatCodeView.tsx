@@ -345,14 +345,16 @@ export function ChatCodeView({
           <EmptyState />
         ) : (
           <>
-            {messages.map((msg) => {
-              const correspondingRun = runByMessageId.get(msg.id);
-              return (
-                <div key={msg.id} className="space-y-3">
-                  {/* User message */}
-                  <MessageBubble message={msg} />
-                  {/* AI output for this message (if exists for selected executor) */}
-                  {correspondingRun && (
+            {/* Only show messages that have a corresponding run for the selected executor */}
+            {messages
+              .filter((msg) => runByMessageId.has(msg.id))
+              .map((msg) => {
+                const correspondingRun = runByMessageId.get(msg.id)!;
+                return (
+                  <div key={msg.id} className="space-y-3">
+                    {/* User message */}
+                    <MessageBubble message={msg} />
+                    {/* AI output for this message */}
                     <div className="ml-4 border-l-2 border-purple-500/30 pl-4">
                       <RunResultCard
                         run={correspondingRun}
@@ -362,10 +364,9 @@ export function ChatCodeView({
                         onTabChange={(tab) => setRunTab(correspondingRun.id, tab)}
                       />
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })}
           </>
         )}
         <div ref={messagesEndRef} />
