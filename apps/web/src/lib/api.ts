@@ -466,11 +466,16 @@ export const reviewsApi = {
 
   get: (reviewId: string) => fetchApi<Review>(`/reviews/${reviewId}`),
 
+  /**
+   * Get logs for a review (REST endpoint for polling).
+   * Returns OutputLine format for consistency with runs API.
+   */
   getLogs: (reviewId: string, fromLine: number = 0) =>
     fetchApi<{
-      logs: string[];
+      logs: OutputLine[];
       is_complete: boolean;
       total_lines: number;
+      review_status: string;
     }>(`/reviews/${reviewId}/logs?from_line=${fromLine}`),
 
   generateFix: (reviewId: string, data: FixInstructionRequest) =>
@@ -483,7 +488,73 @@ export const reviewsApi = {
     fetchApi<Message>(`/reviews/${reviewId}/to-message`, { method: 'POST' }),
 
   /**
-   * Poll review logs until complete.
+   * Stream review logs by polling the logs endpoint.
+   *
+   * This uses polling to fetch logs in real-time from OutputManager.
+   *
+   * @param reviewId - The review ID to stream logs for
+   * @param options - Streaming options
+   * @returns Cleanup function to stop polling
+   */
+  streamLogs: (
+    reviewId: string,
+    options: {
+      fromLine?: number;
+      onLine: (line: OutputLine) => void;
+      onComplete: () => void;
+      onError: (error: Error) => void;
+    }
+  ): (() => void) => {
+    let cancelled = false;
+    let nextLine = options.fromLine ?? 0;
+    const pollInterval = 500; // Poll every 500ms for responsiveness
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      try {
+        const result = await reviewsApi.getLogs(reviewId, nextLine);
+
+        // Send new lines
+        for (const log of result.logs) {
+          if (cancelled) break;
+          options.onLine(log);
+        }
+
+        // Update next line position
+        if (result.logs.length > 0) {
+          nextLine = result.total_lines;
+        }
+
+        // Check if complete
+        if (result.is_complete) {
+          options.onComplete();
+          return;
+        }
+
+        // Continue polling if still running
+        if (!cancelled) {
+          setTimeout(poll, pollInterval);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          options.onError(error instanceof Error ? error : new Error('Failed to fetch logs'));
+        }
+      }
+    };
+
+    // Start polling
+    poll();
+
+    // Return cleanup function
+    return () => {
+      cancelled = true;
+    };
+  },
+
+  /**
+   * Poll review logs until complete (legacy - kept for backward compatibility).
+   * @deprecated Use streamLogs instead for OutputLine format
    */
   pollLogs: (
     reviewId: string,
@@ -494,47 +565,12 @@ export const reviewsApi = {
       onError: (error: Error) => void;
     }
   ): (() => void) => {
-    let cancelled = false;
-    let nextLine = options.fromLine ?? 0;
-    const pollInterval = 500;
-
-    const poll = async () => {
-      if (cancelled) return;
-
-      try {
-        const result = await reviewsApi.getLogs(reviewId, nextLine);
-
-        for (const log of result.logs) {
-          if (cancelled) break;
-          options.onLine(log);
-        }
-
-        if (result.logs.length > 0) {
-          nextLine = result.total_lines;
-        }
-
-        if (result.is_complete) {
-          options.onComplete();
-          return;
-        }
-
-        if (!cancelled) {
-          setTimeout(poll, pollInterval);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          options.onError(
-            error instanceof Error ? error : new Error('Failed to fetch logs')
-          );
-        }
-      }
-    };
-
-    poll();
-
-    return () => {
-      cancelled = true;
-    };
+    return reviewsApi.streamLogs(reviewId, {
+      fromLine: options.fromLine,
+      onLine: (outputLine) => options.onLine(outputLine.content),
+      onComplete: options.onComplete,
+      onError: options.onError,
+    });
   },
 };
 
