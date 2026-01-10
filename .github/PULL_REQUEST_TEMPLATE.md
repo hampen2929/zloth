@@ -1,3 +1,5 @@
+> **Note**: This project is primarily developed using AI-assisted coding. Pull requests may not be reviewed or merged. Consider opening an Issue instead if you want to discuss ideas or report bugs.
+
 ## Summary
 <!-- Describe in one line what this PR achieves -->
 
