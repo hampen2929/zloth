@@ -408,44 +408,114 @@ class ReviewService:
 
     def _parse_review_response(self, response_text: str, logs: list[str]) -> dict[str, Any]:
         """Parse the review response from CLI output."""
-        # Try to extract JSON from the response
+        # Try to extract JSON from the response using multiple strategies
+
+        # Strategy 1: Find balanced JSON objects and try each one
+        json_candidates = self._extract_json_objects(response_text)
+        logs.append(f"Found {len(json_candidates)} potential JSON objects")
+
+        for i, candidate in enumerate(json_candidates):
+            try:
+                data = json.loads(candidate)
+                # Check if this looks like our expected review format
+                if isinstance(data, dict) and (
+                    "feedbacks" in data or "overall_summary" in data
+                ):
+                    logs.append(f"Successfully parsed JSON object #{i + 1}")
+                    return self._process_review_data(data, logs)
+            except json.JSONDecodeError:
+                continue
+
+        # Strategy 2: Try the greedy regex as fallback
         json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:
-            try:
-                data = json.loads(json_match.group())
-                feedbacks = []
-                for fb_data in data.get("feedbacks", []):
+            # Try to find a valid JSON by trimming from the end
+            text = json_match.group()
+            for end_pos in range(len(text), 0, -1):
+                if text[end_pos - 1] == "}":
                     try:
-                        feedback = ReviewFeedbackItem(
-                            id=generate_id(),
-                            file_path=fb_data.get("file_path", "unknown"),
-                            line_start=fb_data.get("line_start"),
-                            line_end=fb_data.get("line_end"),
-                            severity=ReviewSeverity(fb_data.get("severity", "medium").lower()),
-                            category=ReviewCategory(
-                                fb_data.get("category", "maintainability").lower()
-                            ),
-                            title=fb_data.get("title", "Review finding"),
-                            description=fb_data.get("description", ""),
-                            suggestion=fb_data.get("suggestion"),
-                            code_snippet=fb_data.get("code_snippet"),
-                        )
-                        feedbacks.append(feedback)
-                    except Exception as e:
-                        logs.append(f"Warning: Could not parse feedback: {e}")
-
-                logs.append(f"Parsed {len(feedbacks)} feedback items")
-                return {
-                    "overall_summary": data.get("overall_summary", "Review completed"),
-                    "overall_score": data.get("overall_score"),
-                    "feedbacks": feedbacks,
-                }
-            except json.JSONDecodeError as e:
-                logs.append(f"Warning: Could not parse JSON response: {e}")
+                        data = json.loads(text[:end_pos])
+                        if isinstance(data, dict):
+                            logs.append("Successfully parsed JSON using trimmed match")
+                            return self._process_review_data(data, logs)
+                    except json.JSONDecodeError:
+                        continue
 
         # Fallback: create a summary-only result
-        logs.append("Using fallback review parsing")
+        logs.append("Using fallback review parsing - no valid JSON found")
         return self._create_default_review_result(response_text)
+
+    def _extract_json_objects(self, text: str) -> list[str]:
+        """Extract balanced JSON objects from text."""
+        objects = []
+        i = 0
+        while i < len(text):
+            if text[i] == "{":
+                # Find matching closing brace
+                depth = 0
+                start = i
+                in_string = False
+                escape_next = False
+
+                while i < len(text):
+                    char = text[i]
+
+                    if escape_next:
+                        escape_next = False
+                        i += 1
+                        continue
+
+                    if char == "\\":
+                        escape_next = True
+                        i += 1
+                        continue
+
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+
+                    if not in_string:
+                        if char == "{":
+                            depth += 1
+                        elif char == "}":
+                            depth -= 1
+                            if depth == 0:
+                                objects.append(text[start : i + 1])
+                                break
+                    i += 1
+            else:
+                i += 1
+
+        return objects
+
+    def _process_review_data(self, data: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+        """Process parsed review data into the expected format."""
+        feedbacks = []
+        for fb_data in data.get("feedbacks", []):
+            try:
+                feedback = ReviewFeedbackItem(
+                    id=generate_id(),
+                    file_path=fb_data.get("file_path", "unknown"),
+                    line_start=fb_data.get("line_start"),
+                    line_end=fb_data.get("line_end"),
+                    severity=ReviewSeverity(fb_data.get("severity", "medium").lower()),
+                    category=ReviewCategory(
+                        fb_data.get("category", "maintainability").lower()
+                    ),
+                    title=fb_data.get("title", "Review finding"),
+                    description=fb_data.get("description", ""),
+                    suggestion=fb_data.get("suggestion"),
+                    code_snippet=fb_data.get("code_snippet"),
+                )
+                feedbacks.append(feedback)
+            except Exception as e:
+                logs.append(f"Warning: Could not parse feedback: {e}")
+
+        logs.append(f"Parsed {len(feedbacks)} feedback items")
+        return {
+            "overall_summary": data.get("overall_summary", "Review completed"),
+            "overall_score": data.get("overall_score"),
+            "feedbacks": feedbacks,
+        }
 
     def _create_default_review_result(self, content: str) -> dict[str, Any]:
         """Create a default review result when parsing fails."""
