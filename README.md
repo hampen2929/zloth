@@ -204,7 +204,9 @@ dursor/
 
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+We welcome bug reports and feature requests via [GitHub Issues](https://github.com/hampen2929/dursor/issues).
+
+> **Note**: This project is primarily developed using AI-assisted coding. Pull requests may not be reviewed or merged. If you have ideas or find bugs, please open an Issue instead.
 
 ## License
 
