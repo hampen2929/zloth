@@ -2,30 +2,45 @@
 
 ## 概要
 
-dursor をコーディングエージェントが**人間の承認なしに自律的に開発を行える**システムとして設計する。
+dursor をコーディングエージェントが**自律的に開発を行える**システムとして設計する。
 
-### 設計方針: 完全自律版 (Option B)
+本ドキュメントは [Coding Mode 設計](./coding-mode.md) の **Semi Auto** と **Full Auto** モードの詳細実装を定義する。
 
-本設計は**完全自律**を目指す。CI失敗時も人間介入なしに自動修正を行う。
+### 対象モード
+
+| モード | Human介入 | 本ドキュメントの対象 |
+|--------|-----------|---------------------|
+| Interactive | 各ステップ | ❌ 対象外（既存フロー） |
+| **Semi Auto** | 最終Mergeのみ | ✅ 対象 |
+| **Full Auto** | なし | ✅ 対象 |
 
 ```mermaid
 flowchart LR
-    subgraph dursor["dursor が制御"]
-        A[Claude Code] --> B[PR]
-        B --> C{CI}
-        C -->|失敗| D[Claude Code が自動修正]
-        D --> C
-        C -->|成功| E[マージ]
+    subgraph SemiAuto["Semi Auto Mode"]
+        SA1[Claude Code] --> SA2[PR]
+        SA2 --> SA3{CI}
+        SA3 -->|失敗| SA4[自動修正]
+        SA4 --> SA3
+        SA3 -->|成功| SA5[人間がMerge]
+    end
+
+    subgraph FullAuto["Full Auto Mode"]
+        FA1[Claude Code] --> FA2[PR]
+        FA2 --> FA3{CI}
+        FA3 -->|失敗| FA4[自動修正]
+        FA4 --> FA3
+        FA3 -->|成功| FA5[自動Merge]
     end
 ```
 
 ### 設計原則
 
-1. **Human-out-of-the-loop**: 人間のApproveは不要、完全自動化
+1. **Mode-aware Orchestration**: Semi AutoとFull Autoで分岐する制御フロー
 2. **Strict Merge Gates**: マージ条件を明確かつ厳格に定義
 3. **Agent Specialization**: コーディング(Claude)とレビュー(Codex)を分離
 4. **Fail-fast Feedback Loop**: CI/レビュー失敗を検知し自動修正
 5. **dursor as Orchestrator**: CIはチェックのみ、dursorが全体を制御
+6. **Human-in-the-loop Option**: Semi Autoでは最終承認を人間が行う
 
 ---
 
@@ -497,12 +512,21 @@ from datetime import datetime, timedelta
 import asyncio
 
 
+class CodingMode(str, Enum):
+    """コーディングモード（coding-mode.mdと連携）"""
+    INTERACTIVE = "interactive"  # 対話型（本設計の対象外）
+    SEMI_AUTO = "semi_auto"      # 半自動（人間が最終Merge）
+    FULL_AUTO = "full_auto"      # 完全自動（自動Merge）
+
+
 class AgenticPhase(str, Enum):
     CODING = "coding"
     WAITING_CI = "waiting_ci"
     REVIEWING = "reviewing"
     FIXING_CI = "fixing_ci"
     FIXING_REVIEW = "fixing_review"
+    AWAITING_HUMAN = "awaiting_human"  # Semi Auto: 人間のMerge承認待ち
+    MERGE_CHECK = "merge_check"        # Full Auto: マージ条件チェック中
     MERGING = "merging"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -511,6 +535,7 @@ class AgenticPhase(str, Enum):
 @dataclass
 class AgenticState:
     task_id: str
+    mode: CodingMode              # コーディングモード
     phase: AgenticPhase
     iteration: int
     ci_iterations: int
@@ -522,6 +547,7 @@ class AgenticState:
     last_ci_result: dict | None = None
     last_review_result: ReviewResult | None = None
     error: str | None = None
+    human_approved: bool = False  # Semi Auto: 人間の承認フラグ
 
 
 class AgenticOrchestrator:
@@ -563,12 +589,26 @@ class AgenticOrchestrator:
     # Public API
     # =========================================
 
-    async def start_task(self, task: Task, instruction: str) -> AgenticState:
+    async def start_task(
+        self,
+        task: Task,
+        instruction: str,
+        mode: CodingMode = CodingMode.FULL_AUTO,
+    ) -> AgenticState:
         """
         Start agentic execution for a task.
+
+        Args:
+            task: Target task
+            instruction: Development instruction
+            mode: CodingMode (SEMI_AUTO or FULL_AUTO)
         """
+        if mode == CodingMode.INTERACTIVE:
+            raise ValueError("Interactive mode is not supported by AgenticOrchestrator")
+
         state = AgenticState(
             task_id=task.id,
+            mode=mode,
             phase=AgenticPhase.CODING,
             iteration=0,
             ci_iterations=0,
@@ -626,6 +666,7 @@ class AgenticOrchestrator:
     ) -> AgenticState:
         """
         Handle review completion.
+        Mode-aware: Semi Auto goes to AWAITING_HUMAN, Full Auto goes to MERGE_CHECK.
         """
         state = self._states.get(task.id)
         if not state:
@@ -636,9 +677,15 @@ class AgenticOrchestrator:
             state.last_activity = datetime.utcnow()
 
             if review_result.approved and review_result.score >= self.limits.min_review_score:
-                # Review passed - proceed to merge
-                state.phase = AgenticPhase.MERGING
-                await self._run_merge_phase(task, state)
+                # Review passed - proceed based on mode
+                if state.mode == CodingMode.SEMI_AUTO:
+                    # Semi Auto: Wait for human approval
+                    state.phase = AgenticPhase.AWAITING_HUMAN
+                    await self._notify_ready_for_merge(task, state)
+                else:
+                    # Full Auto: Proceed to merge check
+                    state.phase = AgenticPhase.MERGE_CHECK
+                    await self._run_merge_phase(task, state)
             else:
                 # Review rejected - trigger fix
                 state.review_iterations += 1
@@ -646,10 +693,72 @@ class AgenticOrchestrator:
                 if state.review_iterations > self.limits.max_review_iterations:
                     state.phase = AgenticPhase.FAILED
                     state.error = "Exceeded max review fix iterations"
+                    await self._notify_failure(task, state)
                     return state
 
                 state.phase = AgenticPhase.FIXING_REVIEW
                 await self._run_review_fix_phase(task, review_result, state)
+
+            return state
+
+    async def approve_merge(self, task_id: str) -> AgenticState:
+        """
+        Human approves merge (Semi Auto mode only).
+        Called when human clicks "Merge" button after reviewing PR.
+        """
+        state = self._states.get(task_id)
+        if not state:
+            raise ValueError(f"No active agentic state for task {task_id}")
+
+        if state.mode != CodingMode.SEMI_AUTO:
+            raise ValueError("approve_merge is only for Semi Auto mode")
+
+        if state.phase != AgenticPhase.AWAITING_HUMAN:
+            raise ValueError(f"Cannot approve merge in phase {state.phase}")
+
+        async with self._locks[task_id]:
+            state.human_approved = True
+            state.last_activity = datetime.utcnow()
+
+            # Proceed to merge
+            task = await self.task_dao.get(task_id)
+            state.phase = AgenticPhase.MERGE_CHECK
+            await self._run_merge_phase(task, state)
+
+            return state
+
+    async def reject_merge(self, task_id: str, feedback: str | None = None) -> AgenticState:
+        """
+        Human rejects merge (Semi Auto mode only).
+        Called when human wants additional changes.
+        """
+        state = self._states.get(task_id)
+        if not state:
+            raise ValueError(f"No active agentic state for task {task_id}")
+
+        if state.mode != CodingMode.SEMI_AUTO:
+            raise ValueError("reject_merge is only for Semi Auto mode")
+
+        if state.phase != AgenticPhase.AWAITING_HUMAN:
+            raise ValueError(f"Cannot reject in phase {state.phase}")
+
+        async with self._locks[task_id]:
+            state.last_activity = datetime.utcnow()
+
+            if feedback:
+                # Human provided feedback - trigger fix
+                task = await self.task_dao.get(task_id)
+                state.phase = AgenticPhase.CODING
+                await self._run_coding_phase(
+                    task,
+                    feedback,
+                    state,
+                    context={"human_feedback": True},
+                )
+            else:
+                # No feedback - mark as failed
+                state.phase = AgenticPhase.FAILED
+                state.error = "Human rejected without feedback"
 
             return state
 
@@ -842,9 +951,70 @@ class AgenticOrchestrator:
         if merge_result.success:
             state.phase = AgenticPhase.COMPLETED
             await self._update_task_status(task, "completed")
+            await self._notify_completion(task, state)
         else:
             state.phase = AgenticPhase.FAILED
             state.error = f"Merge failed: {merge_result.error}"
+            await self._notify_failure(task, state)
+
+    # =========================================
+    # Notification Methods
+    # =========================================
+
+    async def _notify_ready_for_merge(self, task: Task, state: AgenticState):
+        """
+        Notify human that PR is ready for merge review (Semi Auto only).
+        """
+        if self.notifier:
+            await self.notifier.send(
+                NotificationEvent(
+                    type=NotificationType.READY_FOR_MERGE,
+                    task_id=task.id,
+                    task_title=task.title,
+                    pr_number=state.pr_number,
+                    pr_url=f"https://github.com/{task.repo_url}/pull/{state.pr_number}",
+                    message=f"PR #{state.pr_number} is ready for your review and merge.",
+                    mode=state.mode,
+                    iterations=state.iteration,
+                    review_score=state.last_review_result.score if state.last_review_result else None,
+                )
+            )
+
+    async def _notify_failure(self, task: Task, state: AgenticState):
+        """
+        Notify about task failure.
+        """
+        if self.notifier:
+            await self.notifier.send(
+                NotificationEvent(
+                    type=NotificationType.FAILED,
+                    task_id=task.id,
+                    task_title=task.title,
+                    pr_number=state.pr_number,
+                    message=f"Task failed: {state.error}",
+                    mode=state.mode,
+                    iterations=state.iteration,
+                    error=state.error,
+                )
+            )
+
+    async def _notify_completion(self, task: Task, state: AgenticState):
+        """
+        Notify about successful completion (Full Auto only).
+        """
+        if self.notifier:
+            await self.notifier.send(
+                NotificationEvent(
+                    type=NotificationType.COMPLETED,
+                    task_id=task.id,
+                    task_title=task.title,
+                    pr_number=state.pr_number,
+                    pr_url=f"https://github.com/{task.repo_url}/pull/{state.pr_number}",
+                    message=f"PR #{state.pr_number} has been merged successfully.",
+                    mode=state.mode,
+                    iterations=state.iteration,
+                )
+            )
 
     # =========================================
     # Helper Methods
@@ -998,6 +1168,8 @@ flowchart TD
 
 ### Phase Transitions
 
+#### Full Auto Mode
+
 ```mermaid
 stateDiagram-v2
     [*] --> CODING
@@ -1011,10 +1183,13 @@ stateDiagram-v2
     FIXING_CI --> FAILED: Max iterations exceeded
 
     REVIEWING --> FIXING_REVIEW: Review Rejected
-    REVIEWING --> MERGING: Review Approved
+    REVIEWING --> MERGE_CHECK: Review Approved
 
     FIXING_REVIEW --> WAITING_CI: Fix & Push
     FIXING_REVIEW --> FAILED: Max iterations exceeded
+
+    MERGE_CHECK --> MERGING: Conditions Met
+    MERGE_CHECK --> FAILED: Conditions Not Met
 
     MERGING --> COMPLETED: Merge Success
     MERGING --> FAILED: Merge Failed
@@ -1024,6 +1199,57 @@ stateDiagram-v2
     COMPLETED --> [*]
     FAILED --> [*]
 ```
+
+#### Semi Auto Mode
+
+```mermaid
+stateDiagram-v2
+    [*] --> CODING
+
+    CODING --> WAITING_CI: Push & Create PR
+
+    WAITING_CI --> FIXING_CI: CI Failed
+    WAITING_CI --> REVIEWING: CI Passed
+
+    FIXING_CI --> WAITING_CI: Fix & Push
+    FIXING_CI --> FAILED: Max iterations exceeded
+
+    REVIEWING --> FIXING_REVIEW: Review Rejected
+    REVIEWING --> AWAITING_HUMAN: Review Approved
+
+    FIXING_REVIEW --> WAITING_CI: Fix & Push
+    FIXING_REVIEW --> FAILED: Max iterations exceeded
+
+    AWAITING_HUMAN --> MERGE_CHECK: Human Approves
+    AWAITING_HUMAN --> CODING: Human Rejects with Feedback
+    AWAITING_HUMAN --> FAILED: Human Rejects without Feedback
+
+    MERGE_CHECK --> MERGING: Conditions Met
+    MERGE_CHECK --> FAILED: Conditions Not Met
+
+    MERGING --> COMPLETED: Merge Success
+    MERGING --> FAILED: Merge Failed
+
+    CODING --> FAILED: Unrecoverable error
+
+    COMPLETED --> [*]
+    FAILED --> [*]
+```
+
+#### Mode Comparison
+
+| Phase | Full Auto | Semi Auto |
+|-------|-----------|-----------|
+| CODING | ✅ | ✅ |
+| WAITING_CI | ✅ | ✅ |
+| FIXING_CI | ✅ | ✅ |
+| REVIEWING | ✅ | ✅ |
+| FIXING_REVIEW | ✅ | ✅ |
+| **AWAITING_HUMAN** | ❌ | ✅ |
+| MERGE_CHECK | ✅ | ✅ |
+| MERGING | ✅ | ✅ |
+| COMPLETED | ✅ | ✅ |
+| FAILED | ✅ | ✅ |
 
 ---
 
@@ -1069,17 +1295,20 @@ FIX_STRATEGIES = {
 ```yaml
 # Agentic Task Execution
 POST /v1/tasks/{task_id}/agentic:
-  description: Start full agentic cycle
+  description: Start agentic cycle (Semi Auto or Full Auto)
   request:
     instruction: string
+    mode: "semi_auto" | "full_auto"  # コーディングモード指定
     config: AgenticConfig (optional)
   response:
     agentic_run_id: string
     status: "started"
+    mode: string
 
 GET /v1/tasks/{task_id}/agentic/status:
   description: Get agentic execution status
   response:
+    mode: CodingMode
     phase: AgenticPhase
     iteration: int
     ci_iterations: int
@@ -1087,12 +1316,29 @@ GET /v1/tasks/{task_id}/agentic/status:
     pr_number: int | null
     last_ci_result: CIResult | null
     last_review_result: ReviewResult | null
+    human_approved: boolean  # Semi Auto only
     error: string | null
 
 POST /v1/tasks/{task_id}/agentic/cancel:
   description: Cancel agentic execution
   response:
     cancelled: boolean
+
+# Human Approval (Semi Auto only)
+POST /v1/tasks/{task_id}/approve-merge:
+  description: Human approves PR merge (Semi Auto mode only)
+  request: {}
+  response:
+    status: "merging"
+    phase: AgenticPhase
+
+POST /v1/tasks/{task_id}/reject-merge:
+  description: Human rejects PR and requests changes (Semi Auto mode only)
+  request:
+    feedback: string | null  # Optional feedback for AI to address
+  response:
+    status: "rejected"
+    phase: AgenticPhase  # Returns to CODING if feedback provided
 
 # Webhook
 POST /v1/webhooks/ci:
@@ -1111,6 +1357,49 @@ POST /v1/webhooks/ci:
   response:
     status: string
     action_taken: string | null
+```
+
+### Webhook Handler (approve/reject)
+
+```python
+# apps/api/src/dursor_api/routes/tasks.py
+
+@router.post("/{task_id}/approve-merge")
+async def approve_merge(
+    task_id: str,
+    orchestrator: AgenticOrchestrator = Depends(get_orchestrator),
+):
+    """
+    Human approves merge for Semi Auto mode.
+    Transitions from AWAITING_HUMAN to MERGE_CHECK.
+    """
+    state = await orchestrator.approve_merge(task_id)
+    return {
+        "status": "merging",
+        "phase": state.phase,
+    }
+
+
+@router.post("/{task_id}/reject-merge")
+async def reject_merge(
+    task_id: str,
+    request: RejectMergeRequest,
+    orchestrator: AgenticOrchestrator = Depends(get_orchestrator),
+):
+    """
+    Human rejects merge for Semi Auto mode.
+    If feedback provided, transitions to CODING.
+    Otherwise, transitions to FAILED.
+    """
+    state = await orchestrator.reject_merge(task_id, request.feedback)
+    return {
+        "status": "rejected",
+        "phase": state.phase,
+    }
+
+
+class RejectMergeRequest(BaseModel):
+    feedback: str | None = None
 ```
 
 ---
@@ -1140,6 +1429,150 @@ DURSOR_WEBHOOK_SECRET=your-secret-here
 # Merge
 DURSOR_MERGE_METHOD=squash
 DURSOR_MERGE_DELETE_BRANCH=true
+```
+
+---
+
+## 通知システム
+
+### 通知タイプ
+
+| Type | Trigger | Semi Auto | Full Auto |
+|------|---------|-----------|-----------|
+| `READY_FOR_MERGE` | Review承認後 | ✅ 送信 | ❌ 不要 |
+| `COMPLETED` | Merge成功後 | ✅ 送信 | ✅ 送信 |
+| `FAILED` | エラー発生時 | ✅ 送信 | ✅ 送信 |
+| `WARNING` | 高イテレーション | ✅ 送信 | ✅ 送信 |
+
+### Notification Service 実装
+
+```python
+# apps/api/src/dursor_api/services/notification_service.py
+
+from enum import Enum
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
+
+
+class NotificationType(str, Enum):
+    READY_FOR_MERGE = "ready_for_merge"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    WARNING = "warning"
+
+
+@dataclass
+class NotificationEvent:
+    type: NotificationType
+    task_id: str
+    task_title: str | None
+    pr_number: int | None = None
+    pr_url: str | None = None
+    message: str = ""
+    mode: CodingMode | None = None
+    iterations: int = 0
+    review_score: float | None = None
+    error: str | None = None
+
+
+class NotificationChannel(ABC):
+    """Abstract base for notification channels."""
+
+    @abstractmethod
+    async def send(self, event: NotificationEvent) -> bool:
+        pass
+
+
+class SlackNotifier(NotificationChannel):
+    """Slack Webhook notification."""
+
+    def __init__(self, webhook_url: str):
+        self.webhook_url = webhook_url
+
+    async def send(self, event: NotificationEvent) -> bool:
+        color = {
+            NotificationType.READY_FOR_MERGE: "#36a64f",  # Green
+            NotificationType.COMPLETED: "#2eb886",        # Teal
+            NotificationType.FAILED: "#dc3545",           # Red
+            NotificationType.WARNING: "#ffc107",          # Yellow
+        }.get(event.type, "#6c757d")
+
+        payload = {
+            "attachments": [{
+                "color": color,
+                "title": f"[{event.mode.value if event.mode else 'Unknown'}] {event.type.value.replace('_', ' ').title()}",
+                "text": event.message,
+                "fields": [
+                    {"title": "Task", "value": event.task_title or event.task_id, "short": True},
+                    {"title": "Iterations", "value": str(event.iterations), "short": True},
+                ],
+                "actions": [] if not event.pr_url else [{
+                    "type": "button",
+                    "text": f"View PR #{event.pr_number}",
+                    "url": event.pr_url,
+                }],
+            }]
+        }
+
+        if event.review_score is not None:
+            payload["attachments"][0]["fields"].append({
+                "title": "Review Score",
+                "value": f"{event.review_score:.2f}",
+                "short": True,
+            })
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.webhook_url, json=payload)
+            return response.status_code == 200
+
+
+class EmailNotifier(NotificationChannel):
+    """Email notification via SMTP."""
+
+    def __init__(self, smtp_config: SMTPConfig):
+        self.config = smtp_config
+
+    async def send(self, event: NotificationEvent) -> bool:
+        subject = f"[dursor] {event.type.value.replace('_', ' ').title()}: {event.task_title}"
+        body = self._build_email_body(event)
+        # ... SMTP send implementation
+        return True
+
+
+class NotificationService:
+    """Manages multiple notification channels."""
+
+    def __init__(self, channels: list[NotificationChannel]):
+        self.channels = channels
+
+    async def send(self, event: NotificationEvent) -> dict[str, bool]:
+        """Send notification to all configured channels."""
+        results = {}
+        for channel in self.channels:
+            channel_name = channel.__class__.__name__
+            try:
+                results[channel_name] = await channel.send(event)
+            except Exception as e:
+                logger.error(f"Notification failed for {channel_name}: {e}")
+                results[channel_name] = False
+        return results
+```
+
+### 通知設定
+
+```bash
+# 通知チャネル
+DURSOR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
+DURSOR_NOTIFY_EMAIL=dev-alerts@example.com
+
+# 通知トリガー
+DURSOR_NOTIFY_ON_READY=true      # Semi Auto: PR準備完了
+DURSOR_NOTIFY_ON_COMPLETE=true   # 完了通知
+DURSOR_NOTIFY_ON_FAILURE=true    # 失敗通知
+DURSOR_NOTIFY_ON_WARNING=true    # 警告（高イテレーション）
+
+# 警告閾値
+DURSOR_WARN_ITERATION_THRESHOLD=7  # この回数を超えると警告
 ```
 
 ---
@@ -1267,6 +1700,7 @@ agentic_review_scores = Histogram("agentic_review_scores", "Review scores")
 
 ## 関連ドキュメント
 
+- [Coding Mode 設計](./coding-mode.md) - 3つのコーディングモードの概要
 - [Architecture](./architecture.md)
 - [Agent System](./agents.md)
 - [Multi AI Coding Tool](./ai-coding-tool-multiple.md)
