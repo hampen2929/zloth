@@ -11,14 +11,18 @@ class Provider(str, Enum):
     GOOGLE = "google"
 
 
-class RunStatus(str, Enum):
-    """Run execution status."""
+class RoleExecutionStatus(str, Enum):
+    """AI Role execution status. All Roles share this common status lifecycle."""
 
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELED = "canceled"
+    QUEUED = "queued"  # Waiting in queue
+    RUNNING = "running"  # Currently executing
+    SUCCEEDED = "succeeded"  # Completed successfully
+    FAILED = "failed"  # Execution failed
+    CANCELED = "canceled"  # Canceled by user
+
+
+# Backward compatibility aliases
+RunStatus = RoleExecutionStatus
 
 
 class MessageRole(str, Enum):
@@ -134,10 +138,5 @@ class ReviewCategory(str, Enum):
     TEST = "test"  # Test-related issues
 
 
-class ReviewStatus(str, Enum):
-    """Review execution status."""
-
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
+# ReviewStatus alias for backward compatibility
+ReviewStatus = RoleExecutionStatus
