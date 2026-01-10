@@ -336,7 +336,6 @@ export function ChatCodeView({
           latestSuccessfulRun={latestSuccessfulRun}
           successfulRunIds={successfulRunIds}
           taskId={taskId}
-          executorType={latestRunForSelectedExecutor.executor_type}
           creatingPR={creatingPR}
           onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
@@ -449,7 +448,6 @@ interface SessionHeaderProps {
   latestSuccessfulRun: Run | undefined;
   successfulRunIds: string[];
   taskId: string;
-  executorType: ExecutorType;
   creatingPR: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
@@ -464,7 +462,6 @@ function SessionHeader({
   latestSuccessfulRun,
   successfulRunIds,
   taskId,
-  executorType,
   creatingPR,
   onCopyBranch,
   onCreatePR,
@@ -490,7 +487,6 @@ function SessionHeader({
         <ReviewButton
           taskId={taskId}
           runIds={successfulRunIds}
-          executorType={executorType}
           onReviewCreated={onReviewCreated}
           onError={onReviewError}
         />

@@ -2,9 +2,9 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from dursor_api.dependencies import get_review_service
+from dursor_api.dependencies import get_output_manager, get_review_service
 from dursor_api.domain.models import (
     FixInstructionRequest,
     FixInstructionResponse,
@@ -14,6 +14,7 @@ from dursor_api.domain.models import (
     ReviewCreated,
     ReviewSummary,
 )
+from dursor_api.services.output_manager import OutputManager
 from dursor_api.services.review_service import ReviewService
 
 logger = logging.getLogger(__name__)
@@ -59,14 +60,58 @@ async def get_review(
 @router.get("/reviews/{review_id}/logs")
 async def get_review_logs(
     review_id: str,
-    from_line: int = 0,
+    from_line: int = Query(0, ge=0, description="Line number to start from (0-based)"),
     review_service: ReviewService = Depends(get_review_service),
+    output_manager: OutputManager = Depends(get_output_manager),
 ) -> dict[str, object]:
-    """Get review execution logs."""
-    try:
-        return await review_service.get_logs(review_id, from_line)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    """Get review execution logs (for polling).
+
+    Returns logs from OutputManager if the review is in progress,
+    or from the Review record if completed.
+
+    Returns:
+        Object with logs array (OutputLine format), is_complete flag, and total line count.
+    """
+    review = await review_service.get_review(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    # Use review-prefixed ID for OutputManager (same as in review_service._log_output)
+    output_key = f"review-{review_id}"
+
+    # Get logs from OutputManager (for in-progress reviews)
+    output_logs = await output_manager.get_history(output_key, from_line)
+    is_complete = await output_manager.is_complete(output_key)
+
+    # If we have output logs, use them
+    if output_logs:
+        status_val = review.status.value if hasattr(review.status, "value") else review.status
+        return {
+            "logs": [
+                {
+                    "line_number": ol.line_number,
+                    "content": ol.content,
+                    "timestamp": ol.timestamp,
+                }
+                for ol in output_logs
+            ],
+            "is_complete": is_complete or review.status in ("succeeded", "failed"),
+            "total_lines": from_line + len(output_logs),
+            "review_status": status_val,
+        }
+
+    # Fallback to review.logs (for completed reviews or when OutputManager has no data)
+    review_logs = review.logs[from_line:] if review.logs else []
+    status_val = review.status.value if hasattr(review.status, "value") else review.status
+    return {
+        "logs": [
+            {"line_number": from_line + i, "content": log, "timestamp": 0}
+            for i, log in enumerate(review_logs)
+        ],
+        "is_complete": review.status in ("succeeded", "failed"),
+        "total_lines": len(review.logs) if review.logs else 0,
+        "review_status": status_val,
+    }
 
 
 @router.post("/reviews/{review_id}/generate-fix", response_model=FixInstructionResponse)

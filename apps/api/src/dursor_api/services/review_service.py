@@ -63,10 +63,11 @@ documentation, test
 
 5. **Suggestion**: Recommended fix (if applicable)
 
-Output your review in the following JSON format:
-```json
+IMPORTANT: You MUST output ONLY valid JSON in the following format. Do not include any text \
+before or after the JSON. Do not use markdown code blocks. Output raw JSON only.
+
 {
-  "overall_summary": "Brief summary of the review",
+  "overall_summary": "Brief summary of the code review findings",
   "overall_score": 0.85,
   "feedbacks": [
     {
@@ -76,13 +77,20 @@ Output your review in the following JSON format:
       "severity": "high",
       "category": "bug",
       "title": "Potential null pointer exception",
-      "description": "The variable 'user' may be None...",
-      "suggestion": "Add null check before accessing...",
+      "description": "The variable 'user' may be None when accessed here.",
+      "suggestion": "Add null check before accessing user properties.",
       "code_snippet": "user.name"
     }
   ]
 }
-```
+
+Rules:
+- overall_score: A number between 0.0 and 1.0 (1.0 = perfect code)
+- severity: Must be one of: "critical", "high", "medium", "low"
+- category: Must be one of: "security", "bug", "performance", "maintainability", \
+"best_practice", "style", "documentation", "test"
+- If no issues found, return empty feedbacks array: "feedbacks": []
+- Always provide overall_summary and overall_score
 
 Focus on:
 - Security vulnerabilities
@@ -99,6 +107,16 @@ REVIEW_USER_PROMPT_TEMPLATE = """Please review the following code changes:
 Provide your detailed review with severity levels and actionable feedback.
 Output ONLY the JSON response, no additional text.
 """
+
+REVIEW_USER_PROMPT_FILE_TEMPLATE = """Please review the code changes in the file at: {file_path}
+
+Provide your detailed review with severity levels and actionable feedback.
+Output ONLY the JSON response, no additional text.
+"""
+
+# Maximum patch size to embed directly in the prompt (in characters)
+# Larger patches will be written to a file
+MAX_INLINE_PATCH_SIZE = 50000
 
 
 class ReviewQueueAdapter:
@@ -334,6 +352,8 @@ class ReviewService:
         worktree_path: Path | None,
     ) -> dict[str, Any]:
         """Execute review using CLI executor."""
+        import tempfile as tmpfile
+
         # Select executor
         executor_map: dict[
             ExecutorType, tuple[ClaudeCodeExecutor | CodexExecutor | GeminiExecutor, str]
@@ -345,80 +365,161 @@ class ReviewService:
 
         executor, executor_name = executor_map[review.executor_type]
         logs.append(f"Using {executor_name} for review")
+        logs.append(f"Patch size: {len(patch)} characters")
 
-        # Build review prompt
-        review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
+        # Determine working directory
+        if worktree_path and worktree_path.exists():
+            work_dir = worktree_path
+            logs.append(f"Using worktree: {work_dir}")
+        else:
+            # Create a temporary directory for review if no worktree
+            work_dir = Path(tmpfile.mkdtemp(prefix="review_"))
+            logs.append(f"Using temporary directory: {work_dir}")
+
+        try:
+            # For large patches, write to a file and reference it
+            if len(patch) > MAX_INLINE_PATCH_SIZE:
+                patch_file = work_dir / "review_patch.diff"
+                patch_file.write_text(patch, encoding="utf-8")
+                logs.append(f"Patch too large for inline, written to: {patch_file}")
+
+                review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
+
+{REVIEW_USER_PROMPT_FILE_TEMPLATE.format(file_path=str(patch_file))}"""
+            else:
+                review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
 
 {REVIEW_USER_PROMPT_TEMPLATE.format(patch=patch)}"""
 
-        # Execute CLI
-        if worktree_path and worktree_path.exists():
-            logs.append(f"Executing in worktree: {worktree_path}")
+            logs.append(f"Prompt size: {len(review_prompt)} characters")
+
             result = await executor.execute(
-                worktree_path=worktree_path,
+                worktree_path=work_dir,
                 instruction=review_prompt,
                 on_output=lambda line: self._log_output(review.id, line, logs),
             )
-        else:
-            # Create a temporary directory for review if no worktree
-            import tempfile
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmppath = Path(tmpdir)
-                logs.append(f"Executing in temporary directory: {tmppath}")
-                result = await executor.execute(
-                    worktree_path=tmppath,
-                    instruction=review_prompt,
-                    on_output=lambda line: self._log_output(review.id, line, logs),
-                )
+            if not result.success:
+                raise RuntimeError(f"CLI execution failed: {result.error}")
 
-        if not result.success:
-            raise RuntimeError(f"CLI execution failed: {result.error}")
+            # Parse response to extract JSON
+            response_text = "\n".join(result.logs)
+            return self._parse_review_response(response_text, logs)
 
-        # Parse response to extract JSON
-        response_text = "\n".join(result.logs)
-        return self._parse_review_response(response_text, logs)
+        finally:
+            # Cleanup temporary directory if we created one
+            if not worktree_path or not worktree_path.exists():
+                import shutil
+
+                if work_dir.exists():
+                    shutil.rmtree(work_dir, ignore_errors=True)
 
     def _parse_review_response(self, response_text: str, logs: list[str]) -> dict[str, Any]:
         """Parse the review response from CLI output."""
-        # Try to extract JSON from the response
+        # Try to extract JSON from the response using multiple strategies
+
+        # Strategy 1: Find balanced JSON objects and try each one
+        json_candidates = self._extract_json_objects(response_text)
+        logs.append(f"Found {len(json_candidates)} potential JSON objects")
+
+        for i, candidate in enumerate(json_candidates):
+            try:
+                data = json.loads(candidate)
+                # Check if this looks like our expected review format
+                if isinstance(data, dict) and ("feedbacks" in data or "overall_summary" in data):
+                    logs.append(f"Successfully parsed JSON object #{i + 1}")
+                    return self._process_review_data(data, logs)
+            except json.JSONDecodeError:
+                continue
+
+        # Strategy 2: Try the greedy regex as fallback
         json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:
-            try:
-                data = json.loads(json_match.group())
-                feedbacks = []
-                for fb_data in data.get("feedbacks", []):
+            # Try to find a valid JSON by trimming from the end
+            text = json_match.group()
+            for end_pos in range(len(text), 0, -1):
+                if text[end_pos - 1] == "}":
                     try:
-                        feedback = ReviewFeedbackItem(
-                            id=generate_id(),
-                            file_path=fb_data.get("file_path", "unknown"),
-                            line_start=fb_data.get("line_start"),
-                            line_end=fb_data.get("line_end"),
-                            severity=ReviewSeverity(fb_data.get("severity", "medium").lower()),
-                            category=ReviewCategory(
-                                fb_data.get("category", "maintainability").lower()
-                            ),
-                            title=fb_data.get("title", "Review finding"),
-                            description=fb_data.get("description", ""),
-                            suggestion=fb_data.get("suggestion"),
-                            code_snippet=fb_data.get("code_snippet"),
-                        )
-                        feedbacks.append(feedback)
-                    except Exception as e:
-                        logs.append(f"Warning: Could not parse feedback: {e}")
-
-                logs.append(f"Parsed {len(feedbacks)} feedback items")
-                return {
-                    "overall_summary": data.get("overall_summary", "Review completed"),
-                    "overall_score": data.get("overall_score"),
-                    "feedbacks": feedbacks,
-                }
-            except json.JSONDecodeError as e:
-                logs.append(f"Warning: Could not parse JSON response: {e}")
+                        data = json.loads(text[:end_pos])
+                        if isinstance(data, dict):
+                            logs.append("Successfully parsed JSON using trimmed match")
+                            return self._process_review_data(data, logs)
+                    except json.JSONDecodeError:
+                        continue
 
         # Fallback: create a summary-only result
-        logs.append("Using fallback review parsing")
+        logs.append("Using fallback review parsing - no valid JSON found")
         return self._create_default_review_result(response_text)
+
+    def _extract_json_objects(self, text: str) -> list[str]:
+        """Extract balanced JSON objects from text."""
+        objects = []
+        i = 0
+        while i < len(text):
+            if text[i] == "{":
+                # Find matching closing brace
+                depth = 0
+                start = i
+                in_string = False
+                escape_next = False
+
+                while i < len(text):
+                    char = text[i]
+
+                    if escape_next:
+                        escape_next = False
+                        i += 1
+                        continue
+
+                    if char == "\\":
+                        escape_next = True
+                        i += 1
+                        continue
+
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+
+                    if not in_string:
+                        if char == "{":
+                            depth += 1
+                        elif char == "}":
+                            depth -= 1
+                            if depth == 0:
+                                objects.append(text[start : i + 1])
+                                break
+                    i += 1
+            else:
+                i += 1
+
+        return objects
+
+    def _process_review_data(self, data: dict[str, Any], logs: list[str]) -> dict[str, Any]:
+        """Process parsed review data into the expected format."""
+        feedbacks = []
+        for fb_data in data.get("feedbacks", []):
+            try:
+                feedback = ReviewFeedbackItem(
+                    id=generate_id(),
+                    file_path=fb_data.get("file_path", "unknown"),
+                    line_start=fb_data.get("line_start"),
+                    line_end=fb_data.get("line_end"),
+                    severity=ReviewSeverity(fb_data.get("severity", "medium").lower()),
+                    category=ReviewCategory(fb_data.get("category", "maintainability").lower()),
+                    title=fb_data.get("title", "Review finding"),
+                    description=fb_data.get("description", ""),
+                    suggestion=fb_data.get("suggestion"),
+                    code_snippet=fb_data.get("code_snippet"),
+                )
+                feedbacks.append(feedback)
+            except Exception as e:
+                logs.append(f"Warning: Could not parse feedback: {e}")
+
+        logs.append(f"Parsed {len(feedbacks)} feedback items")
+        return {
+            "overall_summary": data.get("overall_summary", "Review completed"),
+            "overall_score": data.get("overall_score"),
+            "feedbacks": feedbacks,
+        }
 
     def _create_default_review_result(self, content: str) -> dict[str, Any]:
         """Create a default review result when parsing fails."""
