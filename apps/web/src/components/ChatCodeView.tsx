@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
 import { tasksApi, runsApi, prsApi, preferencesApi } from '@/lib/api';
 import type { Message, ModelProfile, ExecutorType, Run, RunStatus } from '@/types';
@@ -63,30 +63,10 @@ export function ChatCodeView({
   });
 
   // Determine executor types used in this task
-  const sortedRuns = [...runs].reverse();
-
-  // Get unique CLI executor types from existing runs (for continuation)
-  const cliExecutorTypes: ExecutorType[] = [
-    ...new Set(
-      sortedRuns
-        .map((r) => r.executor_type)
-        .filter(
-          (et): et is ExecutorType =>
-            et === 'claude_code' || et === 'codex_cli' || et === 'gemini_cli'
-        )
-    ),
-  ];
+  const sortedRuns = useMemo(() => [...runs].reverse(), [runs]);
 
   // Check if patch_agent is used
   const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
-
-  // For backwards compatibility, determine if we're in CLI mode or patch_agent mode
-  const isCLIExecutor = cliExecutorTypes.length > 0;
-  const cliDisplayName = isCLIExecutor
-    ? cliExecutorTypes.length === 1
-      ? getExecutorDisplayName(cliExecutorTypes[0])
-      : `${cliExecutorTypes.length} CLIs`
-    : undefined;
 
   // Get branch name from selected run (each executor has its own branch)
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
@@ -118,9 +98,10 @@ export function ChatCodeView({
   }, [models, selectedModels.length, initialModelIds, hasPatchAgent]);
 
   // Get unique executor types from runs (for executor selector cards)
-  const uniqueExecutorTypes: ExecutorType[] = [
-    ...new Set(sortedRuns.map((r) => r.executor_type)),
-  ];
+  const uniqueExecutorTypes = useMemo(
+    () => [...new Set(sortedRuns.map((r) => r.executor_type))] as ExecutorType[],
+    [sortedRuns]
+  );
 
   // Auto-select the first executor type when runs change
   useEffect(() => {
@@ -323,7 +304,7 @@ export function ChatCodeView({
           latestSuccessfulRun={latestSuccessfulRun}
           successfulRunIds={successfulRunIds}
           taskId={taskId}
-          executorType={lockedExecutor}
+          executorType={latestRunForSelectedExecutor.executor_type}
           creatingPR={creatingPR}
           onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
