@@ -122,8 +122,8 @@ export default function HomePage() {
         title: instruction.slice(0, 50) + (instruction.length > 50 ? '...' : ''),
       });
 
-      // Add the instruction as the first message
-      await tasksApi.addMessage(task.id, {
+      // Add the instruction as the first message and get its ID
+      const message = await tasksApi.addMessage(task.id, {
         role: 'user',
         content: instruction,
       });
@@ -134,11 +134,12 @@ export default function HomePage() {
         executorTypesToRun.push('patch_agent');
       }
 
-      // Create runs with executor_types for parallel execution
+      // Create runs with executor_types for parallel execution, linked to the message
       await runsApi.create(task.id, {
         instruction: instruction,
         executor_types: executorTypesToRun,
         model_ids: selectedModels.length > 0 ? selectedModels : undefined,
+        message_id: message.id,
       });
 
       // Navigate to the task page with executor info

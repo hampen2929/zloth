@@ -226,7 +226,8 @@ export function ChatCodeView({
     setLoading(true);
 
     try {
-      await tasksApi.addMessage(taskId, { role: 'user', content: input.trim() });
+      // Create message and get its ID for linking to runs
+      const message = await tasksApi.addMessage(taskId, { role: 'user', content: input.trim() });
 
       // Build executor_types array for continuation
       const executorTypesToRun: ExecutorType[] = [...cliExecutorTypes];
@@ -234,11 +235,12 @@ export function ChatCodeView({
         executorTypesToRun.push('patch_agent');
       }
 
-      // Create runs with executor_types for parallel execution
+      // Create runs with executor_types for parallel execution, linked to the message
       await runsApi.create(taskId, {
         instruction: input.trim(),
         executor_types: executorTypesToRun,
         model_ids: hasPatchAgent && selectedModels.length > 0 ? selectedModels : undefined,
+        message_id: message.id,
       });
 
       // Show success message
