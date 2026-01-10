@@ -45,7 +45,7 @@ export function ChatCodeView({
   const [input, setInput] = useState('');
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
   const [loading, setLoading] = useState(false);
-  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [runTabs, setRunTabs] = useState<Record<string, RunTab>>({});
   const [creatingPR, setCreatingPR] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
@@ -85,8 +85,7 @@ export function ChatCodeView({
       : `${cliExecutorTypes.length} CLIs`
     : undefined;
 
-  // Get session-level branch name
-  const sessionBranch = sortedRuns.find((r) => r.working_branch)?.working_branch || null;
+  // Get branch name from selected run (each executor has its own branch)
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
   const latestPR = prs && prs.length > 0 ? prs[0] : null;
 
@@ -110,22 +109,12 @@ export function ChatCodeView({
     }
   }, [models, selectedModels.length, initialModelIds, hasPatchAgent]);
 
-  // Auto-expand new runs
+  // Auto-select the first run when runs change, or select the first if none selected
   useEffect(() => {
-    if (runs.length > 0) {
-      setExpandedRuns((prev) => {
-        const newExpanded = new Set(prev);
-        let hasNew = false;
-        runs.forEach((run) => {
-          if (!prev.has(run.id)) {
-            newExpanded.add(run.id);
-            hasNew = true;
-          }
-        });
-        return hasNew ? newExpanded : prev;
-      });
+    if (runs.length > 0 && (!selectedRunId || !runs.find((r) => r.id === selectedRunId))) {
+      setSelectedRunId(runs[0].id);
     }
-  }, [runs]);
+  }, [runs, selectedRunId]);
 
   // Track run status changes and show toast notifications
   const prevRunStatuses = useRef<Map<string, RunStatus>>(new Map());
@@ -265,55 +254,56 @@ export function ChatCodeView({
     }
   };
 
-  const toggleRunExpanded = (runId: string) => {
-    setExpandedRuns((prev) => {
-      const next = new Set(prev);
-      if (next.has(runId)) {
-        next.delete(runId);
-      } else {
-        next.add(runId);
-      }
-      return next;
-    });
-  };
-
   const getRunTab = (runId: string): RunTab => runTabs[runId] || 'summary';
   const setRunTab = (runId: string, tab: RunTab) => {
     setRunTabs((prev) => ({ ...prev, [runId]: tab }));
   };
 
-  // Calculate runs per user message for distribution
-  const userMessageIndices = messages
-    .map((msg, idx) => (msg.role === 'user' ? idx : -1))
-    .filter((idx) => idx !== -1);
-
-  const getRunsForUserMessage = (msgIndex: number): Run[] => {
-    const userMsgOrder = userMessageIndices.indexOf(msgIndex);
-    if (userMsgOrder === -1) return [];
-
-    const totalUserMessages = userMessageIndices.length;
-    if (totalUserMessages === 0 || sortedRuns.length === 0) return [];
-
-    const runsPerMessage = Math.ceil(sortedRuns.length / totalUserMessages);
-    const startIdx = userMsgOrder * runsPerMessage;
-    const endIdx = Math.min(startIdx + runsPerMessage, sortedRuns.length);
-
-    return sortedRuns.slice(startIdx, endIdx);
-  };
+  // Get the selected run
+  const selectedRun = selectedRunId ? runs.find((r) => r.id === selectedRunId) : null;
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
-      {/* Session Header */}
-      {sessionBranch && (
+      {/* Session Header - shows selected run's branch */}
+      {selectedRun?.working_branch && (
         <SessionHeader
-          sessionBranch={sessionBranch}
+          sessionBranch={selectedRun.working_branch}
           prResult={prResult}
           prLinkResult={prLinkResult}
           latestSuccessfulRun={latestSuccessfulRun}
           creatingPR={creatingPR}
-          onCopyBranch={() => copy(sessionBranch, 'Branch name')}
+          onCopyBranch={() => copy(selectedRun.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
         />
+      )}
+
+      {/* Run Selector Cards */}
+      {sortedRuns.length > 0 && (
+        <div className="px-4 py-3 border-b border-gray-800">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {sortedRuns.map((run) => (
+              <RunSelectorCard
+                key={run.id}
+                run={run}
+                isSelected={selectedRunId === run.id}
+                onClick={() => setSelectedRunId(run.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Selected Run Detail */}
+      {selectedRun && (
+        <div className="border-b border-gray-800">
+          <RunResultCard
+            run={selectedRun}
+            expanded={true}
+            onToggleExpand={() => {}}
+            activeTab={getRunTab(selectedRun.id)}
+            onTabChange={(tab) => setRunTab(selectedRun.id, tab)}
+          />
+        </div>
       )}
 
       {/* Conversation Area */}
@@ -322,20 +312,8 @@ export function ChatCodeView({
           <EmptyState />
         ) : (
           <>
-            {messages.map((msg, msgIndex) => (
-              <div key={msg.id} className="space-y-3">
-                <MessageBubble message={msg} />
-                {getRunsForUserMessage(msgIndex).map((run) => (
-                  <RunResultCard
-                    key={run.id}
-                    run={run}
-                    expanded={expandedRuns.has(run.id)}
-                    onToggleExpand={() => toggleRunExpanded(run.id)}
-                    activeTab={getRunTab(run.id)}
-                    onTabChange={(tab) => setRunTab(run.id, tab)}
-                  />
-                ))}
-              </div>
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} message={msg} />
             ))}
           </>
         )}
@@ -446,6 +424,76 @@ function EmptyState() {
         Your messages and code changes will appear here.
       </p>
     </div>
+  );
+}
+
+interface RunSelectorCardProps {
+  run: Run;
+  isSelected: boolean;
+  onClick: () => void;
+}
+
+function RunSelectorCard({ run, isSelected, onClick }: RunSelectorCardProps) {
+  const displayName = getExecutorDisplayName(run.executor_type) || run.model_name || 'Run';
+  const filesCount = run.files_changed?.length || 0;
+  const addedLines = run.files_changed?.reduce((acc, f) => acc + f.added_lines, 0) || 0;
+  const removedLines = run.files_changed?.reduce((acc, f) => acc + f.removed_lines, 0) || 0;
+
+  const getStatusInfo = () => {
+    switch (run.status) {
+      case 'running':
+        return { text: 'Running...', color: 'text-blue-400' };
+      case 'queued':
+        return { text: 'Queued', color: 'text-gray-400' };
+      case 'succeeded':
+        if (filesCount === 0) {
+          return { text: 'No changes', color: 'text-gray-400' };
+        }
+        return {
+          text: `${filesCount} file${filesCount > 1 ? 's' : ''} · +${addedLines}${removedLines > 0 ? ` -${removedLines}` : ''}`,
+          color: 'text-gray-300',
+        };
+      case 'failed':
+        return { text: 'Failed', color: 'text-red-400' };
+      case 'canceled':
+        return { text: 'Canceled', color: 'text-gray-500' };
+      default:
+        return { text: '', color: 'text-gray-400' };
+    }
+  };
+
+  const statusInfo = getStatusInfo();
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex-shrink-0 px-4 py-2.5 rounded-lg border transition-all text-left min-w-[140px]',
+        isSelected
+          ? 'bg-gray-800 border-purple-500 shadow-lg shadow-purple-500/10'
+          : 'bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800'
+      )}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        {run.status === 'running' && (
+          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+        )}
+        {run.status === 'succeeded' && (
+          <CheckCircleIcon className="w-4 h-4 text-green-500" />
+        )}
+        <span className="text-sm font-medium text-white truncate">{displayName}</span>
+      </div>
+      <div className={cn('text-xs', statusInfo.color)}>
+        {run.status === 'succeeded' && addedLines > 0 && (
+          <span>
+            <span className="text-green-400">+{addedLines}</span>
+            {removedLines > 0 && <span className="text-red-400 ml-1">-{removedLines}</span>}
+          </span>
+        )}
+        {run.status === 'succeeded' && addedLines === 0 && statusInfo.text}
+        {run.status !== 'succeeded' && statusInfo.text}
+      </div>
+    </button>
   );
 }
 
