@@ -164,17 +164,41 @@ export function ChatCodeView({
     });
   }, [runs, error, success]);
 
+  // Ref for cleanup of async PR link generation
+  const prLinkJobCleanupRef = useRef<(() => void) | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      prLinkJobCleanupRef.current?.();
+    };
+  }, []);
+
   const handleCreatePR = async () => {
     if (!latestSuccessfulRun) return;
 
     setCreatingPR(true);
     try {
       if (preferences?.default_pr_creation_mode === 'link') {
-        const result = await prsApi.createLinkAuto(taskId, {
-          selected_run_id: latestSuccessfulRun.id,
-        });
-        setPRLinkResult({ url: result.url });
-        success('PR link generated. Create the PR on GitHub.');
+        // Use async job API to avoid proxy timeout for long-running AI generation
+        prLinkJobCleanupRef.current?.();
+        prLinkJobCleanupRef.current = prsApi.pollLinkAuto(
+          taskId,
+          { selected_run_id: latestSuccessfulRun.id },
+          {
+            onComplete: (result) => {
+              setPRLinkResult({ url: result.url });
+              setCreatingPR(false);
+              prLinkJobCleanupRef.current = null;
+              success('PR link generated. Create the PR on GitHub.');
+            },
+            onError: (err) => {
+              setCreatingPR(false);
+              prLinkJobCleanupRef.current = null;
+              error(err.message || 'Failed to generate PR link');
+            },
+          }
+        );
       } else {
         const result = await prsApi.createAuto(taskId, {
           selected_run_id: latestSuccessfulRun.id,
@@ -182,11 +206,11 @@ export function ChatCodeView({
         setPRResult({ url: result.url, number: result.number });
         onPRCreated();
         success('Pull request created successfully!');
+        setCreatingPR(false);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create PR';
       error(message);
-    } finally {
       setCreatingPR(false);
     }
   };

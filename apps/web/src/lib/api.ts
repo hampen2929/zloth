@@ -27,6 +27,8 @@ import type {
   PRCreateAuto,
   PRCreated,
   PRCreateLink,
+  PRLinkJob,
+  PRLinkJobResult,
   PRSyncResult,
   PRUpdate,
   PRUpdated,
@@ -273,6 +275,99 @@ export const prsApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /**
+   * Start async PR link generation job (returns immediately with job ID).
+   * Use this for long-running PR link generation to avoid proxy timeout.
+   */
+  startLinkAutoJob: (taskId: string, data: PRCreateAuto) =>
+    fetchApi<PRLinkJob>(`/tasks/${taskId}/prs/auto/link/job`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * Get status of PR link generation job.
+   * Poll this endpoint until status is 'completed' or 'failed'.
+   */
+  getLinkAutoJob: (jobId: string) =>
+    fetchApi<PRLinkJobResult>(`/prs/jobs/${jobId}`),
+
+  /**
+   * Poll for PR link generation job completion.
+   *
+   * @param taskId - Task ID
+   * @param data - PR creation data
+   * @param options - Polling options
+   * @returns Cleanup function to cancel polling
+   */
+  pollLinkAuto: (
+    taskId: string,
+    data: PRCreateAuto,
+    options: {
+      onComplete: (result: PRCreateLink) => void;
+      onError: (error: Error) => void;
+      onStatusChange?: (status: string) => void;
+    }
+  ): (() => void) => {
+    let cancelled = false;
+    const pollInterval = 1000;
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      try {
+        // Start the job
+        const job = await prsApi.startLinkAutoJob(taskId, data);
+        options.onStatusChange?.(job.status);
+
+        // Poll for completion
+        const checkStatus = async () => {
+          if (cancelled) return;
+
+          try {
+            const result = await prsApi.getLinkAutoJob(job.job_id);
+            options.onStatusChange?.(result.status);
+
+            if (result.status === 'completed' && result.result) {
+              options.onComplete(result.result);
+              return;
+            }
+
+            if (result.status === 'failed') {
+              options.onError(new Error(result.error || 'Job failed'));
+              return;
+            }
+
+            // Continue polling
+            if (!cancelled) {
+              setTimeout(checkStatus, pollInterval);
+            }
+          } catch (error) {
+            if (!cancelled) {
+              options.onError(
+                error instanceof Error ? error : new Error('Failed to check job status')
+              );
+            }
+          }
+        };
+
+        checkStatus();
+      } catch (error) {
+        if (!cancelled) {
+          options.onError(
+            error instanceof Error ? error : new Error('Failed to start job')
+          );
+        }
+      }
+    };
+
+    poll();
+
+    return () => {
+      cancelled = true;
+    };
+  },
 
   sync: (taskId: string, selectedRunId: string) =>
     fetchApi<PRSyncResult>(`/tasks/${taskId}/prs/sync`, {

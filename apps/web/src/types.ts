@@ -201,6 +201,21 @@ export interface PRSyncResult {
   pr: PRCreated | null;
 }
 
+// PR Link Job (async generation)
+export type PRLinkJobStatus = 'pending' | 'completed' | 'failed';
+
+export interface PRLinkJob {
+  job_id: string;
+  status: PRLinkJobStatus;
+}
+
+export interface PRLinkJobResult {
+  job_id: string;
+  status: PRLinkJobStatus;
+  result: PRCreateLink | null;
+  error: string | null;
+}
+
 export interface PRUpdated {
   url: string;
   latest_commit: string;
