@@ -1,6 +1,7 @@
 """FastAPI dependency injection."""
 
 from dursor_api.config import settings
+from dursor_api.services.agentic_orchestrator import AgenticOrchestrator
 from dursor_api.services.breakdown_service import BreakdownService
 from dursor_api.services.crypto_service import CryptoService
 from dursor_api.services.git_service import GitService
@@ -13,6 +14,8 @@ from dursor_api.services.repo_service import RepoService
 from dursor_api.services.run_service import RunService
 from dursor_api.storage.dao import (
     PRDAO,
+    AgenticAuditLogDAO,
+    AgenticStateDAO,
     BacklogDAO,
     MessageDAO,
     ModelProfileDAO,
@@ -29,6 +32,7 @@ _run_service: RunService | None = None
 _git_service: GitService | None = None
 _output_manager: OutputManager | None = None
 _breakdown_service: BreakdownService | None = None
+_agentic_orchestrator: AgenticOrchestrator | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -179,3 +183,34 @@ async def get_kanban_service() -> KanbanService:
     pr_dao = await get_pr_dao()
     github_service = await get_github_service()
     return KanbanService(task_dao, run_dao, pr_dao, github_service)
+
+
+async def get_agentic_state_dao() -> AgenticStateDAO:
+    """Get AgenticState DAO."""
+    db = await get_db()
+    return AgenticStateDAO(db)
+
+
+async def get_agentic_audit_log_dao() -> AgenticAuditLogDAO:
+    """Get AgenticAuditLog DAO."""
+    db = await get_db()
+    return AgenticAuditLogDAO(db)
+
+
+async def get_agentic_orchestrator() -> AgenticOrchestrator:
+    """Get the agentic orchestrator singleton."""
+    global _agentic_orchestrator
+    if _agentic_orchestrator is None:
+        state_dao = await get_agentic_state_dao()
+        audit_dao = await get_agentic_audit_log_dao()
+        task_dao = await get_task_dao()
+        git_service = get_git_service()
+        github_service = await get_github_service()
+        _agentic_orchestrator = AgenticOrchestrator(
+            state_dao=state_dao,
+            audit_dao=audit_dao,
+            task_dao=task_dao,
+            git_service=git_service,
+            github_service=github_service,
+        )
+    return _agentic_orchestrator

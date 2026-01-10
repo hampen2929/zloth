@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from dursor_api.domain.enums import (
+    AgenticPhase,
     BacklogStatus,
     BreakdownStatus,
     BrokenDownTaskType,
@@ -672,6 +673,212 @@ class BacklogItem(BacklogItemBase):
     task_id: str | None = Field(None, description="Linked task ID if promoted")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# Agentic Execution
+# ============================================================
+
+
+class IterationLimits(BaseModel):
+    """Limits for agentic execution iterations."""
+
+    max_ci_iterations: int = Field(default=5, description="Max CI fix attempts")
+    max_review_iterations: int = Field(default=3, description="Max review fix attempts")
+    max_total_iterations: int = Field(default=10, description="Total iteration limit")
+    min_review_score: float = Field(default=0.75, description="Minimum review score to pass")
+    timeout_minutes: int = Field(default=60, description="Total timeout in minutes")
+    ci_wait_timeout_minutes: int = Field(default=15, description="Max wait for CI")
+    coding_timeout_minutes: int = Field(default=30, description="Max time for coding phase")
+    escalate_after_iterations: int = Field(
+        default=7, description="Escalate after this many iterations"
+    )
+
+
+class JobFailure(BaseModel):
+    """CI job failure details."""
+
+    job_name: str = Field(..., description="Name of the failed job")
+    result: str = Field(..., description="Job result status")
+    error_log: str | None = Field(None, description="Error log content")
+
+
+class CIResult(BaseModel):
+    """CI execution result."""
+
+    success: bool = Field(..., description="Whether all CI jobs passed")
+    workflow_run_id: int = Field(..., description="GitHub Actions workflow run ID")
+    conclusion: str = Field(..., description="Overall conclusion: success, failure, cancelled")
+    failed_jobs: list[JobFailure] = Field(default_factory=list, description="Failed jobs")
+    jobs: dict[str, str] = Field(default_factory=dict, description="All job results")
+
+
+class ReviewIssue(BaseModel):
+    """Issue found during code review."""
+
+    severity: str = Field(..., description="Issue severity: error, warning, info")
+    file_path: str = Field(..., description="File path")
+    line_number: int | None = Field(None, description="Line number")
+    description: str = Field(..., description="Issue description")
+    suggested_fix: str | None = Field(None, description="Suggested fix")
+
+
+class ReviewSuggestion(BaseModel):
+    """Improvement suggestion from code review."""
+
+    priority: str = Field(..., description="Priority: high, medium, low")
+    category: str = Field(..., description="Category: performance, security, style, etc.")
+    description: str = Field(..., description="Suggestion description")
+
+
+class ReviewResult(BaseModel):
+    """Code review result from Codex."""
+
+    approved: bool = Field(..., description="Whether the review is approved")
+    score: float = Field(..., description="Review score (0.0 to 1.0)")
+    blocking_issues: list[ReviewIssue] = Field(
+        default_factory=list, description="Blocking issues that must be fixed"
+    )
+    suggestions: list[ReviewSuggestion] = Field(
+        default_factory=list, description="Non-blocking suggestions"
+    )
+    summary: str = Field(default="", description="Review summary")
+
+
+class MergeConditions(BaseModel):
+    """Result of checking merge conditions."""
+
+    can_merge: bool = Field(..., description="Whether all conditions are met")
+    passed: list[str] = Field(default_factory=list, description="Passed conditions")
+    failed: list[str] = Field(default_factory=list, description="Failed conditions")
+
+
+class MergeResult(BaseModel):
+    """Result of merge operation."""
+
+    success: bool = Field(..., description="Whether merge succeeded")
+    merge_sha: str | None = Field(None, description="Merge commit SHA")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class AgenticState(BaseModel):
+    """State of an agentic execution."""
+
+    id: str = Field(..., description="State ID")
+    task_id: str = Field(..., description="Associated task ID")
+    phase: AgenticPhase = Field(..., description="Current execution phase")
+    iteration: int = Field(default=0, description="Current iteration number")
+    ci_iterations: int = Field(default=0, description="CI fix iteration count")
+    review_iterations: int = Field(default=0, description="Review fix iteration count")
+    pr_number: int | None = Field(None, description="Associated PR number")
+    current_sha: str | None = Field(None, description="Current commit SHA")
+    last_ci_result: CIResult | None = Field(None, description="Last CI result")
+    last_review_result: ReviewResult | None = Field(None, description="Last review result")
+    error: str | None = Field(None, description="Error message if failed")
+    started_at: datetime = Field(..., description="Start timestamp")
+    last_activity: datetime = Field(..., description="Last activity timestamp")
+    completed_at: datetime | None = Field(None, description="Completion timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class AgenticStateCreate(BaseModel):
+    """Request for creating an agentic state."""
+
+    task_id: str = Field(..., description="Task ID to start agentic execution")
+
+
+class AgenticConfig(BaseModel):
+    """Configuration for agentic execution."""
+
+    limits: IterationLimits = Field(default_factory=IterationLimits, description="Iteration limits")
+    auto_merge: bool = Field(default=True, description="Whether to auto-merge on success")
+    merge_method: str = Field(default="squash", description="Merge method: merge, squash, rebase")
+    delete_branch: bool = Field(default=True, description="Delete branch after merge")
+
+
+class AgenticStartRequest(BaseModel):
+    """Request for starting agentic execution."""
+
+    instruction: str = Field(..., description="Natural language instruction")
+    config: AgenticConfig | None = Field(None, description="Agentic configuration")
+
+
+class AgenticStartResponse(BaseModel):
+    """Response for starting agentic execution."""
+
+    agentic_run_id: str = Field(..., description="Agentic run ID")
+    status: str = Field(default="started", description="Status")
+
+
+class AgenticStatusResponse(BaseModel):
+    """Response for agentic execution status."""
+
+    phase: AgenticPhase = Field(..., description="Current phase")
+    iteration: int = Field(..., description="Current iteration")
+    ci_iterations: int = Field(..., description="CI fix attempts")
+    review_iterations: int = Field(..., description="Review fix attempts")
+    pr_number: int | None = Field(None, description="PR number if created")
+    last_ci_result: CIResult | None = Field(None, description="Last CI result")
+    last_review_result: ReviewResult | None = Field(None, description="Last review result")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class AgenticCancelResponse(BaseModel):
+    """Response for cancelling agentic execution."""
+
+    cancelled: bool = Field(..., description="Whether cancellation succeeded")
+
+
+# ============================================================
+# Webhook Payloads
+# ============================================================
+
+
+class CIWebhookPayload(BaseModel):
+    """CI webhook payload from GitHub Actions."""
+
+    event: str = Field(..., description="Event type")
+    repository: str = Field(..., description="Repository full name")
+    ref: str = Field(..., description="Git ref")
+    sha: str = Field(..., description="Commit SHA")
+    pr_number: int | None = Field(None, description="PR number if applicable")
+    workflow_run_id: int = Field(..., description="Workflow run ID")
+    conclusion: str = Field(..., description="Workflow conclusion: success, failure, cancelled")
+    jobs: dict[str, str] = Field(default_factory=dict, description="Job results")
+
+
+class CIWebhookResponse(BaseModel):
+    """Response for CI webhook."""
+
+    status: str = Field(..., description="Processing status")
+    action_taken: str | None = Field(None, description="Action taken if any")
+    reason: str | None = Field(None, description="Reason if ignored")
+
+
+# ============================================================
+# Audit Log
+# ============================================================
+
+
+class AgenticAuditLog(BaseModel):
+    """Audit log entry for agentic execution."""
+
+    id: str = Field(..., description="Log entry ID")
+    task_id: str = Field(..., description="Task ID")
+    timestamp: datetime = Field(..., description="Event timestamp")
+    phase: AgenticPhase = Field(..., description="Phase at time of event")
+    action: str = Field(..., description="Action performed")
+    agent: str | None = Field(None, description="Agent that performed action")
+    input_summary: str | None = Field(None, description="Input summary")
+    output_summary: str | None = Field(None, description="Output summary")
+    duration_ms: int | None = Field(None, description="Duration in milliseconds")
+    success: bool = Field(..., description="Whether action succeeded")
+    error: str | None = Field(None, description="Error message if failed")
 
     class Config:
         from_attributes = True

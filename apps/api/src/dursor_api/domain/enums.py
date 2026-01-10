@@ -110,3 +110,16 @@ class BacklogStatus(str, Enum):
     READY = "ready"  # Ready to be worked on
     IN_PROGRESS = "in_progress"  # Task created and work started
     DONE = "done"  # Completed
+
+
+class AgenticPhase(str, Enum):
+    """Agentic execution phase."""
+
+    CODING = "coding"  # Initial coding phase (Claude Code)
+    WAITING_CI = "waiting_ci"  # Waiting for CI results
+    REVIEWING = "reviewing"  # Code review phase (Codex)
+    FIXING_CI = "fixing_ci"  # Fixing CI failures
+    FIXING_REVIEW = "fixing_review"  # Addressing review feedback
+    MERGING = "merging"  # Auto-merge phase
+    COMPLETED = "completed"  # Successfully completed
+    FAILED = "failed"  # Failed (exceeded iterations or unrecoverable error)

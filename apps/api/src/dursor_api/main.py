@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from dursor_api.config import settings
 from dursor_api.routes import (
+    agentic_router,
     backlog_router,
     breakdown_router,
     github_router,
@@ -18,6 +19,7 @@ from dursor_api.routes import (
     repos_router,
     runs_router,
     tasks_router,
+    webhooks_router,
 )
 from dursor_api.storage.db import get_db
 
@@ -53,6 +55,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(agentic_router, prefix="/v1")
 app.include_router(backlog_router, prefix="/v1")
 app.include_router(breakdown_router, prefix="/v1")
 app.include_router(github_router, prefix="/v1")
@@ -63,6 +66,7 @@ app.include_router(repos_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")
 app.include_router(prs_router, prefix="/v1")
+app.include_router(webhooks_router, prefix="/v1")
 
 
 @app.get("/health")

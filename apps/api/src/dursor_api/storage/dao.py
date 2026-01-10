@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from dursor_api.domain.enums import (
+    AgenticPhase,
     BacklogStatus,
     BrokenDownTaskType,
     EstimatedSize,
@@ -21,11 +22,15 @@ from dursor_api.domain.enums import (
 )
 from dursor_api.domain.models import (
     PR,
+    AgenticAuditLog,
+    AgenticState,
     BacklogItem,
+    CIResult,
     FileDiff,
     Message,
     ModelProfile,
     Repo,
+    ReviewResult,
     Run,
     SubTask,
     Task,
@@ -1152,4 +1157,268 @@ class BacklogDAO:
             task_id=row["task_id"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class AgenticStateDAO:
+    """DAO for AgenticState."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        task_id: str,
+        phase: AgenticPhase = AgenticPhase.CODING,
+    ) -> AgenticState:
+        """Create a new agentic state."""
+        id = generate_id()
+        now = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO agentic_states (
+                id, task_id, phase, iteration, ci_iterations, review_iterations,
+                started_at, last_activity
+            )
+            VALUES (?, ?, ?, 0, 0, 0, ?, ?)
+            """,
+            (id, task_id, phase.value, now, now),
+        )
+        await self.db.connection.commit()
+
+        return AgenticState(
+            id=id,
+            task_id=task_id,
+            phase=phase,
+            iteration=0,
+            ci_iterations=0,
+            review_iterations=0,
+            started_at=datetime.fromisoformat(now),
+            last_activity=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> AgenticState | None:
+        """Get an agentic state by ID."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM agentic_states WHERE id = ?", (id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_task(self, task_id: str) -> AgenticState | None:
+        """Get the active agentic state for a task."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM agentic_states
+            WHERE task_id = ? AND phase NOT IN ('completed', 'failed')
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_pr_number(self, pr_number: int) -> AgenticState | None:
+        """Get the agentic state by PR number."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM agentic_states WHERE pr_number = ? LIMIT 1",
+            (pr_number,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def update(
+        self,
+        id: str,
+        phase: AgenticPhase | None = None,
+        iteration: int | None = None,
+        ci_iterations: int | None = None,
+        review_iterations: int | None = None,
+        pr_number: int | None = None,
+        current_sha: str | None = None,
+        last_ci_result: CIResult | None = None,
+        last_review_result: ReviewResult | None = None,
+        error: str | None = None,
+        completed_at: datetime | None = None,
+    ) -> None:
+        """Update an agentic state."""
+        updates = ["last_activity = ?"]
+        params: list[Any] = [now_iso()]
+
+        if phase is not None:
+            updates.append("phase = ?")
+            params.append(phase.value)
+        if iteration is not None:
+            updates.append("iteration = ?")
+            params.append(iteration)
+        if ci_iterations is not None:
+            updates.append("ci_iterations = ?")
+            params.append(ci_iterations)
+        if review_iterations is not None:
+            updates.append("review_iterations = ?")
+            params.append(review_iterations)
+        if pr_number is not None:
+            updates.append("pr_number = ?")
+            params.append(pr_number)
+        if current_sha is not None:
+            updates.append("current_sha = ?")
+            params.append(current_sha)
+        if last_ci_result is not None:
+            updates.append("last_ci_result = ?")
+            params.append(last_ci_result.model_dump_json())
+        if last_review_result is not None:
+            updates.append("last_review_result = ?")
+            params.append(last_review_result.model_dump_json())
+        if error is not None:
+            updates.append("error = ?")
+            params.append(error)
+        if completed_at is not None:
+            updates.append("completed_at = ?")
+            params.append(completed_at.isoformat())
+
+        params.append(id)
+
+        await self.db.connection.execute(
+            f"UPDATE agentic_states SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.connection.commit()
+
+    async def list_active(self) -> builtins.list[AgenticState]:
+        """List all active agentic states (not completed or failed)."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM agentic_states
+            WHERE phase NOT IN ('completed', 'failed')
+            ORDER BY started_at DESC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    def _row_to_model(self, row: Any) -> AgenticState:
+        """Convert database row to AgenticState model."""
+        last_ci_result = None
+        if row["last_ci_result"]:
+            last_ci_result = CIResult.model_validate_json(row["last_ci_result"])
+
+        last_review_result = None
+        if row["last_review_result"]:
+            last_review_result = ReviewResult.model_validate_json(row["last_review_result"])
+
+        return AgenticState(
+            id=row["id"],
+            task_id=row["task_id"],
+            phase=AgenticPhase(row["phase"]),
+            iteration=row["iteration"],
+            ci_iterations=row["ci_iterations"],
+            review_iterations=row["review_iterations"],
+            pr_number=row["pr_number"],
+            current_sha=row["current_sha"],
+            last_ci_result=last_ci_result,
+            last_review_result=last_review_result,
+            error=row["error"],
+            started_at=datetime.fromisoformat(row["started_at"]),
+            last_activity=datetime.fromisoformat(row["last_activity"]),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            ),
+        )
+
+
+class AgenticAuditLogDAO:
+    """DAO for AgenticAuditLog."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        task_id: str,
+        phase: AgenticPhase,
+        action: str,
+        success: bool,
+        agent: str | None = None,
+        input_summary: str | None = None,
+        output_summary: str | None = None,
+        duration_ms: int | None = None,
+        error: str | None = None,
+    ) -> AgenticAuditLog:
+        """Create a new audit log entry."""
+        id = generate_id()
+        now = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO agentic_audit_log (
+                id, task_id, timestamp, phase, action, agent,
+                input_summary, output_summary, duration_ms, success, error
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                task_id,
+                now,
+                phase.value,
+                action,
+                agent,
+                input_summary,
+                output_summary,
+                duration_ms,
+                1 if success else 0,
+                error,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return AgenticAuditLog(
+            id=id,
+            task_id=task_id,
+            timestamp=datetime.fromisoformat(now),
+            phase=phase,
+            action=action,
+            agent=agent,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            duration_ms=duration_ms,
+            success=success,
+            error=error,
+        )
+
+    async def list_by_task(self, task_id: str) -> builtins.list[AgenticAuditLog]:
+        """List audit logs for a task."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM agentic_audit_log
+            WHERE task_id = ?
+            ORDER BY timestamp DESC
+            """,
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    def _row_to_model(self, row: Any) -> AgenticAuditLog:
+        """Convert database row to AgenticAuditLog model."""
+        return AgenticAuditLog(
+            id=row["id"],
+            task_id=row["task_id"],
+            timestamp=datetime.fromisoformat(row["timestamp"]),
+            phase=AgenticPhase(row["phase"]),
+            action=row["action"],
+            agent=row["agent"],
+            input_summary=row["input_summary"],
+            output_summary=row["output_summary"],
+            duration_ms=row["duration_ms"],
+            success=bool(row["success"]),
+            error=row["error"],
         )

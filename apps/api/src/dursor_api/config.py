@@ -118,6 +118,27 @@ class Settings(BaseSettings):
     codex_cli_path: str = Field(default="codex")
     gemini_cli_path: str = Field(default="gemini")
 
+    # Agentic Mode Configuration
+    agentic_enabled: bool = Field(default=True)
+    agentic_auto_merge: bool = Field(default=True)
+
+    # Agentic Iteration Limits
+    agentic_max_total_iterations: int = Field(default=10)
+    agentic_max_ci_iterations: int = Field(default=5)
+    agentic_max_review_iterations: int = Field(default=3)
+    agentic_timeout_minutes: int = Field(default=60)
+
+    # Quality Thresholds
+    review_min_score: float = Field(default=0.75)
+    coverage_threshold: int = Field(default=80)
+
+    # Webhook Configuration
+    webhook_secret: str = Field(default="")
+
+    # Merge Configuration
+    merge_method: str = Field(default="squash")  # merge, squash, rebase
+    merge_delete_branch: bool = Field(default=True)
+
     def model_post_init(self, __context: object) -> None:
         """Set derived paths after initialization."""
         if self.workspaces_dir is None:

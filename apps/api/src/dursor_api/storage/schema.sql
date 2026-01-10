@@ -140,3 +140,44 @@ CREATE TABLE IF NOT EXISTS backlog_items (
 
 CREATE INDEX IF NOT EXISTS idx_backlog_items_repo_id ON backlog_items(repo_id);
 CREATE INDEX IF NOT EXISTS idx_backlog_items_status ON backlog_items(status);
+
+-- Agentic execution states
+CREATE TABLE IF NOT EXISTS agentic_states (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    phase TEXT NOT NULL DEFAULT 'coding',        -- coding, waiting_ci, reviewing, fixing_ci, fixing_review, merging, completed, failed
+    iteration INTEGER NOT NULL DEFAULT 0,
+    ci_iterations INTEGER NOT NULL DEFAULT 0,
+    review_iterations INTEGER NOT NULL DEFAULT 0,
+    pr_number INTEGER,
+    current_sha TEXT,
+    last_ci_result TEXT,                         -- JSON: CIResult
+    last_review_result TEXT,                     -- JSON: ReviewResult
+    error TEXT,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_activity TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agentic_states_task ON agentic_states(task_id);
+CREATE INDEX IF NOT EXISTS idx_agentic_states_phase ON agentic_states(phase);
+CREATE INDEX IF NOT EXISTS idx_agentic_states_pr_number ON agentic_states(pr_number);
+
+-- Agentic audit log
+CREATE TABLE IF NOT EXISTS agentic_audit_log (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    phase TEXT NOT NULL,
+    action TEXT NOT NULL,
+    agent TEXT,                                  -- claude_code, codex, system
+    input_summary TEXT,
+    output_summary TEXT,
+    duration_ms INTEGER,
+    success INTEGER NOT NULL DEFAULT 1,          -- 0 or 1 (SQLite boolean)
+    error TEXT,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agentic_audit_task ON agentic_audit_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_agentic_audit_timestamp ON agentic_audit_log(timestamp);
