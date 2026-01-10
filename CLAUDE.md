@@ -351,8 +351,8 @@ A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull req
 
 ### Before Making Changes
 - Always read relevant files before editing
-- Run linters and tests before committing
-- Backend: `cd apps/api && uv run ruff check src/ && uv run pytest`
+- Run linters, formatters, and tests before committing
+- Backend: `cd apps/api && uv run ruff format src/ && uv run ruff check src/ && uv run pytest`
 - Frontend: `cd apps/web && npm run lint && npm run build`
 
 ### File Organization Rules
