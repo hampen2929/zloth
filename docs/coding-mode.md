@@ -400,6 +400,54 @@ stateDiagram-v2
 
 ## アーキテクチャ
 
+### AI Role Layer
+
+各コーディングモードは、共通の **AI Role** インターフェースを使用して実装・レビューを実行する。
+AI Role の詳細は [AI Role リファクタリング計画](./refactoring-ai-role.md) を参照。
+
+```mermaid
+flowchart TB
+    subgraph "Coding Mode Layer"
+        IC[Interactive Controller]
+        SC[Semi Auto Controller]
+        FC[Full Auto Controller]
+    end
+
+    subgraph "AI Role Layer"
+        IR[Implementation Role<br/>RunService]
+        RR[Review Role<br/>ReviewService]
+        BR[Breakdown Role<br/>BreakdownService]
+    end
+
+    subgraph "Executor Layer"
+        CE[Claude Code]
+        CX[Codex CLI]
+        GE[Gemini CLI]
+    end
+
+    IC --> IR
+    IC --> RR
+    SC --> IR
+    SC --> RR
+    FC --> IR
+    FC --> RR
+
+    IR --> CE
+    IR --> CX
+    IR --> GE
+    RR --> CE
+    RR --> CX
+    RR --> GE
+```
+
+#### 各モードで使用するAI Role
+
+| モード | Implementation Role | Review Role |
+|--------|---------------------|-------------|
+| Interactive | ユーザー指示で実行 | ユーザーがReviewボタンで実行 |
+| Semi Auto | 自動実行 | CI成功後に自動実行 |
+| Full Auto | 自動実行 | CI成功後に自動実行 |
+
 ### システム全体像
 
 ```mermaid
@@ -920,7 +968,9 @@ notifications:
 
 ## 関連ドキュメント
 
+- [Agentic Dursor](./agentic-dursor.md) - Semi Auto / Full Auto の詳細実装
+- [Code Review Feature](./review.md) - ReviewService の詳細仕様
+- [AI Role Refactoring](./refactoring-ai-role.md) - AI Role 共通インターフェース
 - [Architecture](./architecture.md)
-- [Agentic Dursor](./agentic-dursor.md)
 - [Multi AI Coding Tool](./ai-coding-tool-multiple.md)
 - [Git Operation Design](./git_operation_design.md)

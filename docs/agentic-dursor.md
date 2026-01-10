@@ -890,20 +890,28 @@ class AgenticOrchestrator:
         )
 
     async def _run_review_phase(self, task: Task, state: AgenticState):
-        """Execute Codex review."""
+        """
+        Execute code review.
+
+        Note: この実装はReviewService (review.md参照) を使用する。
+        ReviewServiceは以下を提供:
+        - ReviewFeedbackItem（severity, category, file_path, line_start等）
+        - overall_score（0.0-1.0）
+        - Review → Fix フロー（generate_fix_instruction）
+
+        詳細は docs/review.md を参照。
+        """
         state.phase = AgenticPhase.REVIEWING
 
         # Get the diff
         diff = await self.git.get_pr_diff(state.pr_number)
 
-        # Run Codex review
-        review_result = await self.reviewer.execute(
-            workspace_path=await self.git.get_workspace_path(task.repo_id),
+        # Run review via ReviewService
+        # ReviewServiceはReviewFeedbackItem[]とoverall_scoreを返す
+        review_result = await self.review_service.execute_review(
+            task_id=task.id,
             patch=diff,
-            context=ReviewContext(
-                original_instruction=task.instruction,
-                iteration=state.iteration,
-            ),
+            executor_type=self._get_review_executor_type(),
         )
 
         # Handle review result
@@ -915,17 +923,31 @@ class AgenticOrchestrator:
         review_result: ReviewResult,
         state: AgenticState,
     ):
-        """Fix issues from code review."""
-        # Build fix instruction from review feedback
-        instruction = self._build_review_fix_instruction(review_result)
+        """
+        Fix issues from code review.
+
+        Note: ReviewService.generate_fix_instruction() を使用して
+        修正指示を生成する。severity_filter でCritical/Highのみを
+        対象にすることも可能。
+
+        詳細は docs/review.md の「レビュー結果からの修正フロー」を参照。
+        """
+        # Build fix instruction via ReviewService
+        fix_response = await self.review_service.generate_fix_instruction(
+            FixInstructionRequest(
+                review_id=review_result.review_id,
+                severity_filter=[ReviewSeverity.CRITICAL, ReviewSeverity.HIGH],
+            )
+        )
 
         await self._run_coding_phase(
             task,
-            instruction,
+            fix_response.instruction,
             state,
             context={
                 "fix_mode": True,
                 "review_feedback": review_result,
+                "target_feedbacks": fix_response.target_feedbacks,
             },
         )
 
@@ -1701,6 +1723,8 @@ agentic_review_scores = Histogram("agentic_review_scores", "Review scores")
 ## 関連ドキュメント
 
 - [Coding Mode 設計](./coding-mode.md) - 3つのコーディングモードの概要
+- [Code Review Feature](./review.md) - ReviewService の詳細仕様、Review → Fix フロー
+- [AI Role Refactoring](./refactoring-ai-role.md) - AI Role 共通インターフェース
 - [Architecture](./architecture.md)
 - [Agent System](./agents.md)
 - [Multi AI Coding Tool](./ai-coding-tool-multiple.md)
