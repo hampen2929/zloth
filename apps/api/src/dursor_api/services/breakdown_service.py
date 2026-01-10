@@ -20,9 +20,11 @@ from dursor_api.domain.enums import (
     BrokenDownTaskType,
     EstimatedSize,
     ExecutorType,
+    RoleExecutionStatus,
 )
 from dursor_api.domain.models import (
     BacklogItem,
+    BreakdownExecutionResult,
     BrokenDownSubTask,
     BrokenDownTask,
     CodebaseAnalysis,
@@ -33,6 +35,8 @@ from dursor_api.domain.models import (
 from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from dursor_api.roles.base_service import BaseRoleService
+from dursor_api.roles.registry import RoleRegistry
 from dursor_api.services.output_manager import OutputManager
 from dursor_api.storage.dao import BacklogDAO, RepoDAO
 
@@ -168,13 +172,19 @@ Output the result as a JSON file at `.dursor-breakdown.json`:
 """
 
 
-class BreakdownService:
-    """Service for breaking down hearing content into development tasks.
+@RoleRegistry.register("breakdown")
+class BreakdownService(
+    BaseRoleService[TaskBreakdownResponse, TaskBreakdownRequest, BreakdownExecutionResult]
+):
+    """Service for breaking down hearing content into development tasks (Breakdown Role).
 
     This service:
     1. Starts breakdown in background (non-blocking)
     2. Runs an executor to analyze codebase and decompose tasks
     3. Stores results as BacklogItems for later retrieval
+
+    This service inherits from BaseRoleService for common role patterns
+    while maintaining its specialized breakdown logic.
     """
 
     def __init__(
@@ -190,14 +200,17 @@ class BreakdownService:
             output_manager: Manager for streaming output.
             backlog_dao: Backlog data access object (optional, for v2).
         """
+        # Initialize base class with output manager
+        super().__init__(output_manager=output_manager)
+
         self.repo_dao = repo_dao
-        self.output_manager = output_manager
+        # Note: self.output_manager is set by base class
         self.backlog_dao = backlog_dao
 
         # In-memory storage for breakdown results
         self._results: dict[str, TaskBreakdownResponse] = {}
 
-        # Initialize executors
+        # Initialize executors with custom timeout for breakdown
         self._claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(
                 timeout_seconds=1800,  # 30 min for breakdown
@@ -217,21 +230,33 @@ class BreakdownService:
             )
         )
 
-        # Executor map
-        self._executors: dict[ExecutorType, ClaudeCodeExecutor | CodexExecutor | GeminiExecutor] = {
+        # Executor map (overrides base class executors with custom timeouts)
+        self._breakdown_executors: dict[
+            ExecutorType, ClaudeCodeExecutor | CodexExecutor | GeminiExecutor
+        ] = {
             ExecutorType.CLAUDE_CODE: self._claude_executor,
             ExecutorType.CODEX_CLI: self._codex_executor,
             ExecutorType.GEMINI_CLI: self._gemini_executor,
         }
 
-    def _get_executor(
+    def _get_breakdown_executor(
         self, executor_type: ExecutorType
     ) -> ClaudeCodeExecutor | CodexExecutor | GeminiExecutor:
-        """Get executor for the given type."""
+        """Get executor for the given type (with breakdown-specific timeout).
+
+        Args:
+            executor_type: Type of executor to use.
+
+        Returns:
+            Executor instance.
+
+        Raises:
+            ValueError: If executor type is not supported.
+        """
         if executor_type == ExecutorType.PATCH_AGENT:
             raise ValueError("patch_agent is not supported for task breakdown. Use CLI executors.")
 
-        executor = self._executors.get(executor_type)
+        executor = self._breakdown_executors.get(executor_type)
         if not executor:
             raise ValueError(f"Unknown executor type: {executor_type}")
 
@@ -295,7 +320,8 @@ class BreakdownService:
             self._results[breakdown_id] = result
         except Exception as e:
             logger.exception(f"Breakdown {breakdown_id} failed: {e}")
-            await self.output_manager.mark_complete(breakdown_id)
+            if self.output_manager:
+                await self.output_manager.mark_complete(breakdown_id)
             self._results[breakdown_id] = TaskBreakdownResponse(
                 breakdown_id=breakdown_id,
                 status=BreakdownStatus.FAILED,
@@ -323,7 +349,7 @@ class BreakdownService:
         request: TaskBreakdownRequest,
     ) -> TaskBreakdownResponse:
         """Execute the breakdown using the selected executor."""
-        executor = self._get_executor(request.executor_type)
+        executor = self._get_breakdown_executor(request.executor_type)
         workspace_path = Path(repo.workspace_path)
 
         # Build instruction using v2 template
@@ -336,7 +362,8 @@ class BreakdownService:
 
         # Stream output callback
         async def on_output(line: str) -> None:
-            await self.output_manager.publish_async(breakdown_id, line)
+            if self.output_manager:
+                await self.output_manager.publish_async(breakdown_id, line)
 
         await on_output("Starting task breakdown analysis (v2)...")
         await on_output(f"Using executor: {request.executor_type.value}")
@@ -350,7 +377,8 @@ class BreakdownService:
         )
 
         if not result.success:
-            await self.output_manager.mark_complete(breakdown_id)
+            if self.output_manager:
+                await self.output_manager.mark_complete(breakdown_id)
             return TaskBreakdownResponse(
                 breakdown_id=breakdown_id,
                 status=BreakdownStatus.FAILED,
@@ -371,7 +399,8 @@ class BreakdownService:
             except OSError:
                 pass
 
-        await self.output_manager.mark_complete(breakdown_id)
+        if self.output_manager:
+            await self.output_manager.mark_complete(breakdown_id)
 
         if parsed is None:
             return TaskBreakdownResponse(
@@ -533,6 +562,9 @@ class BreakdownService:
         from_line: int = 0,
     ) -> tuple[list[dict[str, Any]], bool]:
         """Get breakdown logs."""
+        if not self.output_manager:
+            return [], True
+
         history = await self.output_manager.get_history(breakdown_id, from_line)
         is_complete = await self.output_manager.is_complete(breakdown_id)
 
@@ -546,3 +578,129 @@ class BreakdownService:
         ]
 
         return logs, is_complete
+
+    # ==========================================
+    # BaseRoleService Abstract Method Implementations
+    # ==========================================
+
+    async def create(
+        self, task_id: str, data: TaskBreakdownRequest
+    ) -> TaskBreakdownResponse:
+        """Create a breakdown (BaseRoleService interface).
+
+        Note: BreakdownService doesn't use task_id directly.
+        Use start_breakdown() for the standard breakdown flow.
+
+        Args:
+            task_id: Task ID (not used, repo_id comes from data).
+            data: Breakdown request.
+
+        Returns:
+            TaskBreakdownResponse.
+        """
+        return await self.start_breakdown(data)
+
+    async def get(self, breakdown_id: str) -> TaskBreakdownResponse | None:
+        """Get a breakdown by ID (BaseRoleService interface).
+
+        Args:
+            breakdown_id: Breakdown ID.
+
+        Returns:
+            TaskBreakdownResponse or None if not found.
+        """
+        return await self.get_result(breakdown_id)
+
+    async def list_by_task(self, task_id: str) -> list[TaskBreakdownResponse]:
+        """List breakdowns (BaseRoleService interface).
+
+        Note: BreakdownService uses in-memory storage and doesn't
+        associate breakdowns with tasks directly.
+
+        Args:
+            task_id: Task ID (not used).
+
+        Returns:
+            List of all stored breakdown responses.
+        """
+        return list(self._results.values())
+
+    async def _execute(self, record: TaskBreakdownResponse) -> BreakdownExecutionResult:
+        """Execute breakdown-specific logic (BaseRoleService interface).
+
+        Note: BreakdownService uses its own execution flow via start_breakdown,
+        so this method is not directly used.
+
+        Args:
+            record: TaskBreakdownResponse record.
+
+        Returns:
+            BreakdownExecutionResult.
+        """
+        # BreakdownService manages execution via start_breakdown which runs
+        # _run_breakdown in background. This is provided for interface compliance.
+        return BreakdownExecutionResult(
+            success=False,
+            error="Direct execution not supported. Use start_breakdown() instead.",
+        )
+
+    async def _update_status(
+        self,
+        record_id: str,
+        status: RoleExecutionStatus,
+        result: BreakdownExecutionResult | None = None,
+    ) -> None:
+        """Update breakdown status (BaseRoleService interface).
+
+        Args:
+            record_id: Breakdown ID.
+            status: New status.
+            result: Optional result to save.
+        """
+        if record_id in self._results:
+            current = self._results[record_id]
+            # Map RoleExecutionStatus to BreakdownStatus
+            breakdown_status = BreakdownStatus.PENDING
+            if status == RoleExecutionStatus.RUNNING:
+                breakdown_status = BreakdownStatus.RUNNING
+            elif status == RoleExecutionStatus.SUCCEEDED:
+                breakdown_status = BreakdownStatus.SUCCEEDED
+            elif status in (RoleExecutionStatus.FAILED, RoleExecutionStatus.CANCELED):
+                breakdown_status = BreakdownStatus.FAILED
+
+            self._results[record_id] = TaskBreakdownResponse(
+                breakdown_id=current.breakdown_id,
+                status=breakdown_status,
+                tasks=result.tasks if result else current.tasks,
+                backlog_items=current.backlog_items,
+                summary=result.summary if result else current.summary,
+                original_content=current.original_content,
+                codebase_analysis=result.codebase_analysis if result else current.codebase_analysis,
+                error=result.error if result else current.error,
+            )
+
+    def _get_record_id(self, record: TaskBreakdownResponse) -> str:
+        """Extract ID from breakdown (BaseRoleService interface).
+
+        Args:
+            record: TaskBreakdownResponse record.
+
+        Returns:
+            Breakdown ID.
+        """
+        return record.breakdown_id
+
+    def _create_error_result(self, error: str) -> BreakdownExecutionResult:
+        """Create error result (BaseRoleService interface).
+
+        Args:
+            error: Error message.
+
+        Returns:
+            BreakdownExecutionResult with error.
+        """
+        return BreakdownExecutionResult(
+            success=False,
+            error=error,
+            logs=[f"Error: {error}"],
+        )

@@ -22,6 +22,7 @@ from dursor_api.domain.enums import (
     ReviewCategory,
     ReviewSeverity,
     ReviewStatus,
+    RoleExecutionStatus,
     RunStatus,
 )
 from dursor_api.domain.models import (
@@ -30,12 +31,15 @@ from dursor_api.domain.models import (
     Message,
     Review,
     ReviewCreate,
+    ReviewExecutionResult,
     ReviewFeedbackItem,
     ReviewSummary,
 )
 from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from dursor_api.roles.base_service import BaseRoleService
+from dursor_api.roles.registry import RoleRegistry
 from dursor_api.storage.dao import MessageDAO, ReviewDAO, RunDAO, TaskDAO, generate_id
 
 if TYPE_CHECKING:
@@ -135,8 +139,13 @@ class ReviewQueueAdapter:
         self._tasks[review_id] = task
 
 
-class ReviewService:
-    """Service for managing code reviews."""
+@RoleRegistry.register("review")
+class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]):
+    """Service for managing code reviews (Review Role).
+
+    This service inherits from BaseRoleService for common role patterns
+    while maintaining its specialized review logic.
+    """
 
     def __init__(
         self,
@@ -146,12 +155,16 @@ class ReviewService:
         message_dao: MessageDAO,
         output_manager: OutputManager | None = None,
     ) -> None:
+        # Initialize base class with output manager
+        super().__init__(output_manager=output_manager)
+
         self.review_dao = review_dao
         self.run_dao = run_dao
         self.task_dao = task_dao
         self.message_dao = message_dao
-        self.output_manager = output_manager
+        # Note: self.output_manager is set by base class
         self.queue = ReviewQueueAdapter()
+        # Note: Executors are also available via self._executors from base class
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
         )
@@ -613,3 +626,121 @@ class ReviewService:
 
         if self.output_manager:
             await self.output_manager.publish_async(f"review-{review_id}", line)
+
+    # ==========================================
+    # BaseRoleService Abstract Method Implementations
+    # ==========================================
+
+    async def create(self, task_id: str, data: ReviewCreate) -> Review:
+        """Create a review (BaseRoleService interface).
+
+        Args:
+            task_id: Task ID.
+            data: Review creation data.
+
+        Returns:
+            Created Review object.
+        """
+        return await self.create_review(task_id, data)
+
+    async def get(self, review_id: str) -> Review | None:
+        """Get a review by ID (BaseRoleService interface).
+
+        Args:
+            review_id: Review ID.
+
+        Returns:
+            Review object or None if not found.
+        """
+        return await self.get_review(review_id)
+
+    async def list_by_task(self, task_id: str) -> list[Review]:
+        """List reviews for a task (BaseRoleService interface).
+
+        Note: Returns full Review objects, not ReviewSummary.
+
+        Args:
+            task_id: Task ID.
+
+        Returns:
+            List of Review objects.
+        """
+        # Get summaries and convert to full reviews
+        summaries = await self.list_reviews(task_id)
+        reviews = []
+        for summary in summaries:
+            review = await self.review_dao.get(summary.id)
+            if review:
+                reviews.append(review)
+        return reviews
+
+    async def _execute(self, record: Review) -> ReviewExecutionResult:
+        """Execute review-specific logic (BaseRoleService interface).
+
+        Note: ReviewService uses its own execution flow via _execute_review,
+        so this method is not directly used.
+
+        Args:
+            record: Review record.
+
+        Returns:
+            ReviewExecutionResult.
+        """
+        # ReviewService manages execution via create_review which enqueues
+        # _execute_review directly. This is provided for interface compliance.
+        return ReviewExecutionResult(
+            success=False,
+            error="Direct execution not supported. Use create_review() instead.",
+        )
+
+    async def _update_status(
+        self,
+        record_id: str,
+        status: RoleExecutionStatus,
+        result: ReviewExecutionResult | None = None,
+    ) -> None:
+        """Update review status (BaseRoleService interface).
+
+        Args:
+            record_id: Review ID.
+            status: New status.
+            result: Optional result to save.
+        """
+        if result:
+            await self.review_dao.update_status(
+                record_id,
+                status,
+                summary=result.summary,
+                score=result.overall_score,
+                feedbacks=result.feedbacks,
+                logs=result.logs,
+                error=result.error,
+            )
+        else:
+            await self.review_dao.update_status(record_id, status)
+
+    def _get_record_id(self, record: Review) -> str:
+        """Extract ID from review (BaseRoleService interface).
+
+        Args:
+            record: Review record.
+
+        Returns:
+            Review ID.
+        """
+        return record.id
+
+    def _create_error_result(self, error: str) -> ReviewExecutionResult:
+        """Create error result (BaseRoleService interface).
+
+        Args:
+            error: Error message.
+
+        Returns:
+            ReviewExecutionResult with error.
+        """
+        return ReviewExecutionResult(
+            success=False,
+            error=error,
+            logs=[f"Error: {error}"],
+        )

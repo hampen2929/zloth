@@ -42,6 +42,8 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+# UP046: Allow Generic subclass pattern for backward compatibility
+ignore = ["UP046"]
 
 [tool.mypy]
 python_version = "3.13"

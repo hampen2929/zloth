@@ -18,18 +18,21 @@ from typing import TYPE_CHECKING, Any
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.agents.patch_agent import PatchAgent
 from dursor_api.config import settings
-from dursor_api.domain.enums import ExecutorType, RunStatus
+from dursor_api.domain.enums import ExecutorType, RoleExecutionStatus, RunStatus
 from dursor_api.domain.models import (
     SUMMARY_FILE_PATH,
     AgentConstraints,
     AgentRequest,
     FileDiff,
+    ImplementationResult,
     Run,
     RunCreate,
 )
 from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from dursor_api.roles.base_service import BaseRoleService
+from dursor_api.roles.registry import RoleRegistry
 from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
 from dursor_api.services.model_service import ModelService
@@ -43,6 +46,8 @@ if TYPE_CHECKING:
     from dursor_api.services.output_manager import OutputManager
 
 
+# Note: QueueAdapter is kept for backward compatibility
+# New code should use RoleQueueAdapter from roles.base_service
 class QueueAdapter:
     """Simple in-memory queue adapter for v0.1.
 
@@ -94,14 +99,18 @@ class QueueAdapter:
         return task is not None and not task.done()
 
 
-class RunService:
-    """Service for managing and executing runs.
+@RoleRegistry.register("implementation")
+class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
+    """Service for managing and executing runs (Implementation Role).
 
     Following the orchestrator management pattern, this service:
     - Creates worktrees for isolated execution
     - Runs AI Agent CLIs (file editing only)
     - Automatically stages, commits, and pushes changes
     - Tracks commit SHAs for PR creation
+
+    This service inherits from BaseRoleService for common role patterns
+    while maintaining its specialized implementation logic.
     """
 
     def __init__(
@@ -115,6 +124,9 @@ class RunService:
         github_service: GitHubService | None = None,
         output_manager: OutputManager | None = None,
     ):
+        # Initialize base class with output manager and executors
+        super().__init__(output_manager=output_manager)
+
         self.run_dao = run_dao
         self.task_dao = task_dao
         self.model_service = model_service
@@ -122,9 +134,10 @@ class RunService:
         self.git_service = git_service or GitService()
         self.user_preferences_dao = user_preferences_dao
         self.github_service = github_service
-        self.output_manager = output_manager
+        # Note: self.output_manager is set by base class
         self.queue = QueueAdapter()
         self.llm_router = LLMRouter()
+        # Note: Executors are also available via self._executors from base class
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
         )
@@ -898,3 +911,111 @@ class RunService:
         summary_parts.append(f"Files: {file_list}")
 
         return ". ".join(summary_parts) + "."
+
+    # ==========================================
+    # BaseRoleService Abstract Method Implementations
+    # ==========================================
+
+    async def create(self, task_id: str, data: RunCreate) -> Run:
+        """Create a single run (BaseRoleService interface).
+
+        Note: For multiple runs, use create_runs() instead.
+
+        Args:
+            task_id: Task ID.
+            data: Run creation data.
+
+        Returns:
+            Created Run object.
+        """
+        runs = await self.create_runs(task_id, data)
+        if not runs:
+            raise ValueError("No runs created")
+        return runs[0]
+
+    # Note: get() method is inherited from the existing implementation above (line ~395)
+
+    async def list_by_task(self, task_id: str) -> builtins.list[Run]:
+        """List runs for a task (BaseRoleService interface).
+
+        Args:
+            task_id: Task ID.
+
+        Returns:
+            List of Run objects.
+        """
+        return await self.run_dao.list(task_id)
+
+    async def _execute(self, record: Run) -> ImplementationResult:
+        """Execute run-specific logic (BaseRoleService interface).
+
+        Note: RunService uses its own execution flow via _execute_cli_run
+        and _execute_patch_agent_run, so this method is not directly used.
+
+        Args:
+            record: Run record.
+
+        Returns:
+            ImplementationResult.
+        """
+        # RunService manages execution via create_runs which enqueues
+        # _execute_cli_run or _execute_patch_agent_run directly.
+        # This implementation is provided for interface compliance.
+        return ImplementationResult(
+            success=False,
+            error="Direct execution not supported. Use create_runs() instead.",
+        )
+
+    async def _update_status(
+        self,
+        record_id: str,
+        status: RoleExecutionStatus,
+        result: ImplementationResult | None = None,
+    ) -> None:
+        """Update run status (BaseRoleService interface).
+
+        Args:
+            record_id: Run ID.
+            status: New status.
+            result: Optional result to save.
+        """
+        if result:
+            await self.run_dao.update_status(
+                record_id,
+                status,
+                summary=result.summary,
+                patch=result.patch,
+                files_changed=result.files_changed,
+                logs=result.logs,
+                warnings=result.warnings,
+                error=result.error,
+                session_id=result.session_id,
+            )
+        else:
+            await self.run_dao.update_status(record_id, status)
+
+    def _get_record_id(self, record: Run) -> str:
+        """Extract ID from run (BaseRoleService interface).
+
+        Args:
+            record: Run record.
+
+        Returns:
+            Run ID.
+        """
+        return record.id
+
+    def _create_error_result(self, error: str) -> ImplementationResult:
+        """Create error result (BaseRoleService interface).
+
+        Args:
+            error: Error message.
+
+        Returns:
+            ImplementationResult with error.
+        """
+        return ImplementationResult(
+            success=False,
+            error=error,
+            logs=[f"Error: {error}"],
+        )

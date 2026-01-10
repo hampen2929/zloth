@@ -408,6 +408,60 @@ class AgentResult(BaseModel):
 
 
 # ============================================================
+# Role Execution Results (Common Interface)
+# ============================================================
+
+
+class RoleExecutionResult(BaseModel):
+    """Base result interface for all AI Role executions.
+
+    All AI Roles output this common data structure. Role-specific results
+    extend this base class with additional fields.
+    """
+
+    success: bool = Field(..., description="Whether execution succeeded")
+    summary: str | None = Field(None, description="Human-readable summary")
+    logs: list[str] = Field(default_factory=list, description="Execution logs")
+    warnings: list[str] = Field(default_factory=list, description="Warning messages")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class ImplementationResult(RoleExecutionResult):
+    """Result specific to Implementation Role (RunService).
+
+    Contains patch/diff data for file changes.
+    """
+
+    patch: str | None = Field(None, description="Unified diff patch")
+    files_changed: list[FileDiff] = Field(default_factory=list, description="Changed files")
+    session_id: str | None = Field(None, description="CLI session ID for continuation")
+
+
+class ReviewExecutionResult(RoleExecutionResult):
+    """Result specific to Review Role (ReviewService).
+
+    Contains review feedbacks and scoring.
+    """
+
+    overall_score: float | None = Field(None, description="Overall score (0.0-1.0)")
+    feedbacks: list["ReviewFeedbackItem"] = Field(
+        default_factory=list, description="Review feedback items"
+    )
+
+
+class BreakdownExecutionResult(RoleExecutionResult):
+    """Result specific to Breakdown Role (BreakdownService).
+
+    Contains decomposed tasks and codebase analysis.
+    """
+
+    tasks: list["BrokenDownTask"] = Field(default_factory=list, description="Broken down tasks")
+    codebase_analysis: "CodebaseAnalysis | None" = Field(
+        None, description="Codebase analysis result"
+    )
+
+
+# ============================================================
 # API Responses
 # ============================================================
 
