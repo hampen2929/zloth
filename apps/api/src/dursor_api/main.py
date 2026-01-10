@@ -19,6 +19,7 @@ from dursor_api.routes import (
     reviews_router,
     runs_router,
     tasks_router,
+    webhooks_router,
 )
 from dursor_api.storage.db import get_db
 
@@ -65,6 +66,7 @@ app.include_router(reviews_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")
 app.include_router(prs_router, prefix="/v1")
+app.include_router(webhooks_router, prefix="/v1")
 
 
 @app.get("/health")

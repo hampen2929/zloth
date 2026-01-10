@@ -182,3 +182,50 @@ CREATE INDEX IF NOT EXISTS idx_reviews_task ON reviews(task_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_review ON review_feedbacks(review_id);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_severity ON review_feedbacks(severity);
+
+-- Agentic execution runs
+CREATE TABLE IF NOT EXISTS agentic_runs (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    mode TEXT NOT NULL,                    -- interactive, semi_auto, full_auto
+    phase TEXT NOT NULL,                   -- coding, waiting_ci, reviewing, etc.
+    iteration INTEGER NOT NULL DEFAULT 0,
+    ci_iterations INTEGER NOT NULL DEFAULT 0,
+    review_iterations INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_activity TEXT NOT NULL DEFAULT (datetime('now')),
+    pr_number INTEGER,
+    current_sha TEXT,
+    last_ci_result TEXT,                   -- JSON
+    last_review_score REAL,
+    error TEXT,
+    human_approved INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
+
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_agentic_runs_task ON agentic_runs(task_id);
+CREATE INDEX IF NOT EXISTS idx_agentic_runs_phase ON agentic_runs(phase);
+
+-- Agentic audit log (for compliance and debugging)
+CREATE TABLE IF NOT EXISTS agentic_audit_log (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    agentic_run_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    phase TEXT NOT NULL,
+    action TEXT NOT NULL,
+    agent TEXT,                            -- claude_code, codex, system
+    input_summary TEXT,
+    output_summary TEXT,
+    duration_ms INTEGER,
+    success INTEGER,                       -- 0 = false, 1 = true
+    error TEXT,
+
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (agentic_run_id) REFERENCES agentic_runs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_agentic_audit_task ON agentic_audit_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_agentic_audit_run ON agentic_audit_log(agentic_run_id);
+CREATE INDEX IF NOT EXISTS idx_agentic_audit_timestamp ON agentic_audit_log(timestamp);
