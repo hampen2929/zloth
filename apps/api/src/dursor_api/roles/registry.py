@@ -52,9 +52,9 @@ class RoleRegistry:
                 ...
         """
 
-        def decorator(role_cls: type[BaseRoleService[Any, Any, Any]]) -> type[
-            BaseRoleService[Any, Any, Any]
-        ]:
+        def decorator(
+            role_cls: type[BaseRoleService[Any, Any, Any]],
+        ) -> type[BaseRoleService[Any, Any, Any]]:
             if name in cls._roles:
                 logger.warning(f"Role '{name}' already registered, overwriting")
             cls._roles[name] = role_cls

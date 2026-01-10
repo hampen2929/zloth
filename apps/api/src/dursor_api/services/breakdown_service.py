@@ -583,9 +583,7 @@ class BreakdownService(
     # BaseRoleService Abstract Method Implementations
     # ==========================================
 
-    async def create(
-        self, task_id: str, data: TaskBreakdownRequest
-    ) -> TaskBreakdownResponse:
+    async def create(self, task_id: str, data: TaskBreakdownRequest) -> TaskBreakdownResponse:
         """Create a breakdown (BaseRoleService interface).
 
         Note: BreakdownService doesn't use task_id directly.
