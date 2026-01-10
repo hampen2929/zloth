@@ -20,6 +20,13 @@ Welcome to the dursor documentation. This guide will help you understand, develo
 - [Contributing Guide](../CONTRIBUTING.md) - How to contribute to the project
 - [CLAUDE.md](../CLAUDE.md) - Context file for Claude Code development
 
+### Strategy & Planning
+
+- [Business Strategy](./business-strategy.md) - Project direction and strategic options
+- [Open Core Model](./open-core-model.md) - Open core business model details
+- [Licensing Strategy](./licensing-strategy.md) - License selection and dual licensing
+- [Roadmap](./roadmap.md) - Phased implementation plan
+
 ## Quick Links
 
 ### Getting Started
