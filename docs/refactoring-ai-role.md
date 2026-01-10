@@ -73,10 +73,67 @@ class XxxService:
 | 項目 | RunService | ReviewService | BreakdownService |
 |------|------------|---------------|------------------|
 | Executor インスタンス化 | ✅ | ✅ | ✅ |
-| QueueAdapter 使用 | ✅ | ✅ | ❌ (asyncio直接) |
+| QueueAdapter 使用 | ✅ | ✅ (ReviewQueueAdapter) | ❌ (asyncio直接) |
 | OutputManager 使用 | ✅ | ✅ | ✅ |
 | ステータス Enum | RunStatus | ReviewStatus | BreakdownStatus |
 | DAOパターン | RunDAO | ReviewDAO | (in-memory) |
+| ログストリーミング API | ✅ (`streamLogs`) | ✅ (`streamLogs`) | ❌ |
+
+### 現在の実装詳細（2026年1月更新）
+
+#### ReviewService のストリーミングログ実装
+
+ReviewService は現在、RunService と同様のパターンでストリーミングログを実装済み：
+
+```python
+# apps/api/src/dursor_api/services/review_service.py
+
+class ReviewService:
+    def __init__(self, ..., output_manager: OutputManager | None = None):
+        self.output_manager = output_manager
+        # ...
+
+    async def _log_output(self, review_id: str, line: str, logs: list[str]) -> None:
+        """Log output from CLI execution."""
+        logger.info(f"[review-{review_id[:8]}] {line}")
+        logs.append(line)
+        if self.output_manager:
+            await self.output_manager.publish_async(f"review-{review_id}", line)
+```
+
+#### ReviewResultCard のタブUI
+
+フロントエンドでは、ReviewResultCard が RunResultCard と同様のタブ構造を持つ：
+
+```typescript
+// apps/web/src/components/ReviewResultCard.tsx
+
+type ReviewTab = 'results' | 'logs';
+
+// タブ切り替えとストリーミングログ対応
+const [activeTab, setActiveTab] = useState<ReviewTab>('results');
+const [streamActive, setStreamActive] = useState(false);
+
+// ストリーミングログの取得
+useEffect(() => {
+  if (review.status !== 'queued' && review.status !== 'running') {
+    setStreamActive(false);
+    return;
+  }
+  const cleanup = reviewsApi.streamLogs(review.id, { /* ... */ });
+  return cleanup;
+}, [review.id, review.status]);
+```
+
+この実装により、Run と Review は以下の共通UIパターンを持つ：
+
+| パターン | RunResultCard | ReviewResultCard |
+|----------|---------------|------------------|
+| タブUI | Summary / Diff / Logs | Results / Logs |
+| ストリーミングログ | ✅ `streamLogs` | ✅ `streamLogs` |
+| 自動スクロール | ✅ | ✅ |
+| ステータス別表示切替 | ✅ | ✅ |
+| 展開/折りたたみ | ✅ | ✅ |
 
 ---
 
@@ -520,6 +577,8 @@ class BreakdownService(BaseRoleService[Breakdown, BreakdownCreate, BreakdownResu
 
 ### Phase 5: フロントエンド共通化
 
+> **注記**: 2026年1月の更新により、RunResultCard と ReviewResultCard は既にタブUI、ストリーミングログ、ステータス別表示などの共通パターンを実装済み。本フェーズでは、これらの共通パターンを抽出して再利用可能なコンポーネントに統合する。
+
 #### 5.1 共通TypeScript型
 
 ```typescript
@@ -639,45 +698,60 @@ export function RoleResultCard<T extends RoleExecutionBase>({
 
 #### 5.3 各Role用コンポーネント
 
+リファクタリング後のコンポーネント構造。現在の実装では、RunResultCard と ReviewResultCard は独立してタブUIを実装しているが、共通の `RoleResultCard` を使用することで統一する。
+
 ```typescript
-// apps/web/src/components/RunResultCard.tsx
+// apps/web/src/components/RunResultCard.tsx（リファクタリング後）
 
 export function RunResultCard({ run }: { run: Run }) {
   return (
     <RoleResultCard
       record={run}
       title="Implementation"
-      renderContent={(r) => (
-        <Tabs>
-          <TabPanel label="Summary">
-            <SummaryView summary={r.summary} filesChanged={r.files_changed} />
-          </TabPanel>
-          <TabPanel label="Diff">
-            <DiffViewer patch={r.patch} />
-          </TabPanel>
-          <TabPanel label="Logs">
-            <LogViewer logs={r.logs} />
-          </TabPanel>
-        </Tabs>
-      )}
+      tabs={[
+        { id: 'summary', label: 'Summary', icon: DocumentTextIcon },
+        { id: 'diff', label: 'Diff', icon: CodeBracketIcon },
+        { id: 'logs', label: 'Logs', icon: CommandLineIcon },
+      ]}
+      renderTabContent={(r, tab) => {
+        switch (tab) {
+          case 'summary':
+            return <SummaryView summary={r.summary} filesChanged={r.files_changed} />;
+          case 'diff':
+            return <DiffViewer patch={r.patch} />;
+          case 'logs':
+            return <LogViewer logs={r.logs} />;
+        }
+      }}
     />
   );
 }
 
-// apps/web/src/components/ReviewResultCard.tsx
+// apps/web/src/components/ReviewResultCard.tsx（リファクタリング後）
 
 export function ReviewResultCard({ review }: { review: Review }) {
   return (
     <RoleResultCard
       record={review}
       title="Code Review"
-      renderContent={(r) => (
-        <>
-          <ScoreDisplay score={r.overall_score} />
-          <SeverityFilter feedbacks={r.feedbacks} />
-          <FeedbackList feedbacks={r.feedbacks} />
-        </>
-      )}
+      tabs={[
+        { id: 'results', label: 'Results', icon: DocumentTextIcon },
+        { id: 'logs', label: 'Logs', icon: CommandLineIcon },
+      ]}
+      renderTabContent={(r, tab) => {
+        switch (tab) {
+          case 'results':
+            return (
+              <>
+                <ScoreDisplay score={r.overall_score} />
+                <SeverityFilter feedbacks={r.feedbacks} />
+                <FeedbackList feedbacks={r.feedbacks} />
+              </>
+            );
+          case 'logs':
+            return <LogViewer logs={r.logs} />;
+        }
+      }}
     />
   );
 }
