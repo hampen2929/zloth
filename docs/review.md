@@ -11,6 +11,29 @@ Task 実行内でAI（Claude Code, Codex, Gemini CLI）によるコードレビ�
 3. 選択したモデルがTask内のRun結果（patch）をレビュー
 4. レビュー結果が重要度別に分類されて表示される
 5. 各フィードバックは対象ファイルと行番号に紐付けられる
+6. **ユーザーがレビュー結果をもとに修正指示を出す**
+7. **AIがレビュー指摘を反映した新しいコードを生成**
+
+### 会話フロー例
+
+```
+[User] 「ユーザー認証機能を追加してください」
+    ↓
+[AI Run] コード生成 → patch出力
+    ↓
+[User] 「Review」ボタンを押す
+    ↓
+[AI Review] レビュー結果表示
+  - [Critical] SQL Injection vulnerability in login.py:42
+  - [High] Missing password hashing in auth.py:28
+  - [Medium] Consider using constant-time comparison
+    ↓
+[User] 「CriticalとHighの指摘を修正して」または「Apply Fixes」ボタン
+    ↓
+[AI Run] レビュー指摘を反映した修正コード生成
+    ↓
+(必要に応じて繰り返し)
+```
 
 ---
 
@@ -1071,12 +1094,587 @@ const { data: reviews } = useSWR(
 
 ---
 
+## レビュー結果からの修正フロー
+
+### 設計方針
+
+レビュー結果を次のRun実行にシームレスに連携させるため、以下の仕組みを実装する：
+
+1. **レビュー結果の会話統合**: Review完了時に結果をassistantメッセージとして会話に追加
+2. **修正指示の生成支援**: レビューフィードバックから修正指示を自動生成
+3. **コンテキスト継承**: 次のRunにレビューコンテキストを渡す
+
+### アーキテクチャ
+
+```mermaid
+flowchart TB
+    subgraph "Review → Fix Flow"
+        R1[Run: Code Gen] --> REV[Review]
+        REV --> MSG[Review Message<br/>role: assistant]
+        MSG --> UI[Review Panel UI]
+
+        UI --> A1["Apply All Fixes" Button]
+        UI --> A2["Fix This" Button<br/>per feedback]
+        UI --> A3[Manual Input<br/>+ Review Context]
+
+        A1 --> INS[Generated Fix Instruction]
+        A2 --> INS
+        A3 --> INS
+
+        INS --> R2[Run: Fix Code]
+        R2 --> R1
+    end
+```
+
+### データモデル拡張
+
+#### RunCreate への review_id 追加
+
+```python
+# apps/api/src/dursor_api/domain/models.py
+
+class RunCreate(BaseModel):
+    """Request for creating Runs."""
+
+    instruction: str = Field(..., description="Natural language instruction")
+    model_ids: list[str] | None = Field(None)
+    base_ref: str | None = Field(None)
+    executor_type: ExecutorType = Field(default=ExecutorType.PATCH_AGENT)
+    message_id: str | None = Field(None)
+
+    # 新規追加: レビューコンテキスト
+    review_id: str | None = Field(
+        None,
+        description="Review ID to use as context for fixing"
+    )
+    selected_feedback_ids: list[str] | None = Field(
+        None,
+        description="Specific feedback IDs to address (if None, address all)"
+    )
+```
+
+#### 修正指示生成用モデル
+
+```python
+class FixInstructionRequest(BaseModel):
+    """Request for generating fix instruction from review."""
+
+    review_id: str
+    feedback_ids: list[str] | None = Field(
+        None,
+        description="Specific feedbacks to fix (None = all)"
+    )
+    severity_filter: list[ReviewSeverity] | None = Field(
+        None,
+        description="Filter by severity (None = all)"
+    )
+    additional_instruction: str | None = Field(
+        None,
+        description="Additional user instruction"
+    )
+
+
+class FixInstructionResponse(BaseModel):
+    """Generated fix instruction."""
+
+    instruction: str
+    target_feedbacks: list[ReviewFeedbackItem]
+    estimated_changes: int
+```
+
+### バックエンド実装
+
+#### ReviewService への修正指示生成メソッド追加
+
+```python
+# apps/api/src/dursor_api/services/review_service.py
+
+class ReviewService:
+    # ... 既存メソッド ...
+
+    async def generate_fix_instruction(
+        self,
+        data: FixInstructionRequest,
+    ) -> FixInstructionResponse:
+        """Generate fix instruction from review feedbacks."""
+
+        review = await self.review_dao.get(data.review_id)
+        if not review:
+            raise ValueError(f"Review not found: {data.review_id}")
+
+        # フィードバックのフィルタリング
+        feedbacks = review.feedbacks
+
+        if data.feedback_ids:
+            feedbacks = [f for f in feedbacks if f.id in data.feedback_ids]
+
+        if data.severity_filter:
+            feedbacks = [f for f in feedbacks if f.severity in data.severity_filter]
+
+        if not feedbacks:
+            raise ValueError("No feedbacks match the filter criteria")
+
+        # 修正指示の生成
+        instruction = self._build_fix_instruction(feedbacks, data.additional_instruction)
+
+        return FixInstructionResponse(
+            instruction=instruction,
+            target_feedbacks=feedbacks,
+            estimated_changes=len(set(f.file_path for f in feedbacks)),
+        )
+
+    def _build_fix_instruction(
+        self,
+        feedbacks: list[ReviewFeedbackItem],
+        additional: str | None,
+    ) -> str:
+        """Build fix instruction from feedbacks."""
+
+        parts = ["Please fix the following issues identified in the code review:\n"]
+
+        # 重要度順にソート
+        severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        sorted_feedbacks = sorted(feedbacks, key=lambda f: severity_order[f.severity])
+
+        for i, fb in enumerate(sorted_feedbacks, 1):
+            parts.append(f"\n## Issue {i}: [{fb.severity.upper()}] {fb.title}")
+            parts.append(f"**File**: `{fb.file_path}`")
+            if fb.line_start:
+                line_info = f"Line {fb.line_start}"
+                if fb.line_end and fb.line_end != fb.line_start:
+                    line_info += f"-{fb.line_end}"
+                parts.append(f"**Location**: {line_info}")
+            parts.append(f"**Category**: {fb.category}")
+            parts.append(f"\n{fb.description}")
+            if fb.suggestion:
+                parts.append(f"\n**Suggested fix**: {fb.suggestion}")
+
+        if additional:
+            parts.append(f"\n---\n**Additional instructions**: {additional}")
+
+        parts.append("\n---\nPlease address all the issues above and ensure the code is correct and secure.")
+
+        return "\n".join(parts)
+
+
+    async def add_review_to_conversation(
+        self,
+        review_id: str,
+    ) -> Message:
+        """Add completed review as a message in the conversation."""
+
+        review = await self.review_dao.get(review_id)
+        if not review:
+            raise ValueError(f"Review not found: {review_id}")
+
+        if review.status != ReviewStatus.SUCCEEDED:
+            raise ValueError(f"Review not completed: {review.status}")
+
+        # レビュー結果をMarkdown形式でフォーマット
+        content = self._format_review_as_message(review)
+
+        # Messageとして保存
+        message = Message(
+            id=generate_id(),
+            task_id=review.task_id,
+            role=MessageRole.ASSISTANT,
+            content=content,
+            created_at=datetime.utcnow(),
+        )
+        await self.message_dao.create(message)
+
+        return message
+
+    def _format_review_as_message(self, review: Review) -> str:
+        """Format review result as conversation message."""
+
+        parts = ["## Code Review Results\n"]
+
+        if review.overall_summary:
+            parts.append(f"{review.overall_summary}\n")
+
+        if review.overall_score is not None:
+            score_pct = int(review.overall_score * 100)
+            parts.append(f"**Overall Score**: {score_pct}%\n")
+
+        # サマリー統計
+        severity_counts = {
+            "critical": len([f for f in review.feedbacks if f.severity == "critical"]),
+            "high": len([f for f in review.feedbacks if f.severity == "high"]),
+            "medium": len([f for f in review.feedbacks if f.severity == "medium"]),
+            "low": len([f for f in review.feedbacks if f.severity == "low"]),
+        }
+        parts.append(f"**Issues Found**: {len(review.feedbacks)} total")
+        parts.append(f"  - Critical: {severity_counts['critical']}")
+        parts.append(f"  - High: {severity_counts['high']}")
+        parts.append(f"  - Medium: {severity_counts['medium']}")
+        parts.append(f"  - Low: {severity_counts['low']}\n")
+
+        # 各フィードバック
+        if review.feedbacks:
+            parts.append("### Issues\n")
+            for fb in review.feedbacks:
+                parts.append(f"- **[{fb.severity.upper()}]** {fb.title}")
+                parts.append(f"  - File: `{fb.file_path}`")
+                if fb.line_start:
+                    parts.append(f"  - Line: {fb.line_start}")
+
+        return "\n".join(parts)
+```
+
+#### 新規APIエンドポイント
+
+```python
+# apps/api/src/dursor_api/routes/reviews.py
+
+@router.post("/reviews/{review_id}/generate-fix")
+async def generate_fix_instruction(
+    review_id: str,
+    data: FixInstructionRequest,
+    review_service: ReviewService = Depends(get_review_service),
+) -> FixInstructionResponse:
+    """Generate fix instruction from review feedbacks."""
+    data.review_id = review_id  # URLパスからセット
+    return await review_service.generate_fix_instruction(data)
+
+
+@router.post("/reviews/{review_id}/to-message")
+async def add_review_to_conversation(
+    review_id: str,
+    review_service: ReviewService = Depends(get_review_service),
+) -> Message:
+    """Add completed review as a conversation message."""
+    return await review_service.add_review_to_conversation(review_id)
+```
+
+### フロントエンド実装
+
+#### API クライアント拡張
+
+```typescript
+// apps/web/src/lib/api.ts
+
+export const reviewsApi = {
+  // ... 既存メソッド ...
+
+  generateFixInstruction: async (
+    reviewId: string,
+    data: {
+      feedback_ids?: string[];
+      severity_filter?: ReviewSeverity[];
+      additional_instruction?: string;
+    }
+  ) => {
+    return fetchApi<{
+      instruction: string;
+      target_feedbacks: ReviewFeedbackItem[];
+      estimated_changes: number;
+    }>(`/v1/reviews/${reviewId}/generate-fix`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  addToConversation: async (reviewId: string) => {
+    return fetchApi<Message>(`/v1/reviews/${reviewId}/to-message`, {
+      method: 'POST',
+    });
+  },
+};
+```
+
+#### ReviewPanel への修正アクション追加
+
+```tsx
+// apps/web/src/components/ReviewPanel.tsx
+
+interface ReviewPanelProps {
+  review: Review;
+  onApplyFixes: (instruction: string, feedbackIds: string[]) => void;
+}
+
+export function ReviewPanel({ review, onApplyFixes }: ReviewPanelProps) {
+  const [selectedFeedbacks, setSelectedFeedbacks] = useState<Set<string>>(new Set());
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // 全選択/解除
+  const toggleSelectAll = () => {
+    if (selectedFeedbacks.size === review.feedbacks.length) {
+      setSelectedFeedbacks(new Set());
+    } else {
+      setSelectedFeedbacks(new Set(review.feedbacks.map(f => f.id)));
+    }
+  };
+
+  // 重要度でフィルタ選択
+  const selectBySeverity = (severities: ReviewSeverity[]) => {
+    const ids = review.feedbacks
+      .filter(f => severities.includes(f.severity))
+      .map(f => f.id);
+    setSelectedFeedbacks(new Set(ids));
+  };
+
+  // 修正適用
+  const handleApplyFixes = async () => {
+    setIsGenerating(true);
+    try {
+      const feedbackIds = selectedFeedbacks.size > 0
+        ? Array.from(selectedFeedbacks)
+        : undefined;
+
+      const result = await reviewsApi.generateFixInstruction(review.id, {
+        feedback_ids: feedbackIds,
+      });
+
+      onApplyFixes(result.instruction, result.target_feedbacks.map(f => f.id));
+    } catch (error) {
+      console.error('Failed to generate fix instruction:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* ... 既存の表示部分 ... */}
+
+      {/* 修正アクション */}
+      {review.status === 'succeeded' && review.feedbacks.length > 0 && (
+        <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+          <h4 className="font-medium text-white mb-3">Apply Fixes</h4>
+
+          {/* 選択オプション */}
+          <div className="flex gap-2 mb-3">
+            <Button size="sm" variant="secondary" onClick={toggleSelectAll}>
+              {selectedFeedbacks.size === review.feedbacks.length ? 'Deselect All' : 'Select All'}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => selectBySeverity(['critical', 'high'])}
+            >
+              Select Critical + High
+            </Button>
+          </div>
+
+          {/* 選択状態 */}
+          <p className="text-sm text-gray-400 mb-3">
+            {selectedFeedbacks.size > 0
+              ? `${selectedFeedbacks.size} issue(s) selected`
+              : 'All issues will be addressed'}
+          </p>
+
+          {/* 適用ボタン */}
+          <Button
+            variant="primary"
+            onClick={handleApplyFixes}
+            isLoading={isGenerating}
+            disabled={isGenerating}
+          >
+            <WrenchScrewdriverIcon className="w-4 h-4 mr-2" />
+            Apply Fixes
+          </Button>
+        </div>
+      )}
+
+      {/* フィードバックリスト（チェックボックス付き） */}
+      <div className="space-y-3">
+        {filteredFeedbacks.map(feedback => (
+          <ReviewFeedbackCard
+            key={feedback.id}
+            feedback={feedback}
+            isSelected={selectedFeedbacks.has(feedback.id)}
+            onToggleSelect={() => {
+              const newSet = new Set(selectedFeedbacks);
+              if (newSet.has(feedback.id)) {
+                newSet.delete(feedback.id);
+              } else {
+                newSet.add(feedback.id);
+              }
+              setSelectedFeedbacks(newSet);
+            }}
+            onFixThis={() => {
+              // 単一フィードバックの修正
+              reviewsApi.generateFixInstruction(review.id, {
+                feedback_ids: [feedback.id],
+              }).then(result => {
+                onApplyFixes(result.instruction, [feedback.id]);
+              });
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+#### ReviewFeedbackCard への個別修正ボタン追加
+
+```tsx
+// apps/web/src/components/ReviewFeedbackCard.tsx
+
+interface ReviewFeedbackCardProps {
+  feedback: ReviewFeedbackItem;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
+  onFixThis?: () => void;
+}
+
+export function ReviewFeedbackCard({
+  feedback,
+  isSelected,
+  onToggleSelect,
+  onFixThis,
+}: ReviewFeedbackCardProps) {
+  // ... 既存のコード ...
+
+  return (
+    <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+      {/* チェックボックス */}
+      {onToggleSelect && (
+        <div className="flex items-center mb-2">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggleSelect}
+            className="w-4 h-4 rounded border-gray-600 bg-gray-700"
+          />
+        </div>
+      )}
+
+      {/* ... 既存の表示部分 ... */}
+
+      {/* 個別修正ボタン */}
+      {onFixThis && (
+        <button
+          onClick={onFixThis}
+          className="mt-3 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
+        >
+          Fix This Issue
+        </button>
+      )}
+    </div>
+  );
+}
+```
+
+#### ChatCodeView への統合
+
+```tsx
+// apps/web/src/components/ChatCodeView.tsx
+
+export function ChatCodeView({ taskId, ... }: ChatCodeViewProps) {
+  // ... 既存のstate ...
+
+  // レビュー結果から修正を適用
+  const handleApplyFixes = async (instruction: string, feedbackIds: string[]) => {
+    // 修正指示を入力欄にセット
+    setInput(instruction);
+
+    // または直接Runを作成
+    // await handleCreateRun(instruction, { review_context: true });
+
+    // レビューパネルを閉じる（オプション）
+    setActiveReview(null);
+
+    // 入力欄にフォーカス
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div>
+      {/* 会話エリア */}
+      <div className="conversation-area">
+        {messages.map(msg => (
+          <MessageBubble key={msg.id} message={msg} />
+        ))}
+
+        {runs.map(run => (
+          <RunResultCard key={run.id} run={run} />
+        ))}
+
+        {/* レビュー結果も会話に表示 */}
+        {reviews?.map(review => (
+          <ReviewResultCard
+            key={review.id}
+            review={review}
+            onExpand={() => setActiveReview(review)}
+          />
+        ))}
+      </div>
+
+      {/* レビュー詳細パネル */}
+      {activeReview && (
+        <ReviewPanel
+          review={activeReview}
+          onApplyFixes={handleApplyFixes}
+          onClose={() => setActiveReview(null)}
+        />
+      )}
+
+      {/* 入力エリア */}
+      <div className="input-area">
+        <ReviewButton
+          taskId={taskId}
+          runs={runs}
+          onReviewCreated={handleReviewCreated}
+        />
+        {/* ... */}
+      </div>
+    </div>
+  );
+}
+```
+
+### シーケンス図: レビュー→修正フロー
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant UI as Frontend
+    participant API as Backend
+    participant AI as AI Executor
+
+    Note over U,AI: Phase 1: Initial Code Generation
+    U->>UI: Enter instruction
+    UI->>API: POST /tasks/{id}/runs
+    API->>AI: Execute code generation
+    AI-->>API: Return patch
+    API-->>UI: Run completed
+    UI->>U: Display generated code
+
+    Note over U,AI: Phase 2: Code Review
+    U->>UI: Click "Review" button
+    UI->>API: POST /tasks/{id}/reviews
+    API->>AI: Execute review
+    AI-->>API: Return review result
+    API-->>UI: Review completed
+    UI->>U: Display review feedbacks
+
+    Note over U,AI: Phase 3: Apply Fixes
+    U->>UI: Select feedbacks & click "Apply Fixes"
+    UI->>API: POST /reviews/{id}/generate-fix
+    API-->>UI: Return fix instruction
+    UI->>UI: Set instruction in input
+    U->>UI: Click "Run"
+    UI->>API: POST /tasks/{id}/runs (with review context)
+    API->>AI: Execute fix
+    AI-->>API: Return fixed code
+    API-->>UI: Run completed
+    UI->>U: Display fixed code
+
+    Note over U,AI: (Repeat if needed)
+```
+
+---
+
 ## 将来の拡張
 
 ### v1.1
 
 - [ ] PR作成時の自動レビュー
-- [ ] レビュー指摘に基づく自動修正
+- [ ] レビュー指摘に基づく自動修正（ワンクリック）
 - [ ] カスタムレビュールールの設定
 
 ### v1.2
