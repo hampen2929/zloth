@@ -50,6 +50,7 @@ export function ChatPanel({
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -401,8 +402,15 @@ export function ChatPanel({
       <form onSubmit={handleSubmit} className="border-t border-gray-800 p-3">
         <div className="flex gap-2">
           <textarea
+            ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              if (inputRef.current) {
+                inputRef.current.style.height = 'auto';
+                inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 300)}px`;
+              }
+            }}
             placeholder="Enter your instructions..."
             rows={3}
             className={cn(

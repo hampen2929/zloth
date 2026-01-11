@@ -731,12 +731,20 @@ function ChatInput({
   disabled,
   selectedModelCount,
 }: ChatInputProps) {
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   return (
     <form onSubmit={onSubmit} className="border-t border-gray-800 p-3">
       <div className="flex gap-2">
         <textarea
+          ref={inputRef}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            onChange(e.target.value);
+            if (inputRef.current) {
+              inputRef.current.style.height = 'auto';
+              inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 300)}px`;
+            }
+          }}
           placeholder="Enter your instructions..."
           rows={3}
           className={cn(
