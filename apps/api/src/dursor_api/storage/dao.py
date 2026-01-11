@@ -202,17 +202,22 @@ class TaskDAO:
     def __init__(self, db: Database):
         self.db = db
 
-    async def create(self, repo_id: str, title: str | None = None) -> Task:
+    async def create(
+        self,
+        repo_id: str,
+        title: str | None = None,
+        coding_mode: CodingMode = CodingMode.INTERACTIVE,
+    ) -> Task:
         """Create a new task."""
         id = generate_id()
         now = now_iso()
 
         await self.db.connection.execute(
             """
-            INSERT INTO tasks (id, repo_id, title, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tasks (id, repo_id, title, coding_mode, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (id, repo_id, title, now, now),
+            (id, repo_id, title, coding_mode.value, now, now),
         )
         await self.db.connection.commit()
 
@@ -220,6 +225,7 @@ class TaskDAO:
             id=id,
             repo_id=repo_id,
             title=title,
+            coding_mode=coding_mode,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
         )
@@ -319,11 +325,18 @@ class TaskDAO:
         for row in rows:
             # Handle kanban_status for backward compatibility
             kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
+            # Handle coding_mode for backward compatibility
+            coding_mode_str = (
+                row["coding_mode"]
+                if "coding_mode" in row.keys() and row["coding_mode"]
+                else "interactive"
+            )
             result.append(
                 {
                     "id": row["id"],
                     "repo_id": row["repo_id"],
                     "title": row["title"],
+                    "coding_mode": CodingMode(coding_mode_str),
                     "kanban_status": kanban_status,
                     "created_at": datetime.fromisoformat(row["created_at"]),
                     "updated_at": datetime.fromisoformat(row["updated_at"]),
@@ -339,10 +352,17 @@ class TaskDAO:
     def _row_to_model(self, row: Any) -> Task:
         # Handle kanban_status for backward compatibility
         kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
+        # Handle coding_mode for backward compatibility
+        coding_mode_str = (
+            row["coding_mode"]
+            if "coding_mode" in row.keys() and row["coding_mode"]
+            else "interactive"
+        )
         return Task(
             id=row["id"],
             repo_id=row["repo_id"],
             title=row["title"],
+            coding_mode=CodingMode(coding_mode_str),
             kanban_status=kanban_status,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
@@ -849,6 +869,7 @@ class UserPreferencesDAO:
         default_branch: str | None = None,
         default_branch_prefix: str | None = None,
         default_pr_creation_mode: str | None = None,
+        default_coding_mode: str | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
@@ -866,6 +887,7 @@ class UserPreferencesDAO:
                     default_branch = ?,
                     default_branch_prefix = ?,
                     default_pr_creation_mode = ?,
+                    default_coding_mode = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
@@ -875,6 +897,7 @@ class UserPreferencesDAO:
                     default_branch,
                     default_branch_prefix,
                     default_pr_creation_mode,
+                    default_coding_mode,
                     now,
                 ),
             )
@@ -888,10 +911,11 @@ class UserPreferencesDAO:
                     default_branch,
                     default_branch_prefix,
                     default_pr_creation_mode,
+                    default_coding_mode,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -899,6 +923,7 @@ class UserPreferencesDAO:
                     default_branch,
                     default_branch_prefix,
                     default_pr_creation_mode,
+                    default_coding_mode,
                     now,
                     now,
                 ),
@@ -912,6 +937,7 @@ class UserPreferencesDAO:
             default_branch=default_branch,
             default_branch_prefix=default_branch_prefix,
             default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
+            default_coding_mode=CodingMode(default_coding_mode or "interactive"),
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -926,6 +952,11 @@ class UserPreferencesDAO:
                 row["default_pr_creation_mode"]
                 if "default_pr_creation_mode" in row.keys() and row["default_pr_creation_mode"]
                 else "create"
+            ),
+            default_coding_mode=CodingMode(
+                row["default_coding_mode"]
+                if "default_coding_mode" in row.keys() and row["default_coding_mode"]
+                else "interactive"
             ),
         )
 

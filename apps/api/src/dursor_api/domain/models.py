@@ -89,6 +89,7 @@ class TaskCreate(BaseModel):
 
     repo_id: str
     title: str | None = None
+    coding_mode: CodingMode = CodingMode.INTERACTIVE
 
 
 class Task(BaseModel):
@@ -97,6 +98,7 @@ class Task(BaseModel):
     id: str
     repo_id: str
     title: str | None
+    coding_mode: CodingMode = CodingMode.INTERACTIVE
     kanban_status: str = "backlog"  # Base status stored in DB (backlog/todo/archived)
     created_at: datetime
     updated_at: datetime
@@ -548,6 +550,7 @@ class UserPreferences(BaseModel):
     default_branch: str | None = None
     default_branch_prefix: str | None = None
     default_pr_creation_mode: PRCreationMode = PRCreationMode.CREATE
+    default_coding_mode: CodingMode = CodingMode.INTERACTIVE
 
 
 class UserPreferencesSave(BaseModel):
@@ -558,6 +561,7 @@ class UserPreferencesSave(BaseModel):
     default_branch: str | None = None
     default_branch_prefix: str | None = None
     default_pr_creation_mode: PRCreationMode | None = None
+    default_coding_mode: CodingMode | None = None
 
 
 class PRCreateLink(BaseModel):

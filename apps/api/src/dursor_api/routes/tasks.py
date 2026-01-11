@@ -35,7 +35,11 @@ async def create_task(
     task_dao: TaskDAO = Depends(get_task_dao),
 ) -> Task:
     """Create a new task."""
-    return await task_dao.create(repo_id=data.repo_id, title=data.title)
+    return await task_dao.create(
+        repo_id=data.repo_id,
+        title=data.title,
+        coding_mode=data.coding_mode,
+    )
 
 
 @router.get("", response_model=list[Task])
@@ -161,6 +165,7 @@ async def bulk_create_tasks(
         task = await task_dao.create(
             repo_id=data.repo_id,
             title=task_create.title,
+            coding_mode=task_create.coding_mode,
         )
         created_tasks.append(task)
 

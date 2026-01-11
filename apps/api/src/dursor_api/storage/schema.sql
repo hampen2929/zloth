@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     repo_id TEXT NOT NULL REFERENCES repos(id),
     title TEXT,
+    coding_mode TEXT NOT NULL DEFAULT 'interactive',  -- interactive, semi_auto, full_auto
     kanban_status TEXT NOT NULL DEFAULT 'backlog',  -- backlog, todo, archived (dynamic: in_progress, in_review, done)
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -114,6 +115,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     default_branch TEXT,                    -- Default branch (e.g., "main")
     default_branch_prefix TEXT,             -- Default branch prefix for work branches (e.g., "dursor")
     default_pr_creation_mode TEXT,          -- Default PR creation behavior: create|link
+    default_coding_mode TEXT,               -- Default coding mode: interactive|semi_auto|full_auto
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

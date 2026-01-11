@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
-import type { GitHubRepository, ExecutorType } from '@/types';
+import type { GitHubRepository, ExecutorType, CodingMode } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
@@ -19,6 +19,7 @@ import {
   LockClosedIcon,
   ExclamationTriangleIcon,
   Cog6ToothIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 
 export default function HomePage() {
@@ -32,6 +33,7 @@ export default function HomePage() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedCLIs, setSelectedCLIs] = useState<ExecutorType[]>(['claude_code']);
+  const [selectedMode, setSelectedMode] = useState<CodingMode>('interactive');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +70,13 @@ export default function HomePage() {
       }
     }
   }, [repos, preferences, selectedRepo]);
+
+  // Apply default coding mode from preferences
+  useEffect(() => {
+    if (preferences?.default_coding_mode) {
+      setSelectedMode(preferences.default_coding_mode);
+    }
+  }, [preferences]);
 
   // Set default branch when repo changes
   const handleRepoSelect = useCallback((repo: GitHubRepository) => {
@@ -120,6 +129,7 @@ export default function HomePage() {
       const task = await tasksApi.create({
         repo_id: repo.id,
         title: instruction.slice(0, 50) + (instruction.length > 50 ? '...' : ''),
+        coding_mode: selectedMode,
       });
 
       // Add the instruction as the first message and get its ID
@@ -307,6 +317,12 @@ export default function HomePage() {
             selectedRepo={selectedRepo}
             onBranchSelect={setSelectedBranch}
           />
+
+          {/* Mode Selector */}
+          <ModeSelector
+            selectedMode={selectedMode}
+            onModeChange={setSelectedMode}
+          />
         </div>
 
         {/* Keyboard hint */}
@@ -451,6 +467,74 @@ function RepoSelector({
               ))
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Mode labels for display
+const MODE_CONFIG: { value: CodingMode; label: string; description: string }[] = [
+  { value: 'interactive', label: 'Interactive', description: 'Manual control' },
+  { value: 'semi_auto', label: 'Semi Auto', description: 'Auto with approval' },
+  { value: 'full_auto', label: 'Full Auto', description: 'Fully autonomous' },
+];
+
+interface ModeSelectorProps {
+  selectedMode: CodingMode;
+  onModeChange: (mode: CodingMode) => void;
+}
+
+function ModeSelector({ selectedMode, onModeChange }: ModeSelectorProps) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useClickOutside(dropdownRef, () => setShowDropdown(false), showDropdown);
+
+  const currentConfig = MODE_CONFIG.find((m) => m.value === selectedMode) || MODE_CONFIG[0];
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className={cn(
+          'flex items-center gap-2 transition-colors',
+          'text-gray-400 hover:text-white',
+          'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
+        )}
+      >
+        <BoltIcon className="w-4 h-4" />
+        <span>{currentConfig.label}</span>
+        <ChevronDownIcon
+          className={cn('w-4 h-4 transition-transform', showDropdown && 'rotate-180')}
+        />
+      </button>
+
+      {showDropdown && (
+        <div className="absolute top-full left-0 mt-2 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          {MODE_CONFIG.map((mode) => (
+            <button
+              key={mode.value}
+              onClick={() => {
+                onModeChange(mode.value);
+                setShowDropdown(false);
+              }}
+              className={cn(
+                'w-full px-3 py-2.5 text-left flex items-center justify-between',
+                'hover:bg-gray-700 transition-colors',
+                'focus:outline-none focus:bg-gray-700',
+                selectedMode === mode.value && 'bg-gray-700/50'
+              )}
+            >
+              <div>
+                <div className="text-gray-100">{mode.label}</div>
+                <div className="text-xs text-gray-500">{mode.description}</div>
+              </div>
+              {selectedMode === mode.value && (
+                <span className="text-blue-400 text-sm">&#10003;</span>
+              )}
+            </button>
+          ))}
         </div>
       )}
     </div>
