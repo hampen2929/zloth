@@ -49,6 +49,7 @@ export function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { success, error } = useToast();
 
   // Auto-scroll to bottom
@@ -84,6 +85,20 @@ export function ChatPanel({
       setSelectedCLIs((prev) => (prev.includes(executorType) ? prev : [executorType]));
     }
   }, [executorType]);
+
+  // Auto-expand textarea based on content
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight
+      textarea.style.height = 'auto';
+      // Set height based on scrollHeight, with min and max constraints
+      const minHeight = 72; // approximately 3 rows
+      const maxHeight = 300;
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, [input]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -401,6 +416,7 @@ export function ChatPanel({
       <form onSubmit={handleSubmit} className="border-t border-gray-800 p-3">
         <div className="flex gap-2">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Enter your instructions..."
@@ -410,8 +426,9 @@ export function ChatPanel({
               'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
               'text-sm text-gray-100 placeholder:text-gray-500',
               'disabled:opacity-50 disabled:cursor-not-allowed',
-              'transition-colors'
+              'transition-colors overflow-y-auto'
             )}
+            style={{ minHeight: '72px', maxHeight: '300px' }}
             disabled={loading}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && isModifierPressed(e)) {
