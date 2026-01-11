@@ -4,10 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { backlogApi } from '@/lib/api';
 import type { BacklogItem, BacklogStatus } from '@/types';
 import BacklogCard from '@/components/BacklogCard';
+import NewBacklogModal from '@/components/NewBacklogModal';
 import {
   ClipboardDocumentListIcon,
   SparklesIcon,
   FunnelIcon,
+  PlusIcon,
 } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +26,7 @@ export default function BacklogPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<BacklogStatus | 'all'>('all');
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
 
   const fetchItems = useCallback(async () => {
     setIsLoading(true);
@@ -71,13 +74,22 @@ export default function BacklogPage() {
               {items.length} item{items.length !== 1 ? 's' : ''}
             </span>
           </div>
-          <button
-            onClick={handleOpenBreakdown}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-          >
-            <SparklesIcon className="w-4 h-4" />
-            Breakdown
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsNewModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+            >
+              <PlusIcon className="w-4 h-4" />
+              New Backlog
+            </button>
+            <button
+              onClick={handleOpenBreakdown}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            >
+              <SparklesIcon className="w-4 h-4" />
+              Breakdown
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -125,15 +137,24 @@ export default function BacklogPage() {
               No backlog items yet
             </h2>
             <p className="text-gray-500 mb-6">
-              Use Breakdown to analyze requirements and create backlog items.
+              Create a new backlog item or use Breakdown to analyze requirements.
             </p>
-            <button
-              onClick={handleOpenBreakdown}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-            >
-              <SparklesIcon className="w-4 h-4" />
-              Start Breakdown
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setIsNewModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                <PlusIcon className="w-4 h-4" />
+                New Backlog
+              </button>
+              <button
+                onClick={handleOpenBreakdown}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              >
+                <SparklesIcon className="w-4 h-4" />
+                Breakdown
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -148,6 +169,13 @@ export default function BacklogPage() {
           </div>
         )}
       </div>
+
+      {/* New Backlog Modal */}
+      <NewBacklogModal
+        isOpen={isNewModalOpen}
+        onClose={() => setIsNewModalOpen(false)}
+        onCreated={fetchItems}
+      />
     </div>
   );
 }
