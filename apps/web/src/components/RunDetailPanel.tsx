@@ -26,6 +26,7 @@ import {
   Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
 import { getErrorDisplay, type ErrorAction } from '@/lib/error-handling';
+import { getExecutorDisplayName, isCLIExecutor } from '@/hooks';
 
 interface RunDetailPanelProps {
   run: Run;
@@ -181,18 +182,9 @@ export function RunDetailPanel({
     }
   };
 
-  const isCLI =
-    run.executor_type === 'claude_code' ||
-    run.executor_type === 'codex_cli' ||
-    run.executor_type === 'gemini_cli';
-  const cliName =
-    run.executor_type === 'claude_code'
-      ? 'Claude Code'
-      : run.executor_type === 'codex_cli'
-        ? 'Codex'
-        : run.executor_type === 'gemini_cli'
-          ? 'Gemini CLI'
-          : 'CLI';
+  const isCLI = isCLIExecutor(run.executor_type);
+  const modelLabel = isCLI ? getExecutorDisplayName(run.executor_type) : (run.model_name || 'Model');
+  const headerLabel = `Implementation(${modelLabel})`;
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-800">
@@ -201,14 +193,8 @@ export function RunDetailPanel({
         <div className="flex items-start justify-between">
           <div>
             <h2 className="font-semibold text-gray-100 flex items-center gap-2">
-              {isCLI ? (
-                <>
-                  <CommandLineIcon className="w-5 h-5 text-purple-400" />
-                  <span>{cliName}</span>
-                </>
-              ) : (
-                run.model_name
-              )}
+              {isCLI && <CommandLineIcon className="w-5 h-5 text-purple-400" />}
+              <span>{headerLabel}</span>
             </h2>
             <div className="flex items-center gap-2 mt-1">
               {isCLI ? (

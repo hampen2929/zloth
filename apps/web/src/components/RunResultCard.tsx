@@ -42,9 +42,10 @@ export function RunResultCard({
   onTabChange,
 }: RunResultCardProps) {
   const isCLI = isCLIExecutor(run.executor_type);
-  const displayName = isCLI
+  const modelLabel = isCLI
     ? getExecutorDisplayName(run.executor_type)
-    : run.model_name;
+    : (run.model_name || 'Model');
+  const headerLabel = `Implementation(${modelLabel})`;
 
   return (
     <div
@@ -66,7 +67,7 @@ export function RunResultCard({
             <CpuChipIcon className="w-5 h-5 text-blue-400" />
           )}
           <div className="text-left">
-            <div className="font-medium text-gray-200 text-sm">{displayName}</div>
+            <div className="font-medium text-gray-200 text-sm">{headerLabel}</div>
             {isCLI && run.working_branch && (
               <div className="text-xs font-mono text-purple-400">{run.working_branch}</div>
             )}
@@ -239,4 +240,3 @@ function SummaryTab({ run }: { run: Run }) {
     </div>
   );
 }
-
