@@ -321,11 +321,19 @@ export function ChatCodeView({
     setReviewExpanded((prev) => ({ ...prev, [reviewId]: !isReviewExpanded(reviewId) }));
   };
 
-  // Filter reviews for the selected executor type
+  // Filter reviews based on target runs' executor type (not the reviewer's executor type)
+  // A review should appear in the executor panel where the reviewed runs belong
   const reviewsForSelectedExecutor = useMemo(() => {
     if (!reviews || !selectedExecutorType) return [];
-    return reviews.filter((r) => r.executor_type === selectedExecutorType);
-  }, [reviews, selectedExecutorType]);
+    // Build a set of run IDs for the selected executor
+    const selectedExecutorRunIds = new Set(
+      runsForSelectedExecutor.map((r) => r.id)
+    );
+    // Include reviews where any of the target runs belong to the selected executor
+    return reviews.filter((r) =>
+      r.target_run_ids.some((runId) => selectedExecutorRunIds.has(runId))
+    );
+  }, [reviews, selectedExecutorType, runsForSelectedExecutor]);
 
   // Get aggregate stats for an executor type
   const getExecutorStats = (executorType: ExecutorType) => {
