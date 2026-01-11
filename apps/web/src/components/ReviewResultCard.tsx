@@ -185,7 +185,9 @@ export function ReviewResultCard({
         <div className="flex items-center gap-3">
           <MagnifyingGlassIcon className="w-5 h-5 text-blue-400" />
           <div className="text-left">
-            <div className="font-medium text-gray-200 text-sm">Code Review</div>
+            <div className="font-medium text-gray-200 text-sm">
+              Code Review({review.executor_type === 'claude_code' ? 'Claude Code' : review.executor_type === 'codex_cli' ? 'Codex' : review.executor_type === 'gemini_cli' ? 'Gemini CLI' : review.executor_type})
+            </div>
             {review.overall_score !== null && (
               <div className={cn(
                 'text-xs font-medium',

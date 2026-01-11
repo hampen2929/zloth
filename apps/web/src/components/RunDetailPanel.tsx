@@ -204,10 +204,10 @@ export function RunDetailPanel({
               {isCLI ? (
                 <>
                   <CommandLineIcon className="w-5 h-5 text-purple-400" />
-                  <span>{cliName}</span>
+                  <span>Implementation({cliName})</span>
                 </>
               ) : (
-                run.model_name
+                <>Implementation({run.model_name})</>
               )}
             </h2>
             <div className="flex items-center gap-2 mt-1">

@@ -42,9 +42,10 @@ export function RunResultCard({
   onTabChange,
 }: RunResultCardProps) {
   const isCLI = isCLIExecutor(run.executor_type);
-  const displayName = isCLI
+  const modelName = isCLI
     ? getExecutorDisplayName(run.executor_type)
     : run.model_name;
+  const displayName = `Implementation(${modelName})`;
 
   return (
     <div
