@@ -49,6 +49,7 @@ export function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { success, error } = useToast();
 
   // Auto-scroll to bottom
@@ -84,6 +85,16 @@ export function ChatPanel({
       setSelectedCLIs((prev) => (prev.includes(executorType) ? prev : [executorType]));
     }
   }, [executorType]);
+
+  // Auto-resize textarea based on content
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 200); // Max height of 200px
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, [input]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -401,16 +412,17 @@ export function ChatPanel({
       <form onSubmit={handleSubmit} className="border-t border-gray-800 p-3">
         <div className="flex gap-2">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Enter your instructions..."
-            rows={3}
+            rows={1}
             className={cn(
               'flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded resize-none',
               'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
               'text-sm text-gray-100 placeholder:text-gray-500',
               'disabled:opacity-50 disabled:cursor-not-allowed',
-              'transition-colors'
+              'transition-colors min-h-[42px] max-h-[200px] overflow-y-auto'
             )}
             disabled={loading}
             onKeyDown={(e) => {
