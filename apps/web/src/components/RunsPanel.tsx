@@ -260,10 +260,10 @@ export function RunsPanel({
                           {isCLI ? (
                             <>
                               <CommandLineIcon className="w-4 h-4 text-purple-400" />
-                              <span>{cliName}</span>
+                              <span>Implementation({cliName})</span>
                             </>
                           ) : (
-                            run.model_name
+                            <>Implementation({run.model_name})</>
                           )}
                         </span>
                         <span

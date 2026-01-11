@@ -207,12 +207,11 @@ export function ReviewPanel({ reviewId, onClose, onApplyFix }: ReviewPanelProps)
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-white">Code Review</h2>
+            <h2 className="text-lg font-semibold text-white">
+              Code Review({getExecutorName()})
+            </h2>
             {review && (
               <>
-                <span className="text-sm text-gray-400">
-                  ({getExecutorName()})
-                </span>
                 <span
                   className={cn(
                     'px-2 py-0.5 text-xs font-medium rounded',
