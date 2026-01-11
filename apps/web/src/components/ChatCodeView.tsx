@@ -92,11 +92,6 @@ export function ChatCodeView({
   const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
   const latestPR = prs && prs.length > 0 ? prs[0] : null;
 
-  // Get successful run IDs for review
-  const successfulRunIds = sortedRuns
-    .filter((r) => r.status === 'succeeded')
-    .map((r) => r.id);
-
   // Sync PR result from backend
   useEffect(() => {
     if (latestPR && !prResult) {
@@ -134,6 +129,11 @@ export function ChatCodeView({
   const runsForSelectedExecutor = sortedRuns.filter(
     (r) => r.executor_type === selectedExecutorType
   );
+
+  // Get successful run IDs for review (only for the selected executor type)
+  const successfulRunIds = runsForSelectedExecutor
+    .filter((r) => r.status === 'succeeded')
+    .map((r) => r.id);
 
   // Get the latest run for the selected executor (for branch info, PR creation)
   const latestRunForSelectedExecutor = runsForSelectedExecutor[0];
