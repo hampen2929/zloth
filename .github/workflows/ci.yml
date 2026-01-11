@@ -136,6 +136,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Remove problematic Microsoft repos
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list
+          sudo apt-get update
+
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
 
