@@ -11,7 +11,8 @@ from dursor_api.routes.repos import router as repos_router
 from dursor_api.routes.reviews import router as reviews_router
 from dursor_api.routes.runs import router as runs_router
 from dursor_api.routes.tasks import router as tasks_router
-from dursor_api.routes.webhooks import router as webhooks_router
+
+# Note: webhooks router removed - using CI polling instead (see ci_polling_service.py)
 
 __all__ = [
     "backlog_router",
@@ -25,5 +26,4 @@ __all__ = [
     "tasks_router",
     "runs_router",
     "prs_router",
-    "webhooks_router",
 ]

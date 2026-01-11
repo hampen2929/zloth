@@ -34,6 +34,7 @@ from dursor_api.domain.models import (
 )
 
 if TYPE_CHECKING:
+    from dursor_api.services.ci_polling_service import CIPollingService
     from dursor_api.services.git_service import GitService
     from dursor_api.services.github_service import GitHubService
     from dursor_api.services.merge_gate_service import MergeGateService
@@ -61,6 +62,7 @@ class AgenticOrchestrator:
         git_service: "GitService",
         github_service: "GitHubService",
         notification_service: "NotificationService",
+        ci_polling_service: "CIPollingService",
         task_dao: "TaskDAO",
         pr_dao: "PRDAO",
         agentic_dao: "AgenticRunDAO",
@@ -74,6 +76,7 @@ class AgenticOrchestrator:
             git_service: Service for git operations.
             github_service: Service for GitHub API operations.
             notification_service: Service for notifications.
+            ci_polling_service: Service for CI status polling.
             task_dao: Task DAO.
             pr_dao: PR DAO.
             agentic_dao: Agentic run DAO.
@@ -84,6 +87,7 @@ class AgenticOrchestrator:
         self.git = git_service
         self.github = github_service
         self.notifier = notification_service
+        self.ci_poller = ci_polling_service
         self.task_dao = task_dao
         self.pr_dao = pr_dao
         self.agentic_dao = agentic_dao
@@ -192,6 +196,9 @@ class AgenticOrchestrator:
         state = self._states.get(task_id)
         if not state:
             return False
+
+        # Stop CI polling if active
+        await self._stop_ci_polling(task_id)
 
         async with self._locks[task_id]:
             state.phase = AgenticPhase.FAILED
@@ -483,7 +490,8 @@ class AgenticOrchestrator:
                 state.phase = AgenticPhase.WAITING_CI
                 await self.agentic_dao.update(state)
 
-            # Note: CI will trigger via webhook, no action needed here
+            # Start CI polling
+            await self._start_ci_polling(task_id)
 
         except Exception as e:
             logger.error(f"Coding phase failed: {e}")
@@ -675,6 +683,66 @@ class AgenticOrchestrator:
                 state.error = f"Merge phase error: {str(e)}"
                 await self.agentic_dao.update(state)
                 await self._notify_failure(state)
+
+    # =========================================
+    # CI Polling Methods
+    # =========================================
+
+    async def _start_ci_polling(self, task_id: str) -> None:
+        """Start CI status polling for a task.
+
+        Args:
+            task_id: Task ID.
+        """
+        state = self._states.get(task_id)
+        if not state or not state.pr_number:
+            logger.warning(f"Cannot start CI polling for task {task_id}: no PR number")
+            return
+
+        # Get repo info
+        task = await self.task_dao.get(task_id)
+        if not task:
+            logger.warning(f"Cannot start CI polling: task not found {task_id}")
+            return
+
+        repo = await self.run_service.repo_service.dao.get(task.repo_id)
+        if not repo:
+            logger.warning(f"Cannot start CI polling: repo not found {task.repo_id}")
+            return
+
+        repo_full_name = self._extract_repo_full_name(repo.repo_url)
+
+        # Define callbacks
+        async def on_ci_complete(ci_result: CIResult) -> None:
+            await self.handle_ci_result(task_id, ci_result)
+
+        async def on_ci_timeout() -> None:
+            async with self._locks[task_id]:
+                state = self._states.get(task_id)
+                if state:
+                    state.phase = AgenticPhase.FAILED
+                    state.error = "CI polling timed out"
+                    await self.agentic_dao.update(state)
+                    await self._notify_failure(state)
+
+        # Start polling
+        await self.ci_poller.start_polling(
+            task_id=task_id,
+            pr_number=state.pr_number,
+            repo_full_name=repo_full_name,
+            on_complete=on_ci_complete,
+            on_timeout=on_ci_timeout,
+        )
+
+        logger.info(f"Started CI polling for task {task_id}, PR #{state.pr_number}")
+
+    async def _stop_ci_polling(self, task_id: str) -> None:
+        """Stop CI polling for a task.
+
+        Args:
+            task_id: Task ID.
+        """
+        await self.ci_poller.stop_polling(task_id)
 
     # =========================================
     # Helper Methods

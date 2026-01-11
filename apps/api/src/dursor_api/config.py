@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     agentic_max_review_iterations: int = Field(default=3, description="Max review fix iterations")
     agentic_timeout_minutes: int = Field(default=60, description="Total timeout in minutes")
 
+    # CI Polling Configuration
+    ci_polling_interval_seconds: int = Field(
+        default=30, description="Interval between CI status polls (seconds)"
+    )
+    ci_polling_timeout_minutes: int = Field(
+        default=30, description="Timeout for CI polling (minutes)"
+    )
+    ci_polling_enabled: bool = Field(
+        default=True, description="Enable CI polling (alternative to webhooks)"
+    )
+
     # Quality Thresholds
     review_min_score: float = Field(default=0.75, description="Minimum review score")
     coverage_threshold: int = Field(default=80, description="Minimum coverage percentage")
