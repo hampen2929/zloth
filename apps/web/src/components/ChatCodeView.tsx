@@ -765,20 +765,33 @@ function ChatInput({
   disabled,
   selectedModelCount,
 }: ChatInputProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea based on content
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 200); // Max height of 200px
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, [value]);
+
   return (
     <form onSubmit={onSubmit} className="border-t border-gray-800 p-3">
       <div className="flex gap-2">
         <textarea
+          ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Enter your instructions..."
-          rows={3}
+          rows={1}
           className={cn(
             'flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded resize-none',
             'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
             'text-sm text-gray-100 placeholder:text-gray-500',
             'disabled:opacity-50 disabled:cursor-not-allowed',
-            'transition-colors'
+            'transition-colors min-h-[42px] max-h-[200px] overflow-y-auto'
           )}
           disabled={loading}
           onKeyDown={(e) => {
