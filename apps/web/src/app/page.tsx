@@ -97,11 +97,11 @@ export default function HomePage() {
   };
 
   const handleSubmit = async () => {
-    // Validate: need instruction, repo, branch, and at least one executor (CLI or model)
+    // Validate: need instruction, repo, branch, and at least one CLI
     if (!instruction.trim() || !selectedRepo || !selectedBranch) {
       return;
     }
-    if (selectedCLIs.length === 0 && selectedModels.length === 0) {
+    if (selectedCLIs.length === 0) {
       return;
     }
 
@@ -128,17 +128,13 @@ export default function HomePage() {
         content: instruction,
       });
 
-      // Build executor_types array for the API
+      // Build executor_types array for the API (CLI only)
       const executorTypesToRun: ExecutorType[] = [...selectedCLIs];
-      if (selectedModels.length > 0) {
-        executorTypesToRun.push('patch_agent');
-      }
 
       // Create runs with executor_types for parallel execution, linked to the message
       await runsApi.create(task.id, {
         instruction: instruction,
         executor_types: executorTypesToRun,
-        model_ids: selectedModels.length > 0 ? selectedModels : undefined,
         message_id: message.id,
       });
 
@@ -146,9 +142,6 @@ export default function HomePage() {
       const params = new URLSearchParams();
       if (selectedCLIs.length > 0) {
         params.set('executors', selectedCLIs.join(','));
-      }
-      if (selectedModels.length > 0) {
-        params.set('models', selectedModels.join(','));
       }
       router.push(`/tasks/${task.id}?${params.toString()}`);
     } catch (err) {
@@ -177,7 +170,7 @@ export default function HomePage() {
     }
   };
 
-  const hasExecutor = selectedCLIs.length > 0 || selectedModels.length > 0;
+  const hasExecutor = selectedCLIs.length > 0;
   const canSubmit =
     instruction.trim() &&
     selectedRepo &&
@@ -202,9 +195,9 @@ export default function HomePage() {
     if (selectedRepo && !selectedBranch) {
       errors.push({ message: 'ブランチを選択してください' });
     }
-    // Show executor selection error if nothing is selected
-    if (selectedCLIs.length === 0 && selectedModels.length === 0) {
-      errors.push({ message: 'エグゼキューターを選択してください (CLI または モデル)' });
+    // Show executor selection error if no CLI is selected
+    if (selectedCLIs.length === 0) {
+      errors.push({ message: 'CLIを選択してください' });
     }
     return errors;
   };
@@ -247,6 +240,7 @@ export default function HomePage() {
                 onCLIsChange={setSelectedCLIs}
                 onModelToggle={toggleModel}
                 onModelsChange={setSelectedModels}
+                hideModels={true}
               />
             </div>
 
