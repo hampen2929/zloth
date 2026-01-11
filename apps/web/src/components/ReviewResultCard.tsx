@@ -19,6 +19,7 @@ import {
   CommandLineIcon,
 } from '@heroicons/react/24/outline';
 import { useClipboard } from '@/hooks';
+import { getExecutorDisplayName, isCLIExecutor } from '@/hooks';
 
 type ReviewTab = 'results' | 'logs';
 
@@ -185,7 +186,14 @@ export function ReviewResultCard({
         <div className="flex items-center gap-3">
           <MagnifyingGlassIcon className="w-5 h-5 text-blue-400" />
           <div className="text-left">
-            <div className="font-medium text-gray-200 text-sm">Code Review</div>
+            <div className="font-medium text-gray-200 text-sm">
+              {(() => {
+                const modelLabel = isCLIExecutor(review.executor_type)
+                  ? getExecutorDisplayName(review.executor_type)
+                  : (review.model_name || 'Model');
+                return `Code Review(${modelLabel})`;
+              })()}
+            </div>
             {review.overall_score !== null && (
               <div className={cn(
                 'text-xs font-medium',
