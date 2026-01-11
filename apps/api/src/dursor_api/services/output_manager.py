@@ -33,23 +33,26 @@ class OutputManager:
     - History retention for late-joining subscribers
     - Automatic cleanup of completed runs
 
-    Thread-safety: This class is designed for asyncio and uses asyncio.Queue
-    for safe communication between publishers and subscribers.
+    Thread-safety: This class is designed for asyncio and uses per-run locks
+    to minimize contention during concurrent task execution.
     """
 
     def __init__(
         self,
         max_history: int = 10000,
         cleanup_after: float = 3600.0,
+        max_queue_size: int = 5000,
     ):
         """Initialize OutputManager.
 
         Args:
             max_history: Maximum number of lines to retain per run.
             cleanup_after: Seconds after completion to cleanup stream.
+            max_queue_size: Maximum size of subscriber queues.
         """
         self.max_history = max_history
         self.cleanup_after = cleanup_after
+        self.max_queue_size = max_queue_size
 
         # run_id -> list of OutputLine (history)
         self._streams: dict[str, list[OutputLine]] = {}
@@ -60,8 +63,41 @@ class OutputManager:
         # run_id -> completion timestamp (None if still running)
         self._completed: dict[str, float | None] = {}
 
-        # Lock for thread-safe operations
-        self._lock = asyncio.Lock()
+        # Global lock for managing per-run locks (only used for lock creation/deletion)
+        self._global_lock = asyncio.Lock()
+
+        # Per-run locks to minimize contention during concurrent execution
+        self._run_locks: dict[str, asyncio.Lock] = {}
+
+    async def _get_run_lock(self, run_id: str) -> asyncio.Lock:
+        """Get or create a lock for a specific run.
+
+        Args:
+            run_id: The run ID.
+
+        Returns:
+            Lock for the specified run.
+        """
+        if run_id not in self._run_locks:
+            async with self._global_lock:
+                # Double-check after acquiring global lock
+                if run_id not in self._run_locks:
+                    self._run_locks[run_id] = asyncio.Lock()
+        return self._run_locks[run_id]
+
+    async def _ensure_initialized(self, run_id: str) -> None:
+        """Ensure stream data structures are initialized for a run.
+
+        This must be called while holding the run's lock.
+
+        Args:
+            run_id: The run ID.
+        """
+        if run_id not in self._streams:
+            self._streams[run_id] = []
+            self._subscribers[run_id] = []
+            self._completed[run_id] = None
+            logger.debug(f"Initialized stream for run {run_id}")
 
     def publish(self, run_id: str, line: str) -> None:
         """Publish an output line for a run (sync version).
@@ -99,13 +135,10 @@ class OutputManager:
             run_id: The run ID.
             line: The output line content.
         """
-        async with self._lock:
+        run_lock = await self._get_run_lock(run_id)
+        async with run_lock:
             # Initialize stream if needed
-            if run_id not in self._streams:
-                self._streams[run_id] = []
-                self._subscribers[run_id] = []
-                self._completed[run_id] = None
-                logger.debug(f"Initialized stream for run {run_id}")
+            await self._ensure_initialized(run_id)
 
             # Create output line
             line_number = len(self._streams[run_id])
@@ -120,16 +153,25 @@ class OutputManager:
                 # Remove oldest lines
                 self._streams[run_id] = self._streams[run_id][-self.max_history :]
 
-            # Notify all subscribers
-            subscriber_count = len(self._subscribers[run_id])
+            # Notify all subscribers (copy list to avoid modification during iteration)
+            subscribers = list(self._subscribers[run_id])
+            subscriber_count = len(subscribers)
             logger.debug(
                 f"Publishing line {line_number} to {subscriber_count} subscribers for run {run_id}"
             )
-            for queue in self._subscribers[run_id]:
-                try:
-                    queue.put_nowait(output_line)
-                except asyncio.QueueFull:
-                    logger.warning(f"Queue full for subscriber of run {run_id}")
+
+        # Notify subscribers outside the lock to reduce contention
+        dropped_count = 0
+        for queue in subscribers:
+            try:
+                queue.put_nowait(output_line)
+            except asyncio.QueueFull:
+                dropped_count += 1
+
+        if dropped_count > 0:
+            logger.warning(
+                f"Queue full for {dropped_count}/{subscriber_count} subscribers of run {run_id}"
+            )
 
     async def subscribe(
         self,
@@ -150,15 +192,12 @@ class OutputManager:
         Yields:
             OutputLine objects.
         """
-        queue: asyncio.Queue[OutputLine | None] = asyncio.Queue(maxsize=1000)
+        queue: asyncio.Queue[OutputLine | None] = asyncio.Queue(maxsize=self.max_queue_size)
 
-        async with self._lock:
+        run_lock = await self._get_run_lock(run_id)
+        async with run_lock:
             # Initialize stream if needed
-            if run_id not in self._streams:
-                self._streams[run_id] = []
-                self._subscribers[run_id] = []
-                self._completed[run_id] = None
-                logger.info(f"Subscriber initialized new stream for run {run_id}")
+            await self._ensure_initialized(run_id)
 
             # Register subscriber
             self._subscribers[run_id].append(queue)
@@ -168,7 +207,7 @@ class OutputManager:
             )
 
             # Get existing history
-            history = self._streams[run_id][from_line:]
+            history = list(self._streams[run_id][from_line:])
             is_completed = self._completed[run_id] is not None
             logger.info(
                 f"Subscribe to run {run_id}: history={len(history)} lines, completed={is_completed}"
@@ -200,15 +239,15 @@ class OutputManager:
                     yield output_line
 
                 except TimeoutError:
-                    # Check if completed while waiting
-                    async with self._lock:
+                    # Check if completed while waiting (use run lock, not global lock)
+                    async with run_lock:
                         if self._completed.get(run_id) is not None:
                             break
                     continue
 
         finally:
             # Unregister subscriber
-            async with self._lock:
+            async with run_lock:
                 if run_id in self._subscribers:
                     try:
                         self._subscribers[run_id].remove(queue)
@@ -219,22 +258,33 @@ class OutputManager:
         """Mark a run as complete.
 
         This notifies all subscribers that no more output will be published.
+        If the run was never initialized (no output was published), it will
+        be initialized first to ensure proper cleanup.
 
         Args:
             run_id: The run ID.
         """
-        async with self._lock:
-            if run_id not in self._completed:
-                return
+        run_lock = await self._get_run_lock(run_id)
+        async with run_lock:
+            # Initialize if not yet done (handles case where run completes without output)
+            await self._ensure_initialized(run_id)
 
             self._completed[run_id] = time.time()
 
-            # Send completion signal to all subscribers
-            for queue in self._subscribers.get(run_id, []):
+            # Get subscribers list (copy to avoid modification during iteration)
+            subscribers = list(self._subscribers.get(run_id, []))
+
+        # Send completion signal outside the lock to reduce contention
+        for queue in subscribers:
+            try:
+                queue.put_nowait(None)
+            except asyncio.QueueFull:
+                # Clear some space and retry
                 try:
+                    queue.get_nowait()
                     queue.put_nowait(None)
-                except asyncio.QueueFull:
-                    pass
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass  # Best effort
 
         logger.info(f"Marked run {run_id} as complete")
 
@@ -248,10 +298,11 @@ class OutputManager:
         Returns:
             List of OutputLine objects.
         """
-        async with self._lock:
+        run_lock = await self._get_run_lock(run_id)
+        async with run_lock:
             if run_id not in self._streams:
                 return []
-            return self._streams[run_id][from_line:]
+            return list(self._streams[run_id][from_line:])
 
     async def is_complete(self, run_id: str) -> bool:
         """Check if a run is marked as complete.
@@ -262,7 +313,8 @@ class OutputManager:
         Returns:
             True if complete, False otherwise.
         """
-        async with self._lock:
+        run_lock = await self._get_run_lock(run_id)
+        async with run_lock:
             return self._completed.get(run_id) is not None
 
     async def cleanup_old_streams(self) -> int:
@@ -274,16 +326,24 @@ class OutputManager:
         now = time.time()
         to_cleanup: list[str] = []
 
-        async with self._lock:
-            for run_id, completed_at in self._completed.items():
+        # First pass: identify runs to cleanup (using global lock for iteration)
+        async with self._global_lock:
+            for run_id, completed_at in list(self._completed.items()):
                 if completed_at is not None:
                     if now - completed_at > self.cleanup_after:
                         to_cleanup.append(run_id)
 
-            for run_id in to_cleanup:
+        # Second pass: cleanup each run (using per-run locks)
+        for run_id in to_cleanup:
+            run_lock = await self._get_run_lock(run_id)
+            async with run_lock:
                 self._streams.pop(run_id, None)
                 self._subscribers.pop(run_id, None)
                 self._completed.pop(run_id, None)
+
+            # Clean up the run lock itself
+            async with self._global_lock:
+                self._run_locks.pop(run_id, None)
 
         if to_cleanup:
             logger.info(f"Cleaned up {len(to_cleanup)} old output streams")
@@ -296,7 +356,8 @@ class OutputManager:
         Returns:
             Dict with stats.
         """
-        async with self._lock:
+        # Use global lock for stats to get a consistent snapshot
+        async with self._global_lock:
             active_runs = sum(1 for completed in self._completed.values() if completed is None)
             completed_runs = sum(
                 1 for completed in self._completed.values() if completed is not None
@@ -309,4 +370,5 @@ class OutputManager:
                 "completed_runs": completed_runs,
                 "total_lines": total_lines,
                 "total_subscribers": total_subscribers,
+                "run_locks": len(self._run_locks),
             }
