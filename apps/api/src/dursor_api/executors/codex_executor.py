@@ -18,6 +18,9 @@ class CodexOptions:
     max_output_lines: int = 10000
     codex_cli_path: str = "codex"
     env_vars: dict[str, str] = field(default_factory=dict)
+    # Buffer limit for reading stdout/stderr lines (default: 1MB)
+    # Increase this if you encounter "chunk exceed the limit" errors
+    stream_limit: int = 1024 * 1024
 
 
 class CodexExecutor:
@@ -68,6 +71,7 @@ class CodexExecutor:
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(worktree_path),
                 env=env,
+                limit=self.options.stream_limit,  # Increase buffer limit for long output lines
             )
 
             async def read_output() -> None:
