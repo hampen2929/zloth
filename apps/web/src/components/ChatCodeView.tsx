@@ -327,6 +327,42 @@ export function ChatCodeView({
     return reviews.filter((r) => r.executor_type === selectedExecutorType);
   }, [reviews, selectedExecutorType]);
 
+  // Create a unified timeline of messages+runs and reviews, sorted chronologically
+  type TimelineItem =
+    | { type: 'message-run'; message: Message; run: Run; createdAt: string }
+    | { type: 'review'; review: Review; createdAt: string };
+
+  const timeline = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [];
+
+    // Add message+run pairs
+    messages
+      .filter((msg) => runByMessageId.has(msg.id))
+      .forEach((msg) => {
+        const run = runByMessageId.get(msg.id)!;
+        items.push({
+          type: 'message-run',
+          message: msg,
+          run,
+          createdAt: msg.created_at,
+        });
+      });
+
+    // Add reviews
+    reviewsForSelectedExecutor.forEach((review) => {
+      items.push({
+        type: 'review',
+        review,
+        createdAt: review.created_at,
+      });
+    });
+
+    // Sort by created_at ascending (chronological order)
+    items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    return items;
+  }, [messages, runByMessageId, reviewsForSelectedExecutor]);
+
   // Get aggregate stats for an executor type
   const getExecutorStats = (executorType: ExecutorType) => {
     const executorRuns = sortedRuns.filter((r) => r.executor_type === executorType);
@@ -385,49 +421,47 @@ export function ChatCodeView({
         </div>
       )}
 
-      {/* Interleaved Conversation Area: User message -> AI output -> Review */}
+      {/* Interleaved Conversation Area: User message -> AI output -> Review (chronologically sorted) */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && runs.length === 0 ? (
           <EmptyState />
         ) : (
           <>
-            {/* Only show messages that have a corresponding run for the selected executor */}
-            {messages
-              .filter((msg) => runByMessageId.has(msg.id))
-              .map((msg) => {
-                const correspondingRun = runByMessageId.get(msg.id)!;
+            {/* Render timeline items in chronological order */}
+            {timeline.map((item) => {
+              if (item.type === 'message-run') {
                 return (
-                  <div key={msg.id} className="space-y-3">
+                  <div key={item.message.id} className="space-y-3">
                     {/* User message */}
-                    <MessageBubble message={msg} />
+                    <MessageBubble message={item.message} />
                     {/* AI output for this message */}
                     <div className="ml-4 border-l-2 border-purple-500/30 pl-4">
                       <RunResultCard
-                        run={correspondingRun}
+                        run={item.run}
                         expanded={true}
                         onToggleExpand={() => {}}
-                        activeTab={getRunTab(correspondingRun.id)}
-                        onTabChange={(tab) => setRunTab(correspondingRun.id, tab)}
+                        activeTab={getRunTab(item.run.id)}
+                        onTabChange={(tab) => setRunTab(item.run.id, tab)}
                       />
                     </div>
                   </div>
                 );
-              })}
-
-            {/* Reviews for the selected executor */}
-            {reviewsForSelectedExecutor.map((review) => (
-              <div key={review.id} className="ml-4 border-l-2 border-blue-500/30 pl-4">
-                <ReviewResultCard
-                  review={review}
-                  expanded={isReviewExpanded(review.id)}
-                  onToggleExpand={() => toggleReviewExpanded(review.id)}
-                  onApplyFix={(instruction) => {
-                    setInput(instruction);
-                    success('Fix instruction added to input');
-                  }}
-                />
-              </div>
-            ))}
+              } else {
+                return (
+                  <div key={item.review.id} className="ml-4 border-l-2 border-blue-500/30 pl-4">
+                    <ReviewResultCard
+                      review={item.review}
+                      expanded={isReviewExpanded(item.review.id)}
+                      onToggleExpand={() => toggleReviewExpanded(item.review.id)}
+                      onApplyFix={(instruction) => {
+                        setInput(instruction);
+                        success('Fix instruction added to input');
+                      }}
+                    />
+                  </div>
+                );
+              }
+            })}
           </>
         )}
         <div ref={messagesEndRef} />
