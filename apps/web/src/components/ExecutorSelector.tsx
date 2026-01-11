@@ -19,6 +19,7 @@ interface ExecutorSelectorProps {
   onCLIsChange: (clis: ExecutorType[]) => void;
   onModelToggle: (modelId: string) => void;
   onModelsChange: (modelIds: string[]) => void;
+  hideModels?: boolean;  // If true, hide the Models section
 }
 
 const CLI_OPTIONS: { type: ExecutorType; description: string }[] = [
@@ -34,6 +35,7 @@ export function ExecutorSelector({
   onCLIToggle,
   // onCLIsChange and onModelsChange available for batch operations
   onModelToggle,
+  hideModels = false,
 }: ExecutorSelectorProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -56,10 +58,10 @@ export function ExecutorSelector({
 
   const getButtonLabel = () => {
     const cliCount = selectedCLIs.length;
-    const modelCount = selectedModels.length;
+    const modelCount = hideModels ? 0 : selectedModels.length;
 
     if (cliCount === 0 && modelCount === 0) {
-      return 'Select executors';
+      return hideModels ? 'Select CLI' : 'Select executors';
     }
 
     const parts: string[] = [];
@@ -71,19 +73,21 @@ export function ExecutorSelector({
       parts.push(`${cliCount} CLIs`);
     }
 
-    // Model labels
-    if (modelCount === 1) {
-      const model = models.find((m) => m.id === selectedModels[0]);
-      parts.push(model?.display_name || model?.model_name || '1 model');
-    } else if (modelCount > 1) {
-      parts.push(`${modelCount} models`);
+    // Model labels (only if not hidden)
+    if (!hideModels) {
+      if (modelCount === 1) {
+        const model = models.find((m) => m.id === selectedModels[0]);
+        parts.push(model?.display_name || model?.model_name || '1 model');
+      } else if (modelCount > 1) {
+        parts.push(`${modelCount} models`);
+      }
     }
 
     return parts.join(' + ');
   };
 
   const hasCLI = selectedCLIs.length > 0;
-  const hasModel = selectedModels.length > 0;
+  const hasModel = !hideModels && selectedModels.length > 0;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -155,51 +159,53 @@ export function ExecutorSelector({
             })}
           </div>
 
-          {/* Models Section (scrollable, at bottom) */}
-          <div className="flex-1 overflow-y-auto min-h-0 border-t border-gray-700">
-            <div className="p-3 border-b border-gray-700 sticky top-0 bg-gray-800">
-              <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">
-                Models
-              </span>
-            </div>
-            {!models || models.length === 0 ? (
-              <div className="p-4 text-center">
-                <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                <p className="text-gray-500 text-sm">No models configured</p>
-                <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
+          {/* Models Section (scrollable, at bottom) - only shown if hideModels is false */}
+          {!hideModels && (
+            <div className="flex-1 overflow-y-auto min-h-0 border-t border-gray-700">
+              <div className="p-3 border-b border-gray-700 sticky top-0 bg-gray-800">
+                <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">
+                  Models
+                </span>
               </div>
-            ) : (
-              models.map((model) => {
-                const isSelected = selectedModels.includes(model.id);
-                return (
-                  <button
-                    key={model.id}
-                    onClick={() => handleModelSelect(model.id)}
-                    className={cn(
-                      'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                      'hover:bg-gray-700 transition-colors',
-                      'focus:outline-none focus:bg-gray-700'
-                    )}
-                  >
-                    <div
+              {!models || models.length === 0 ? (
+                <div className="p-4 text-center">
+                  <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">No models configured</p>
+                  <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
+                </div>
+              ) : (
+                models.map((model) => {
+                  const isSelected = selectedModels.includes(model.id);
+                  return (
+                    <button
+                      key={model.id}
+                      onClick={() => handleModelSelect(model.id)}
                       className={cn(
-                        'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
-                        isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        'w-full px-3 py-2.5 text-left flex items-center gap-3',
+                        'hover:bg-gray-700 transition-colors',
+                        'focus:outline-none focus:bg-gray-700'
                       )}
                     >
-                      {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-gray-100 text-sm font-medium truncate">
-                        {model.display_name || model.model_name}
+                      <div
+                        className={cn(
+                          'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                          isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                        )}
+                      >
+                        {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
                       </div>
-                      <div className="text-gray-500 text-xs">{model.provider}</div>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-gray-100 text-sm font-medium truncate">
+                          {model.display_name || model.model_name}
+                        </div>
+                        <div className="text-gray-500 text-xs">{model.provider}</div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
