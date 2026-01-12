@@ -35,11 +35,13 @@ from dursor_api.domain.models import (
 )
 
 if TYPE_CHECKING:
+    from dursor_api.domain.models import PR
     from dursor_api.services.ci_polling_service import CIPollingService
     from dursor_api.services.git_service import GitService
     from dursor_api.services.github_service import GitHubService
     from dursor_api.services.merge_gate_service import MergeGateService
     from dursor_api.services.notification_service import NotificationService
+    from dursor_api.services.pr_service import PRService
     from dursor_api.services.review_service import ReviewService
     from dursor_api.services.run_service import RunService
     from dursor_api.storage.dao import PRDAO, AgenticRunDAO, MessageDAO, TaskDAO
@@ -64,6 +66,7 @@ class AgenticOrchestrator:
         github_service: "GitHubService",
         notification_service: "NotificationService",
         ci_polling_service: "CIPollingService",
+        pr_service: "PRService",
         task_dao: "TaskDAO",
         pr_dao: "PRDAO",
         agentic_dao: "AgenticRunDAO",
@@ -79,6 +82,7 @@ class AgenticOrchestrator:
             github_service: Service for GitHub API operations.
             notification_service: Service for notifications.
             ci_polling_service: Service for CI status polling.
+            pr_service: Service for PR operations.
             task_dao: Task DAO.
             pr_dao: PR DAO.
             agentic_dao: Agentic run DAO.
@@ -91,6 +95,7 @@ class AgenticOrchestrator:
         self.github = github_service
         self.notifier = notification_service
         self.ci_poller = ci_polling_service
+        self.pr_service = pr_service
         self.task_dao = task_dao
         self.pr_dao = pr_dao
         self.agentic_dao = agentic_dao
@@ -494,6 +499,23 @@ class AgenticOrchestrator:
             # Update state with commit SHA
             async with self._locks[task_id]:
                 state.current_sha = run.commit_sha
+
+            # Auto-create PR if not exists (required for CI polling in Semi/Full Auto mode)
+            if not state.pr_number:
+                pr = await self._auto_create_pr(task_id, run_id)
+                if pr:
+                    async with self._locks[task_id]:
+                        state.pr_number = pr.number
+                        await self.agentic_dao.update(state)
+                else:
+                    async with self._locks[task_id]:
+                        state.phase = AgenticPhase.FAILED
+                        state.error = "Failed to auto-create PR for CI polling"
+                        await self.agentic_dao.update(state)
+                        await self._notify_failure(state)
+                    return
+
+            async with self._locks[task_id]:
                 state.phase = AgenticPhase.WAITING_CI
                 await self.agentic_dao.update(state)
 
@@ -750,6 +772,72 @@ class AgenticOrchestrator:
             task_id: Task ID.
         """
         await self.ci_poller.stop_polling(task_id)
+
+    async def _auto_create_pr(self, task_id: str, run_id: str) -> "PR | None":
+        """Auto-create PR for agentic execution (Semi Auto / Full Auto mode).
+
+        This method creates a PR automatically when the first commit is made
+        in Semi Auto or Full Auto mode. This is required for CI polling to work.
+
+        Args:
+            task_id: Task ID.
+            run_id: Run ID that created the commit.
+
+        Returns:
+            Created PR object or None if failed.
+        """
+        from dursor_api.domain.models import PRCreateAuto
+
+        try:
+            logger.info(f"Auto-creating PR for task {task_id}, run {run_id}")
+
+            # Create PR with auto-generated title and description
+            pr_data = PRCreateAuto(selected_run_id=run_id)
+            pr = await self.pr_service.create_auto(task_id, pr_data)
+
+            # Record PR creation as a message in the task
+            await self._record_pr_created_message(task_id, pr)
+
+            logger.info(f"Auto-created PR #{pr.number} for task {task_id}")
+            return pr
+
+        except Exception as e:
+            logger.error(f"Failed to auto-create PR for task {task_id}: {e}")
+            # Record failure as a message
+            try:
+                await self.message_dao.create(
+                    task_id=task_id,
+                    role=MessageRole.ASSISTANT,
+                    content=f"## PR Creation Failed\n\nFailed to automatically create PR: {str(e)}",
+                )
+            except Exception:
+                pass
+            return None
+
+    async def _record_pr_created_message(self, task_id: str, pr: "PR") -> None:
+        """Record PR creation as a message in the task.
+
+        Args:
+            task_id: Task ID.
+            pr: Created PR object.
+        """
+        try:
+            message_content = f"""## PR Created
+
+**PR #{pr.number}**: [{pr.title}]({pr.url})
+
+Branch: `{pr.branch}`
+
+The PR has been automatically created. CI will now be monitored for results.
+"""
+            await self.message_dao.create(
+                task_id=task_id,
+                role=MessageRole.ASSISTANT,
+                content=message_content,
+            )
+            logger.info(f"Recorded PR creation message for task {task_id}")
+        except Exception as e:
+            logger.warning(f"Failed to record PR creation message: {e}")
 
     # =========================================
     # Helper Methods

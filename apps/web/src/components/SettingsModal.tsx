@@ -784,7 +784,7 @@ export function DefaultsTab() {
         {/* PR creation behavior */}
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-300">
-            Create PR behavior
+            Create PR behavior (Interactive mode only)
           </label>
           <select
             value={prCreationMode}
@@ -799,7 +799,8 @@ export function DefaultsTab() {
             <option value="link">Open PR link (manual creation)</option>
           </select>
           <p className="text-xs text-gray-500">
-            Choose whether &ldquo;Create PR&rdquo; creates the PR immediately or opens the GitHub PR creation page.
+            For Interactive mode: choose whether &ldquo;Create PR&rdquo; creates the PR immediately or opens the GitHub PR creation page.
+            Semi Auto and Full Auto modes always create PRs automatically.
           </p>
         </div>
 
