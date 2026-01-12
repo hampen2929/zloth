@@ -1,15 +1,16 @@
 """Kanban board service for task status management."""
 
-from dursor_api.domain.enums import TaskBaseKanbanStatus, TaskKanbanStatus
+from dursor_api.domain.enums import ExecutorType, RunStatus, TaskBaseKanbanStatus, TaskKanbanStatus
 from dursor_api.domain.models import (
     PR,
+    ExecutorRunStatus,
     KanbanBoard,
     KanbanColumn,
     Task,
     TaskWithKanbanStatus,
 )
 from dursor_api.services.github_service import GitHubService
-from dursor_api.storage.dao import PRDAO, RunDAO, TaskDAO
+from dursor_api.storage.dao import PRDAO, ReviewDAO, RunDAO, TaskDAO
 
 
 class KanbanService:
@@ -27,11 +28,13 @@ class KanbanService:
         task_dao: TaskDAO,
         run_dao: RunDAO,
         pr_dao: PRDAO,
+        review_dao: ReviewDAO,
         github_service: GitHubService,
     ):
         self.task_dao = task_dao
         self.run_dao = run_dao
         self.pr_dao = pr_dao
+        self.review_dao = review_dao
         self.github_service = github_service
 
     def _compute_kanban_status(
@@ -70,6 +73,28 @@ class KanbanService:
         """Get full kanban board."""
         tasks_with_aggregates = await self.task_dao.list_with_aggregates(repo_id)
 
+        # Get task IDs for fetching executor-level run data
+        task_ids = [task_data["id"] for task_data in tasks_with_aggregates]
+
+        # Fetch latest runs per executor for all tasks
+        executor_runs = await self.run_dao.get_latest_runs_by_executor_for_tasks(task_ids)
+
+        # Collect all run IDs to check for reviews
+        all_run_ids: list[str] = []
+        for task_executor_data in executor_runs.values():
+            for run_data in task_executor_data.values():
+                all_run_ids.append(run_data["run_id"])
+
+        # Get reviewed run IDs
+        reviewed_run_ids = await self.review_dao.get_reviewed_run_ids(all_run_ids)
+
+        # CLI executor types to display (excluding patch_agent)
+        cli_executor_types = [
+            ExecutorType.CLAUDE_CODE,
+            ExecutorType.CODEX_CLI,
+            ExecutorType.GEMINI_CLI,
+        ]
+
         # Group tasks by computed status
         columns: dict[TaskKanbanStatus, list[TaskWithKanbanStatus]] = {
             status: [] for status in TaskKanbanStatus
@@ -84,6 +109,30 @@ class KanbanService:
                 latest_pr_status=task_data["latest_pr_status"],
             )
 
+            # Build executor statuses for this task
+            task_executor_runs = executor_runs.get(task_data["id"], {})
+            executor_statuses: list[ExecutorRunStatus] = []
+            for exec_type in cli_executor_types:
+                run_info = task_executor_runs.get(exec_type.value)
+                if run_info:
+                    executor_statuses.append(
+                        ExecutorRunStatus(
+                            executor_type=exec_type,
+                            run_id=run_info["run_id"],
+                            status=RunStatus(run_info["status"]),
+                            has_review=run_info["run_id"] in reviewed_run_ids,
+                        )
+                    )
+                else:
+                    executor_statuses.append(
+                        ExecutorRunStatus(
+                            executor_type=exec_type,
+                            run_id=None,
+                            status=None,
+                            has_review=False,
+                        )
+                    )
+
             task_with_status = TaskWithKanbanStatus(
                 id=task_data["id"],
                 repo_id=task_data["repo_id"],
@@ -97,6 +146,7 @@ class KanbanService:
                 completed_count=task_data["completed_count"],
                 pr_count=task_data["pr_count"],
                 latest_pr_status=task_data["latest_pr_status"],
+                executor_statuses=executor_statuses,
             )
             columns[computed_status].append(task_with_status)
 

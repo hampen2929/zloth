@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import type { TaskWithKanbanStatus, TaskKanbanStatus } from '@/types';
-import { PlayIcon, CheckIcon, CodeBracketIcon } from '@heroicons/react/24/outline';
+import type { TaskWithKanbanStatus, TaskKanbanStatus, ExecutorRunStatus, ExecutorType } from '@/types';
+import { PlayIcon, CheckIcon, CodeBracketIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
 interface KanbanCardProps {
@@ -52,6 +52,68 @@ function SpinnerIcon({ className }: { className?: string }) {
         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
       />
     </svg>
+  );
+}
+
+const EXECUTOR_DISPLAY_NAMES: Record<ExecutorType, string> = {
+  claude_code: 'Claude',
+  codex_cli: 'Codex',
+  gemini_cli: 'Gemini',
+  patch_agent: 'Patch',
+};
+
+function ExecutorStatusIndicator({ status }: { status: ExecutorRunStatus }) {
+  const displayName = EXECUTOR_DISPLAY_NAMES[status.executor_type];
+
+  // No run exists for this executor
+  if (!status.run_id || !status.status) {
+    return (
+      <div className="flex items-center gap-1 text-gray-600">
+        <span className="w-2 h-2 rounded-full bg-gray-600" />
+        <span className="text-[10px]">{displayName}</span>
+      </div>
+    );
+  }
+
+  // Running state
+  if (status.status === 'running' || status.status === 'queued') {
+    return (
+      <div className="flex items-center gap-1 text-yellow-500">
+        <SpinnerIcon className="w-2 h-2" />
+        <span className="text-[10px]">{displayName}</span>
+      </div>
+    );
+  }
+
+  // Succeeded state
+  if (status.status === 'succeeded') {
+    return (
+      <div className="flex items-center gap-1 text-green-500">
+        <span className="w-2 h-2 rounded-full bg-green-500" />
+        <span className="text-[10px]">{displayName}</span>
+        {status.has_review && (
+          <CheckCircleIcon className="w-3 h-3 text-purple-400" title="Reviewed" />
+        )}
+      </div>
+    );
+  }
+
+  // Failed state
+  if (status.status === 'failed') {
+    return (
+      <div className="flex items-center gap-1 text-red-500">
+        <span className="w-2 h-2 rounded-full bg-red-500" />
+        <span className="text-[10px]">{displayName}</span>
+      </div>
+    );
+  }
+
+  // Canceled state
+  return (
+    <div className="flex items-center gap-1 text-gray-500">
+      <span className="w-2 h-2 rounded-full bg-gray-500" />
+      <span className="text-[10px]">{displayName}</span>
+    </div>
   );
 }
 
@@ -164,6 +226,9 @@ export function KanbanCard({
     }
   };
 
+  // Check if any executor has a run
+  const hasExecutorRuns = task.executor_statuses?.some(s => s.run_id);
+
   return (
     <Link
       href={`/tasks/${task.id}`}
@@ -173,14 +238,23 @@ export function KanbanCard({
         {task.title || 'Untitled Task'}
       </div>
 
+      {/* Executor status indicators */}
+      {task.executor_statuses && task.executor_statuses.length > 0 && hasExecutorRuns && (
+        <div className="mt-2 flex items-center gap-3">
+          {task.executor_statuses.map((status) => (
+            <ExecutorStatusIndicator key={status.executor_type} status={status} />
+          ))}
+        </div>
+      )}
+
       <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
-        {task.run_count > 0 && (
+        {!hasExecutorRuns && task.run_count > 0 && (
           <span className="flex items-center gap-1">
             <PlayIcon className="w-3 h-3" />
             {task.run_count} runs
           </span>
         )}
-        {task.running_count > 0 && (
+        {!hasExecutorRuns && task.running_count > 0 && (
           <span className="flex items-center gap-1 text-yellow-500">
             <SpinnerIcon className="w-3 h-3" />
             {task.running_count}
