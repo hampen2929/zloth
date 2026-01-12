@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useRef, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
 import type { GitHubRepository, ExecutorType } from '@/types';
@@ -22,12 +22,37 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<HomePageSkeleton />}>
+      <HomePageContent />
+    </Suspense>
+  );
+}
+
+function HomePageSkeleton() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
+      <div className="w-full max-w-3xl px-4">
+        <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-lg p-4 animate-pulse">
+          <div className="h-20 bg-gray-800 rounded mb-4" />
+          <div className="h-8 bg-gray-800 rounded w-1/3" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { error: toastError } = useToast();
   const submitShortcut = useShortcutText('Enter');
 
-  const [instruction, setInstruction] = useState('');
+  // Get initial instruction from query params (from backlog Start Work)
+  const initialInstruction = searchParams.get('instruction') || '';
+
+  const [instruction, setInstruction] = useState(initialInstruction);
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -68,6 +93,14 @@ export default function HomePage() {
       }
     }
   }, [repos, preferences, selectedRepo]);
+
+  // Auto-resize textarea when instruction is pre-filled from backlog
+  useEffect(() => {
+    if (initialInstruction && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
+    }
+  }, [initialInstruction]);
 
   // Set default branch when repo changes
   const handleRepoSelect = useCallback((repo: GitHubRepository) => {

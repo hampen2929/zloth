@@ -409,7 +409,7 @@ export function ChatCodeView({
         />
       )}
 
-      {/* Executor Selector Cards - one per executor type (when runs exist) */}
+      {/* Executor Selector Cards - one per executor type */}
       {uniqueExecutorTypes.length > 0 && (
         <div className="px-4 py-3 border-b border-gray-800">
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -427,18 +427,6 @@ export function ChatCodeView({
             })}
           </div>
         </div>
-      )}
-
-      {/* Initial Executor Selection - shown when no runs exist */}
-      {runs.length === 0 && (
-        <InitialExecutorSelector
-          selectedExecutorType={selectedExecutorType}
-          selectedModels={selectedModels}
-          models={models}
-          onSelectExecutor={setSelectedExecutorType}
-          onToggleModel={toggleModel}
-          onSelectAllModels={selectAllModels}
-        />
       )}
 
       {/* Interleaved Conversation Area: User message -> AI output -> Review (chronologically sorted) */}
@@ -487,8 +475,8 @@ export function ChatCodeView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Model Selection (only when patch_agent is selected and runs exist) */}
-      {runs.length > 0 && selectedExecutorType === 'patch_agent' && (
+      {/* Model Selection (only when patch_agent is selected) */}
+      {selectedExecutorType === 'patch_agent' && (
         <ModelSelector
           models={models}
           selectedModels={selectedModels}
@@ -605,132 +593,10 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center py-8">
       <ChatBubbleLeftIcon className="w-12 h-12 text-gray-700 mb-3" />
-      <p className="text-gray-500 text-sm">Select an executor and enter your instructions below.</p>
+      <p className="text-gray-500 text-sm">Start by entering your instructions below.</p>
       <p className="text-gray-600 text-xs mt-1">
         Your messages and code changes will appear here.
       </p>
-    </div>
-  );
-}
-
-const CLI_EXECUTOR_OPTIONS: { type: ExecutorType; name: string; description: string }[] = [
-  { type: 'claude_code', name: 'Claude Code', description: 'Anthropic Claude Code CLI' },
-  { type: 'codex_cli', name: 'Codex CLI', description: 'OpenAI Codex CLI' },
-  { type: 'gemini_cli', name: 'Gemini CLI', description: 'Google Gemini CLI' },
-];
-
-interface InitialExecutorSelectorProps {
-  selectedExecutorType: ExecutorType | null;
-  selectedModels: string[];
-  models: ModelProfile[];
-  onSelectExecutor: (executor: ExecutorType | null) => void;
-  onToggleModel: (modelId: string) => void;
-  onSelectAllModels: () => void;
-}
-
-function InitialExecutorSelector({
-  selectedExecutorType,
-  selectedModels,
-  models,
-  onSelectExecutor,
-  onToggleModel,
-  onSelectAllModels,
-}: InitialExecutorSelectorProps) {
-  const isPatchAgentSelected = selectedExecutorType === 'patch_agent';
-
-  return (
-    <div className="px-4 py-4 border-b border-gray-800 bg-gray-900/50">
-      <div className="mb-3">
-        <span className="text-sm font-medium text-gray-300">Select Executor</span>
-        <p className="text-xs text-gray-500 mt-0.5">Choose how you want to execute your instructions</p>
-      </div>
-
-      {/* CLI Executors */}
-      <div className="mb-4">
-        <span className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">CLI Agents</span>
-        <div className="flex flex-wrap gap-2">
-          {CLI_EXECUTOR_OPTIONS.map((option) => {
-            const isSelected = selectedExecutorType === option.type;
-            return (
-              <button
-                key={option.type}
-                onClick={() => onSelectExecutor(isSelected ? null : option.type)}
-                className={cn(
-                  'px-4 py-2.5 rounded-lg border transition-all text-left',
-                  isSelected
-                    ? 'bg-gray-800 border-purple-500 shadow-lg shadow-purple-500/10'
-                    : 'bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800'
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {isSelected && <CheckCircleIcon className="w-4 h-4 text-purple-500" />}
-                  <span className="text-sm font-medium text-white">{option.name}</span>
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">{option.description}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Patch Agent with Models */}
-      {models.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-500 uppercase tracking-wider">Patch Agent (API Models)</span>
-            <button
-              onClick={() => onSelectExecutor(isPatchAgentSelected ? null : 'patch_agent')}
-              className={cn(
-                'text-xs px-2 py-1 rounded transition-colors',
-                isPatchAgentSelected
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:text-white'
-              )}
-            >
-              {isPatchAgentSelected ? 'Selected' : 'Select'}
-            </button>
-          </div>
-          {isPatchAgentSelected && (
-            <div className="mt-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-gray-500">Select models to run:</span>
-                {models.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={onSelectAllModels}
-                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                  >
-                    {selectedModels.length === models.length ? 'Deselect all' : 'Select all'}
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {models.map((model) => {
-                  const isSelected = selectedModels.includes(model.id);
-                  return (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => onToggleModel(model.id)}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all',
-                        'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:ring-offset-gray-900',
-                        isSelected
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
-                      )}
-                      aria-pressed={isSelected}
-                    >
-                      {isSelected && <CheckIcon className="w-3 h-3" />}
-                      {model.display_name || model.model_name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

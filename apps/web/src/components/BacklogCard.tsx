@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import type { BacklogItem, BacklogStatus, BrokenDownTaskType, EstimatedSize, SubTask } from '@/types';
-import { backlogApi } from '@/lib/api';
+import { backlogApi } from '@/lib/api'; // Still needed for subtask update
 import {
   SparklesIcon,
   BugAntIcon,
@@ -20,7 +20,6 @@ import {
 interface BacklogCardProps {
   item: BacklogItem;
   onUpdate?: (item: BacklogItem) => void;
-  onStartWork?: (item: BacklogItem, taskId: string) => void;
 }
 
 const typeConfig: Record<
@@ -70,11 +69,9 @@ const statusConfig: Record<BacklogStatus, { label: string; color: string }> = {
 export default function BacklogCard({
   item,
   onUpdate,
-  onStartWork,
 }: BacklogCardProps) {
   const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isStarting, setIsStarting] = useState(false);
   const typeInfo = typeConfig[item.type] || typeConfig.feature;
   const sizeInfo = sizeConfig[item.estimated_size] || sizeConfig.medium;
   const statusInfo = statusConfig[item.status] || statusConfig.draft;
@@ -82,22 +79,29 @@ export default function BacklogCard({
   const completedSubtasks = item.subtasks.filter((st) => st.completed).length;
   const totalSubtasks = item.subtasks.length;
 
-  const handleStartWork = async (e: React.MouseEvent) => {
+  const handleStartWork = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isStarting || item.task_id) return;
+    if (item.task_id) return;
 
-    setIsStarting(true);
-    try {
-      const task = await backlogApi.startWork(item.id);
-      if (onStartWork) {
-        onStartWork(item, task.id);
-      }
-      router.push(`/tasks/${task.id}`);
-    } catch (error) {
-      console.error('Failed to start work:', error);
-    } finally {
-      setIsStarting(false);
+    // Build instruction from backlog item content
+    const parts: string[] = [];
+    parts.push(`# ${item.title}`);
+    if (item.description) {
+      parts.push(item.description);
     }
+    if (item.implementation_hint) {
+      parts.push(`\nHint: ${item.implementation_hint}`);
+    }
+    if (item.target_files.length > 0) {
+      parts.push(`\nTarget files: ${item.target_files.join(', ')}`);
+    }
+
+    const instruction = parts.join('\n');
+
+    // Navigate to home page with instruction pre-filled
+    const params = new URLSearchParams();
+    params.set('instruction', instruction);
+    router.push(`/?${params.toString()}`);
   };
 
   const handleViewTask = (e: React.MouseEvent) => {
@@ -266,16 +270,10 @@ export default function BacklogCard({
             ) : (
               <button
                 onClick={handleStartWork}
-                disabled={isStarting}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1 text-sm rounded transition-colors',
-                  isStarting
-                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                    : 'bg-purple-600 hover:bg-purple-700 text-white'
-                )}
+                className="flex items-center gap-1.5 px-3 py-1 text-sm rounded transition-colors bg-purple-600 hover:bg-purple-700 text-white"
               >
                 <PlayIcon className="w-3.5 h-3.5" />
-                {isStarting ? 'Starting...' : 'Start Work'}
+                Start Work
               </button>
             )}
           </div>
