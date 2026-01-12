@@ -93,29 +93,42 @@ export function StartTaskModal({ task, onClose, onSuccess }: StartTaskModalProps
     setLoading(true);
 
     try {
-      // Ensure repo is cloned/selected with the chosen branch
+      // Ensure repo is cloned/selected with the chosen branch (same as New Task)
       await reposApi.select({
         owner: repoOwner!,
         repo: repoName!,
         branch: selectedBranch,
       });
 
-      // Get the first message content as the instruction
+      // Get the task detail to check for existing messages
       const taskDetail = await tasksApi.get(task.id);
       const firstUserMessage = taskDetail.messages.find((m) => m.role === 'user');
+
+      // Determine the instruction
       const instruction = firstUserMessage?.content || task.title || 'Start working on task';
 
-      // Create runs with the selected executors
+      // CRITICAL: Always ensure there's a user message (same as New Task flow)
+      // If no message exists, create one with the instruction
+      let messageId = firstUserMessage?.id;
+      if (!messageId) {
+        const newMessage = await tasksApi.addMessage(task.id, {
+          role: 'user',
+          content: instruction,
+        });
+        messageId = newMessage.id;
+      }
+
+      // Create runs with executor_types and message_id (exactly like New Task)
       await runsApi.create(task.id, {
         instruction: instruction,
         executor_types: selectedCLIs,
-        message_id: firstUserMessage?.id,
+        message_id: messageId,
       });
 
       success('Task started successfully');
       onSuccess();
 
-      // Navigate to task page
+      // Navigate to task page (exactly like New Task)
       const params = new URLSearchParams();
       if (selectedCLIs.length > 0) {
         params.set('executors', selectedCLIs.join(','));
