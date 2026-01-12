@@ -248,12 +248,29 @@ class GitHubService:
         return repos
 
     async def list_branches(self, owner: str, repo: str) -> list[str]:
-        """List branches for a repository."""
-        data = await self._github_request(
-            "GET", f"/repos/{owner}/{repo}/branches", params={"per_page": 100}
-        )
+        """List all branches for a repository with pagination support."""
+        all_branches: list[str] = []
+        page = 1
 
-        return [branch["name"] for branch in data]
+        while True:
+            data = await self._github_request(
+                "GET",
+                f"/repos/{owner}/{repo}/branches",
+                params={"per_page": 100, "page": page},
+            )
+
+            if not data:
+                break
+
+            all_branches.extend(branch["name"] for branch in data)
+
+            # If we got less than 100, we've reached the last page
+            if len(data) < 100:
+                break
+
+            page += 1
+
+        return all_branches
 
     async def clone_url(self, owner: str, repo: str) -> str:
         """Get authenticated clone URL for a repository."""
