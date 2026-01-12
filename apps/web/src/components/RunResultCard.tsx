@@ -127,7 +127,7 @@ export function RunResultCard({
               </div>
 
               {/* Tab Content */}
-              <div className="p-4 max-h-96 overflow-y-auto" role="tabpanel">
+              <div className="p-4 max-h-[600px] overflow-y-auto" role="tabpanel">
                 {activeTab === 'summary' && (
                   run.status === 'succeeded' ? (
                     <SummaryTab run={run} />
