@@ -73,6 +73,7 @@ app.include_router(reviews_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")
 app.include_router(prs_router, prefix="/v1")
+# Note: webhooks_router removed - using CI polling instead (see ci_polling_service.py)
 
 
 @app.get("/health")
