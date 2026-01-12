@@ -11,6 +11,7 @@ import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
 import { cn } from '@/lib/utils';
+import Markdown from 'react-markdown';
 import {
   DocumentTextIcon,
   CodeBracketIcon,
@@ -27,7 +28,6 @@ import {
   ChatBubbleLeftRightIcon,
   MagnifyingGlassIcon,
   DocumentMagnifyingGlassIcon,
-  UserIcon,
   SparklesIcon,
 } from '@heroicons/react/24/outline';
 import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-utils';
@@ -632,20 +632,7 @@ function StructuredSummaryDisplay({ run }: { run: Run }) {
         {typeStyles.label}
       </div>
 
-      {/* Instruction (User's Request) */}
-      {structuredSummary.instruction && (
-        <div className="p-4 rounded-lg border border-gray-700 bg-gray-800/30">
-          <div className="flex items-center gap-2 mb-3">
-            <UserIcon className="w-5 h-5 text-gray-400" />
-            <h4 className="text-sm font-medium text-gray-200">Request</h4>
-          </div>
-          <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap line-clamp-4">
-            {structuredSummary.instruction}
-          </p>
-        </div>
-      )}
-
-      {/* Response (Agent's Answer) */}
+      {/* Response (Agent's Answer) - Rendered as Markdown */}
       <div className={cn(
         'p-4 rounded-lg border',
         typeStyles.bgColor,
@@ -655,9 +642,9 @@ function StructuredSummaryDisplay({ run }: { run: Run }) {
           <SparklesIcon className={cn('w-5 h-5', typeStyles.color)} />
           <h4 className={cn('text-sm font-medium', typeStyles.color)}>Response</h4>
         </div>
-        <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-          {structuredSummary.response}
-        </p>
+        <div className="prose prose-sm prose-invert max-w-none text-gray-300 prose-headings:text-gray-200 prose-p:text-gray-300 prose-strong:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-800 prose-ul:text-gray-300 prose-ol:text-gray-300 prose-li:text-gray-300">
+          <Markdown>{structuredSummary.response}</Markdown>
+        </div>
       </div>
 
       {/* Key Points (if available) */}

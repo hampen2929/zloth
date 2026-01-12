@@ -7,6 +7,7 @@ import { isCLIExecutor, getExecutorDisplayName } from '@/hooks';
 import { StatusBadge, getStatusBorderColor, getStatusBackgroundColor } from './ui/StatusBadge';
 import { DiffViewer } from './DiffViewer';
 import { StreamingLogs } from './StreamingLogs';
+import Markdown from 'react-markdown';
 import {
   CpuChipIcon,
   CommandLineIcon,
@@ -22,7 +23,6 @@ import {
   CheckCircleIcon,
   LightBulbIcon,
   DocumentMagnifyingGlassIcon,
-  UserIcon,
   SparklesIcon,
 } from '@heroicons/react/24/outline';
 
@@ -226,20 +226,7 @@ function SummaryTab({ run }: { run: Run }) {
         {typeStyles.label}
       </div>
 
-      {/* Instruction (User's Request) */}
-      {structuredSummary.instruction && (
-        <div className="p-3 rounded-lg border border-gray-700 bg-gray-800/30">
-          <div className="flex items-center gap-2 mb-2">
-            <UserIcon className="w-4 h-4 text-gray-400" />
-            <h4 className="text-xs font-medium text-gray-300">Request</h4>
-          </div>
-          <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">
-            {structuredSummary.instruction}
-          </p>
-        </div>
-      )}
-
-      {/* Response (Agent's Answer) */}
+      {/* Response (Agent's Answer) - Rendered as Markdown */}
       <div className={cn(
         'p-3 rounded-lg border',
         typeStyles.bgColor,
@@ -249,9 +236,9 @@ function SummaryTab({ run }: { run: Run }) {
           <SparklesIcon className={cn('w-4 h-4', typeStyles.color)} />
           <h4 className={cn('text-xs font-medium', typeStyles.color)}>Response</h4>
         </div>
-        <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-          {structuredSummary.response}
-        </p>
+        <div className="prose prose-sm prose-invert max-w-none text-gray-300 prose-headings:text-gray-200 prose-p:text-gray-300 prose-strong:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-800 prose-ul:text-gray-300 prose-ol:text-gray-300 prose-li:text-gray-300">
+          <Markdown>{structuredSummary.response}</Markdown>
+        </div>
       </div>
 
       {/* Key Points (if available) */}
