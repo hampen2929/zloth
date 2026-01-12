@@ -488,6 +488,13 @@ class AgenticOrchestrator:
 
             # Get run result
             run = await self.run_service.get(run_id)
+            logger.info(
+                f"Run completed for task {task_id}: "
+                f"status={run.status if run else 'None'}, "
+                f"working_branch={run.working_branch if run else 'None'}, "
+                f"commit_sha={run.commit_sha if run else 'None'}"
+            )
+
             if not run or run.status != "succeeded":
                 async with self._locks[task_id]:
                     state.phase = AgenticPhase.FAILED
@@ -501,6 +508,7 @@ class AgenticOrchestrator:
                 state.current_sha = run.commit_sha
 
             # Auto-create PR if not exists (required for CI polling in Semi/Full Auto mode)
+            logger.info(f"Checking if PR needs to be created: state.pr_number={state.pr_number}")
             if not state.pr_number:
                 pr = await self._auto_create_pr(task_id, run_id)
                 if pr:
@@ -791,6 +799,27 @@ class AgenticOrchestrator:
         try:
             logger.info(f"Auto-creating PR for task {task_id}, run {run_id}")
 
+            # Get run to verify it has necessary data
+            run = await self.run_service.get(run_id)
+            if not run:
+                logger.error(f"Run not found for PR creation: {run_id}")
+                raise ValueError(f"Run not found: {run_id}")
+
+            logger.info(
+                f"Run details for PR creation: "
+                f"working_branch={run.working_branch}, "
+                f"commit_sha={run.commit_sha}, "
+                f"status={run.status}"
+            )
+
+            if not run.working_branch:
+                logger.error(f"Run has no working_branch: {run_id}")
+                raise ValueError(f"Run has no working branch: {run_id}")
+
+            if not run.commit_sha:
+                logger.error(f"Run has no commit_sha: {run_id}")
+                raise ValueError(f"Run has no commits: {run_id}")
+
             # Create PR with auto-generated title and description
             pr_data = PRCreateAuto(selected_run_id=run_id)
             pr = await self.pr_service.create_auto(task_id, pr_data)
@@ -802,7 +831,7 @@ class AgenticOrchestrator:
             return pr
 
         except Exception as e:
-            logger.error(f"Failed to auto-create PR for task {task_id}: {e}")
+            logger.error(f"Failed to auto-create PR for task {task_id}: {e}", exc_info=True)
             # Record failure as a message
             try:
                 await self.message_dao.create(
