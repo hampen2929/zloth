@@ -43,22 +43,22 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
-type TabType = 'models' | 'github' | 'defaults';
+export type SettingsTabType = 'models' | 'github' | 'defaults';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultTab?: TabType;
+  defaultTab?: SettingsTabType;
 }
 
-const tabConfig: { id: TabType; label: string; icon: React.ReactNode }[] = [
+export const settingsTabConfig: { id: SettingsTabType; label: string; icon: React.ReactNode }[] = [
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>(defaultTab || 'models');
+  const [activeTab, setActiveTab] = useState<SettingsTabType>(defaultTab || 'models');
 
   // Update active tab when defaultTab changes
   // This is intentional: we want to switch tabs when externally triggered
@@ -78,7 +78,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
     >
       {/* Tabs */}
       <div className="flex border-b border-gray-800" role="tablist">
-        {tabConfig.map((tab) => (
+        {settingsTabConfig.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -108,7 +108,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
   );
 }
 
-function ModelsTab() {
+export function ModelsTab() {
   const { data: models, error } = useSWR('models', modelsApi.list);
   const [showForm, setShowForm] = useState(false);
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -337,7 +337,7 @@ function AddModelForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function GitHubAppTab() {
+export function GitHubAppTab() {
   const { data: config, isLoading } = useSWR('github-config', githubApi.getConfig);
   const [appId, setAppId] = useState('');
   const [privateKey, setPrivateKey] = useState('');
@@ -508,7 +508,7 @@ function GitHubAppTab() {
   );
 }
 
-function DefaultsTab() {
+export function DefaultsTab() {
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: githubConfig } = useSWR('github-config', githubApi.getConfig);
   const { data: repos, isLoading: reposLoading } = useSWR(

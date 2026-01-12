@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import SettingsModal from './SettingsModal';
 import BreakdownModal from './BreakdownModal';
@@ -17,6 +17,7 @@ interface ClientLayoutProps {
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
@@ -60,22 +61,16 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     };
   }, [sidebarOpen]);
 
-  // Handle hash-based settings navigation
+  // Handle hash-based settings navigation - redirect to settings page
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
       if (hash === '#settings-models') {
-        setSettingsDefaultTab('models');
-        setSettingsOpen(true);
-        window.history.replaceState(null, '', window.location.pathname);
+        router.push('/settings?tab=models');
       } else if (hash === '#settings-github') {
-        setSettingsDefaultTab('github');
-        setSettingsOpen(true);
-        window.history.replaceState(null, '', window.location.pathname);
+        router.push('/settings?tab=github');
       } else if (hash === '#settings-defaults') {
-        setSettingsDefaultTab('defaults');
-        setSettingsOpen(true);
-        window.history.replaceState(null, '', window.location.pathname);
+        router.push('/settings?tab=defaults');
       }
     };
 
@@ -84,7 +79,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [router]);
 
   // Handle custom event to open breakdown modal
   useEffect(() => {
@@ -141,12 +136,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           )}
         >
-          <Sidebar
-            onSettingsClick={() => {
-              setSettingsOpen(true);
-              setSidebarOpen(false);
-            }}
-          />
+          <Sidebar />
         </div>
 
         {/* Main content */}
