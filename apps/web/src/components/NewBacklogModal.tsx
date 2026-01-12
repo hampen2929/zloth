@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import useSWR from 'swr';
-import { githubApi, reposApi, backlogApi } from '@/lib/api';
+import { githubApi, reposApi, backlogApi, preferencesApi } from '@/lib/api';
 import type {
   BrokenDownTaskType,
   EstimatedSize,
@@ -46,6 +46,7 @@ export default function NewBacklogModal({ isOpen, onClose, onCreated }: NewBackl
     githubConfig?.is_configured ? 'github-repos' : null,
     githubApi.listRepos
   );
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
 
   const [selectedRepo, setSelectedRepo] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
@@ -81,6 +82,26 @@ export default function NewBacklogModal({ isOpen, onClose, onCreated }: NewBackl
       setError(null);
     }
   }, [isOpen]);
+
+  // Apply defaults from Settings → Defaults when modal opens and data is ready
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!repos || !preferences) return;
+    if (selectedRepo) return; // don't override if user already interacted
+
+    const owner = preferences.default_repo_owner;
+    const name = preferences.default_repo_name;
+    if (owner && name) {
+      const fullName = `${owner}/${name}`;
+      const repoInfo = repos.find((r) => r.full_name === fullName);
+      if (repoInfo) {
+        setSelectedRepo(fullName);
+        const preferredBranch = preferences.default_branch || repoInfo.default_branch;
+        // Load branches and select the preferred one if available
+        loadBranches(owner, name, preferredBranch);
+      }
+    }
+  }, [isOpen, repos, preferences, selectedRepo, loadBranches]);
 
   // Get default branch for selected repo
   const selectedRepoDefaultBranch = (() => {
