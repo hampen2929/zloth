@@ -141,6 +141,7 @@ class RepoDAO:
         default_branch: str,
         latest_commit: str,
         workspace_path: str,
+        selected_branch: str | None = None,
     ) -> Repo:
         """Create a new repo."""
         id = generate_id()
@@ -149,10 +150,19 @@ class RepoDAO:
         await self.db.connection.execute(
             """
             INSERT INTO repos
-            (id, repo_url, default_branch, latest_commit, workspace_path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (id, repo_url, default_branch, selected_branch,
+             latest_commit, workspace_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (id, repo_url, default_branch, latest_commit, workspace_path, created_at),
+            (
+                id,
+                repo_url,
+                default_branch,
+                selected_branch,
+                latest_commit,
+                workspace_path,
+                created_at,
+            ),
         )
         await self.db.connection.commit()
 
@@ -160,6 +170,7 @@ class RepoDAO:
             id=id,
             repo_url=repo_url,
             default_branch=default_branch,
+            selected_branch=selected_branch,
             latest_commit=latest_commit,
             workspace_path=workspace_path,
             created_at=datetime.fromisoformat(created_at),
@@ -184,11 +195,20 @@ class RepoDAO:
             return None
         return self._row_to_model(row)
 
+    async def update_selected_branch(self, id: str, selected_branch: str | None) -> None:
+        """Update the selected branch for a repo."""
+        await self.db.connection.execute(
+            "UPDATE repos SET selected_branch = ? WHERE id = ?",
+            (selected_branch, id),
+        )
+        await self.db.connection.commit()
+
     def _row_to_model(self, row: Any) -> Repo:
         return Repo(
             id=row["id"],
             repo_url=row["repo_url"],
             default_branch=row["default_branch"],
+            selected_branch=row["selected_branch"],
             latest_commit=row["latest_commit"],
             workspace_path=row["workspace_path"],
             created_at=datetime.fromisoformat(row["created_at"]),
