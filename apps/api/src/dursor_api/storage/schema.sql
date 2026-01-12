@@ -230,3 +230,22 @@ CREATE TABLE IF NOT EXISTS agentic_audit_log (
 CREATE INDEX IF NOT EXISTS idx_agentic_audit_task ON agentic_audit_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_agentic_audit_run ON agentic_audit_log(agentic_run_id);
 CREATE INDEX IF NOT EXISTS idx_agentic_audit_timestamp ON agentic_audit_log(timestamp);
+
+-- CI Checks (CI status check records for PRs)
+CREATE TABLE IF NOT EXISTS ci_checks (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    pr_id TEXT NOT NULL,
+    status TEXT NOT NULL,              -- pending, success, failure, error
+    workflow_run_id INTEGER,
+    sha TEXT,
+    jobs TEXT,                         -- JSON: job_name -> result
+    failed_jobs TEXT,                  -- JSON: list of CIJobResult
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (task_id) REFERENCES tasks(id),
+    FOREIGN KEY (pr_id) REFERENCES prs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ci_checks_task_id ON ci_checks(task_id);
+CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);

@@ -3,6 +3,7 @@
 from dursor_api.config import settings
 from dursor_api.services.agentic_orchestrator import AgenticOrchestrator
 from dursor_api.services.breakdown_service import BreakdownService
+from dursor_api.services.ci_check_service import CICheckService
 from dursor_api.services.ci_polling_service import CIPollingService
 from dursor_api.services.crypto_service import CryptoService
 from dursor_api.services.git_service import GitService
@@ -21,6 +22,7 @@ from dursor_api.storage.dao import (
     PRDAO,
     AgenticRunDAO,
     BacklogDAO,
+    CICheckDAO,
     MessageDAO,
     ModelProfileDAO,
     RepoDAO,
@@ -287,3 +289,19 @@ async def get_pr_status_poller() -> PRStatusPoller:
         github_service = await get_github_service()
         _pr_status_poller = PRStatusPoller(pr_dao, github_service)
     return _pr_status_poller
+
+
+async def get_ci_check_dao() -> CICheckDAO:
+    """Get CICheck DAO."""
+    db = await get_db()
+    return CICheckDAO(db)
+
+
+async def get_ci_check_service() -> CICheckService:
+    """Get the CI check service."""
+    ci_check_dao = await get_ci_check_dao()
+    pr_dao = await get_pr_dao()
+    task_dao = await get_task_dao()
+    repo_dao = await get_repo_dao()
+    github_service = await get_github_service()
+    return CICheckService(ci_check_dao, pr_dao, task_dao, repo_dao, github_service)

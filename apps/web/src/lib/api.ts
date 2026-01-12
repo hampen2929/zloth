@@ -47,6 +47,8 @@ import type {
   ReviewSummary,
   FixInstructionRequest,
   FixInstructionResponse,
+  CICheck,
+  CICheckResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -362,6 +364,60 @@ export const prsApi = {
     fetchApi<PR>(`/tasks/${taskId}/prs/${prId}/regenerate-description`, {
       method: 'POST',
     }),
+};
+
+// CI Checks
+export const ciChecksApi = {
+  /**
+   * Check CI status for a PR.
+   * If is_complete is false, poll again after a delay.
+   */
+  check: (taskId: string, prId: string) =>
+    fetchApi<CICheckResponse>(`/tasks/${taskId}/prs/${prId}/check-ci`, {
+      method: 'POST',
+    }),
+
+  /**
+   * List all CI checks for a task.
+   */
+  list: (taskId: string) => fetchApi<CICheck[]>(`/tasks/${taskId}/ci-checks`),
+
+  /**
+   * Check CI status with polling until complete.
+   *
+   * @param taskId - The task ID
+   * @param prId - The PR ID
+   * @param options - Polling options
+   * @returns CICheck result when complete
+   */
+  checkWithPolling: async (
+    taskId: string,
+    prId: string,
+    options?: {
+      pollInterval?: number;
+      maxWaitTime?: number;
+      onProgress?: (ciCheck: CICheck) => void;
+    }
+  ): Promise<CICheck> => {
+    const pollInterval = options?.pollInterval ?? 10000; // 10 seconds
+    const maxWaitTime = options?.maxWaitTime ?? 1800000; // 30 minutes
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitTime) {
+      const response = await ciChecksApi.check(taskId, prId);
+
+      options?.onProgress?.(response.ci_check);
+
+      if (response.is_complete) {
+        return response.ci_check;
+      }
+
+      // Wait before polling again
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+
+    throw new ApiError(504, 'CI check timed out');
+  },
 };
 
 // Preferences

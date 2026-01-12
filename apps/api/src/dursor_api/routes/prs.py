@@ -2,9 +2,11 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import get_pr_service
+from dursor_api.dependencies import get_ci_check_service, get_pr_service
 from dursor_api.domain.models import (
     PR,
+    CICheck,
+    CICheckResponse,
     PRCreate,
     PRCreateAuto,
     PRCreated,
@@ -16,6 +18,7 @@ from dursor_api.domain.models import (
     PRUpdate,
     PRUpdated,
 )
+from dursor_api.services.ci_check_service import CICheckService
 from dursor_api.services.pr_service import GitHubPermissionError, PRService
 
 router = APIRouter(tags=["prs"])
@@ -206,3 +209,29 @@ async def regenerate_pr_description(
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/prs/{pr_id}/check-ci", response_model=CICheckResponse)
+async def check_ci(
+    task_id: str,
+    pr_id: str,
+    ci_check_service: CICheckService = Depends(get_ci_check_service),
+) -> CICheckResponse:
+    """Check CI status for a PR.
+
+    Fetches current CI status from GitHub and returns the result.
+    If CI is still pending, is_complete will be false - poll again to check.
+    """
+    try:
+        return await ci_check_service.check_ci(task_id, pr_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/tasks/{task_id}/ci-checks", response_model=list[CICheck])
+async def list_ci_checks(
+    task_id: str,
+    ci_check_service: CICheckService = Depends(get_ci_check_service),
+) -> list[CICheck]:
+    """List all CI checks for a task."""
+    return await ci_check_service.get_ci_checks(task_id)

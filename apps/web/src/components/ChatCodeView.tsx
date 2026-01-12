@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
-import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review } from '@/types';
+import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi, ciChecksApi } from '@/lib/api';
+import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -22,6 +22,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { ReviewButton } from './ReviewButton';
 import { ReviewResultCard } from './ReviewResultCard';
+import { CIResultCard } from './CIResultCard';
 
 interface ChatCodeViewProps {
   taskId: string;
@@ -54,6 +55,8 @@ export function ChatCodeView({
   const [prLinkResult, setPRLinkResult] = useState<{ url: string } | null>(null);
   const [updatingDesc, setUpdatingDesc] = useState(false);
   const [reviewExpanded, setReviewExpanded] = useState<Record<string, boolean>>({});
+  const [ciCheckExpanded, setCICheckExpanded] = useState<Record<string, boolean>>({});
+  const [checkingCI, setCheckingCI] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -81,6 +84,13 @@ export function ChatCodeView({
       return fullReviews;
     },
     { refreshInterval: 3000 }
+  );
+
+  // Fetch CI checks for the task
+  const { data: ciChecks, mutate: mutateCIChecks } = useSWR<CICheck[]>(
+    `ci-checks-${taskId}`,
+    () => ciChecksApi.list(taskId),
+    { refreshInterval: checkingCI ? 5000 : 0 }
   );
 
   // Determine executor types used in this task
@@ -267,6 +277,36 @@ export function ChatCodeView({
     }
   };
 
+  const handleCheckCI = async () => {
+    if (!prResult?.pr_id) return;
+
+    setCheckingCI(true);
+    try {
+      // Start polling for CI status
+      const ciCheck = await ciChecksApi.checkWithPolling(taskId, prResult.pr_id, {
+        pollInterval: 10000, // 10 seconds
+        maxWaitTime: 1800000, // 30 minutes
+        onProgress: () => {
+          mutateCIChecks();
+        },
+      });
+
+      // Final refresh
+      mutateCIChecks();
+
+      if (ciCheck.status === 'success') {
+        success('CI checks passed!');
+      } else if (ciCheck.status === 'failure') {
+        error('CI checks failed. Check the results for details.');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to check CI status';
+      error(message);
+    } finally {
+      setCheckingCI(false);
+    }
+  };
+
   // Poll for PR sync when using link mode
   useEffect(() => {
     if (!prLinkResult || !latestSuccessfulRun || prResult) return;
@@ -384,10 +424,23 @@ export function ChatCodeView({
     );
   }, [reviews, selectedExecutorType, runsForSelectedExecutor]);
 
+  // CI check expansion helpers
+  const isCICheckExpanded = (ciCheckId: string): boolean => ciCheckExpanded[ciCheckId] ?? true;
+  const toggleCICheckExpanded = (ciCheckId: string) => {
+    setCICheckExpanded((prev) => ({ ...prev, [ciCheckId]: !isCICheckExpanded(ciCheckId) }));
+  };
+
+  // Filter CI checks for selected executor's PR
+  const ciChecksForSelectedExecutor = useMemo(() => {
+    if (!ciChecks || !latestPR) return [];
+    return ciChecks.filter((check) => check.pr_id === latestPR.id);
+  }, [ciChecks, latestPR]);
+
   // Create a unified timeline of messages+runs and reviews, sorted chronologically
   type TimelineItem =
     | { type: 'message-run'; message: Message; run: Run; createdAt: string }
-    | { type: 'review'; review: Review; createdAt: string };
+    | { type: 'review'; review: Review; createdAt: string }
+    | { type: 'ci-check'; ciCheck: CICheck; createdAt: string };
 
   const timeline = useMemo<TimelineItem[]>(() => {
     const items: TimelineItem[] = [];
@@ -414,11 +467,20 @@ export function ChatCodeView({
       });
     });
 
+    // Add CI checks
+    ciChecksForSelectedExecutor.forEach((ciCheck) => {
+      items.push({
+        type: 'ci-check',
+        ciCheck,
+        createdAt: ciCheck.created_at,
+      });
+    });
+
     // Sort by created_at ascending (chronological order)
     items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     return items;
-  }, [messages, runByMessageId, reviewsForSelectedExecutor]);
+  }, [messages, runByMessageId, reviewsForSelectedExecutor, ciChecksForSelectedExecutor]);
 
   // Get aggregate stats for an executor type
   const getExecutorStats = (executorType: ExecutorType) => {
@@ -449,9 +511,11 @@ export function ChatCodeView({
           taskId={taskId}
           creatingPR={creatingPR}
           updatingDesc={updatingDesc}
+          checkingCI={checkingCI}
           onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
           onUpdatePRDesc={handleUpdatePRDesc}
+          onCheckCI={handleCheckCI}
           onReviewCreated={() => {
             mutateReviews();
             success('Review started');
@@ -505,7 +569,7 @@ export function ChatCodeView({
                     </div>
                   </div>
                 );
-              } else {
+              } else if (item.type === 'review') {
                 return (
                   <div key={item.review.id} className="ml-4 border-l-2 border-blue-500/30 pl-4">
                     <ReviewResultCard
@@ -516,6 +580,16 @@ export function ChatCodeView({
                         setInput(instruction);
                         success('Fix instruction added to input');
                       }}
+                    />
+                  </div>
+                );
+              } else {
+                return (
+                  <div key={item.ciCheck.id} className="ml-4 border-l-2 border-green-500/30 pl-4">
+                    <CIResultCard
+                      ciCheck={item.ciCheck}
+                      expanded={isCICheckExpanded(item.ciCheck.id)}
+                      onToggleExpand={() => toggleCICheckExpanded(item.ciCheck.id)}
                     />
                   </div>
                 );
@@ -561,9 +635,11 @@ interface SessionHeaderProps {
   taskId: string;
   creatingPR: boolean;
   updatingDesc: boolean;
+  checkingCI: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
   onUpdatePRDesc: () => void;
+  onCheckCI: () => void;
   onReviewCreated: () => void;
   onReviewError: (message: string) => void;
 }
@@ -577,9 +653,11 @@ function SessionHeader({
   taskId,
   creatingPR,
   updatingDesc,
+  checkingCI,
   onCopyBranch,
   onCreatePR,
   onUpdatePRDesc,
+  onCheckCI,
   onReviewCreated,
   onReviewError,
 }: SessionHeaderProps) {
@@ -620,15 +698,26 @@ function SessionHeader({
             <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
           </a>
           {prResult.pr_id && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onUpdatePRDesc}
-              disabled={updatingDesc}
-              isLoading={updatingDesc}
-            >
-              Update PR Desc
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onUpdatePRDesc}
+                disabled={updatingDesc}
+                isLoading={updatingDesc}
+              >
+                Update PR Desc
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onCheckCI}
+                disabled={checkingCI}
+                isLoading={checkingCI}
+              >
+                {checkingCI ? 'Checking CI...' : 'Check CI'}
+              </Button>
+            </>
           )}
         </>
       ) : prLinkResult ? (

@@ -988,6 +988,31 @@ class CIWebhookResponse(BaseModel):
     failed_jobs: list[str] | None = None
 
 
+class CICheck(BaseModel):
+    """CI check result record for a PR."""
+
+    id: str
+    task_id: str
+    pr_id: str
+    status: str  # "pending" | "success" | "failure" | "error"
+    workflow_run_id: int | None = None
+    sha: str | None = None
+    jobs: dict[str, str] = Field(default_factory=dict)  # job_name -> result
+    failed_jobs: list[CIJobResult] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CICheckResponse(BaseModel):
+    """Response for CI check API."""
+
+    ci_check: CICheck
+    is_complete: bool  # True if CI is finished (success/failure/error)
+
+
 # ============================================================
 # Merge Gate
 # ============================================================
