@@ -908,6 +908,7 @@ class AgenticStartRequest(BaseModel):
 
     instruction: str = Field(..., description="Development instruction")
     mode: CodingMode = Field(default=CodingMode.FULL_AUTO, description="Coding mode")
+    message_id: str | None = Field(None, description="Message ID to link runs to")
     config: AgenticConfig | None = Field(None, description="Optional agentic configuration")
 
 

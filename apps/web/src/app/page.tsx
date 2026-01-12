@@ -142,9 +142,11 @@ export default function HomePage() {
       // For Interactive mode, create runs directly
       if (selectedMode === 'semi_auto' || selectedMode === 'full_auto') {
         // Start agentic execution (auto PR creation, CI polling, etc.)
+        // Pass message_id to link runs to the message for UI display
         await agenticApi.start(task.id, {
           instruction: instruction,
           mode: selectedMode,
+          message_id: message.id,
         });
       } else {
         // Interactive mode: create runs directly

@@ -525,6 +525,7 @@ export type AgenticPhase =
 export interface AgenticStartRequest {
   instruction: string;
   mode?: CodingMode;
+  message_id?: string;
 }
 
 export interface AgenticStartResponse {

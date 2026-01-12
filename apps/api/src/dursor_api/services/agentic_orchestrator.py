@@ -123,6 +123,7 @@ class AgenticOrchestrator:
         task_id: str,
         instruction: str,
         mode: CodingMode = CodingMode.FULL_AUTO,
+        message_id: str | None = None,
         config: AgenticConfig | None = None,
     ) -> AgenticState:
         """Start agentic execution for a task.
@@ -131,6 +132,7 @@ class AgenticOrchestrator:
             task_id: Target task ID.
             instruction: Development instruction.
             mode: CodingMode (SEMI_AUTO or FULL_AUTO).
+            message_id: Optional message ID to link runs to (for UI display).
             config: Optional agentic configuration.
 
         Returns:
@@ -172,8 +174,10 @@ class AgenticOrchestrator:
         # Persist state
         await self.agentic_dao.create(state)
 
-        # Start coding phase in background
-        asyncio.create_task(self._run_coding_phase(task_id, instruction, limits))
+        # Start coding phase in background (pass message_id for UI linking)
+        asyncio.create_task(
+            self._run_coding_phase(task_id, instruction, limits, message_id=message_id)
+        )
 
         return state
 
@@ -428,6 +432,7 @@ class AgenticOrchestrator:
         instruction: str,
         limits: IterationLimits,
         context: dict[str, Any] | None = None,
+        message_id: str | None = None,
     ) -> None:
         """Execute Claude Code for coding.
 
@@ -436,6 +441,7 @@ class AgenticOrchestrator:
             instruction: Coding instruction.
             limits: Iteration limits.
             context: Additional context.
+            message_id: Optional message ID to link runs to (for UI display).
         """
         state = self._states.get(task_id)
         if not state:
@@ -470,6 +476,7 @@ class AgenticOrchestrator:
             run_data = RunCreate(
                 instruction=full_instruction,
                 executor_type=ExecutorType.CLAUDE_CODE,
+                message_id=message_id,  # Link run to message for UI display
             )
 
             runs = await self.run_service.create_runs(task_id, run_data)
