@@ -534,8 +534,10 @@ function DefaultsTab() {
         setSelectedRepo(repoFullName);
         // Find the repository to get its default branch
         const repoData = repos.find((r) => r.full_name === repoFullName);
-        // Use repository's default branch for initial selection
-        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, repoData?.default_branch);
+        // Set selected branch to repository's default branch directly (like top page)
+        setSelectedBranch(repoData?.default_branch || '');
+        // Load branch list
+        loadBranches(preferences.default_repo_owner, preferences.default_repo_name);
       }
     }
   }, [preferences, repos]);
@@ -576,18 +578,11 @@ function DefaultsTab() {
     return opts;
   })();
 
-  const loadBranches = async (owner: string, repo: string, defaultBranch?: string | null) => {
+  const loadBranches = async (owner: string, repo: string) => {
     setBranchesLoading(true);
     try {
       const branchList = await githubApi.listBranches(owner, repo);
       setBranches(branchList);
-      if (defaultBranch && branchList.includes(defaultBranch)) {
-        setSelectedBranch(defaultBranch);
-      } else if (branchList.length > 0) {
-        // Try to select 'main' or 'master' or the first branch
-        const mainBranch = branchList.find(b => b === 'main') || branchList.find(b => b === 'master') || branchList[0];
-        setSelectedBranch(mainBranch);
-      }
     } catch (err) {
       console.error('Failed to load branches:', err);
       setBranches([]);
@@ -598,14 +593,16 @@ function DefaultsTab() {
 
   const handleRepoChange = async (fullName: string) => {
     setSelectedRepo(fullName);
-    setSelectedBranch('');
     setBranches([]);
 
     if (fullName) {
       const [owner, repo] = fullName.split('/');
-      // Find the repository to get its default branch
+      // Find the repository to get its default branch and set it directly (like top page)
       const selectedRepoData = repos?.find((r) => r.full_name === fullName);
-      await loadBranches(owner, repo, selectedRepoData?.default_branch);
+      setSelectedBranch(selectedRepoData?.default_branch || '');
+      await loadBranches(owner, repo);
+    } else {
+      setSelectedBranch('');
     }
   };
 
