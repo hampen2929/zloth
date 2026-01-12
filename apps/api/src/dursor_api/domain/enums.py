@@ -107,15 +107,6 @@ class PRStatus(str, Enum):
     CLOSED = "closed"
 
 
-class BacklogStatus(str, Enum):
-    """Backlog item status."""
-
-    DRAFT = "draft"  # Just created, not yet refined
-    READY = "ready"  # Ready to be worked on
-    IN_PROGRESS = "in_progress"  # Task created and work started
-    DONE = "done"  # Completed
-
-
 class ReviewSeverity(str, Enum):
     """Review feedback severity level."""
 

@@ -39,7 +39,6 @@ import type {
   BacklogItem,
   BacklogItemCreate,
   BacklogItemUpdate,
-  BacklogStatus,
   Review,
   ReviewCreate,
   ReviewCreated,
@@ -425,10 +424,9 @@ export const kanbanApi = {
 
 // Backlog
 export const backlogApi = {
-  list: (repoId?: string, status?: BacklogStatus) => {
+  list: (repoId?: string) => {
     const params = new URLSearchParams();
     if (repoId) params.set('repo_id', repoId);
-    if (status) params.set('status', status);
     const query = params.toString();
     return fetchApi<BacklogItem[]>(`/backlog${query ? `?${query}` : ''}`);
   },

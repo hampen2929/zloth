@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from dursor_api.dependencies import get_backlog_dao, get_task_dao
-from dursor_api.domain.enums import BacklogStatus
+from dursor_api.domain.enums import TaskBaseKanbanStatus
 from dursor_api.domain.models import (
     BacklogItem,
     BacklogItemCreate,
@@ -18,20 +18,18 @@ router = APIRouter(prefix="/backlog", tags=["backlog"])
 @router.get("", response_model=list[BacklogItem])
 async def list_backlog_items(
     repo_id: str | None = None,
-    status: BacklogStatus | None = None,
     backlog_dao: BacklogDAO = Depends(get_backlog_dao),
 ) -> list[BacklogItem]:
     """List backlog items with optional filters.
 
     Args:
         repo_id: Filter by repository ID.
-        status: Filter by status.
         backlog_dao: Backlog DAO instance.
 
     Returns:
         List of BacklogItem.
     """
-    return await backlog_dao.list(repo_id=repo_id, status=status)
+    return await backlog_dao.list(repo_id=repo_id)
 
 
 @router.post("", response_model=BacklogItem, status_code=201)
@@ -120,7 +118,6 @@ async def update_backlog_item(
         implementation_hint=request.implementation_hint,
         tags=request.tags,
         subtasks=subtasks,
-        status=request.status,
     )
 
     if not item:
@@ -153,11 +150,11 @@ async def start_work_on_backlog_item(
     backlog_dao: BacklogDAO = Depends(get_backlog_dao),
     task_dao: TaskDAO = Depends(get_task_dao),
 ) -> Task:
-    """Promote a backlog item to a task and start working on it.
+    """Promote a backlog item to a task and move it to ToDo.
 
     This endpoint:
     1. Creates a new Task from the backlog item
-    2. Updates the backlog item status to IN_PROGRESS
+    2. Sets the Task kanban_status to 'todo'
     3. Links the backlog item to the created task
 
     Args:
@@ -169,7 +166,7 @@ async def start_work_on_backlog_item(
         Created Task.
 
     Raises:
-        HTTPException: If item not found or already in progress.
+        HTTPException: If item not found or already has a linked task.
     """
     item = await backlog_dao.get(item_id)
     if not item:
@@ -187,11 +184,18 @@ async def start_work_on_backlog_item(
         title=item.title,
     )
 
-    # Update backlog item with task reference and status
+    # Set task kanban_status to 'todo' (Backlog -> ToDo transition)
+    await task_dao.update_kanban_status(task.id, TaskBaseKanbanStatus.TODO)
+
+    # Update backlog item with task reference
     await backlog_dao.update(
         id=item_id,
-        status=BacklogStatus.IN_PROGRESS,
         task_id=task.id,
     )
 
-    return task
+    # Fetch updated task with correct kanban_status
+    updated_task = await task_dao.get(task.id)
+    if not updated_task:
+        raise HTTPException(status_code=500, detail="Failed to fetch created task")
+
+    return updated_task

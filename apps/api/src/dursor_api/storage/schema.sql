@@ -132,7 +132,6 @@ CREATE TABLE IF NOT EXISTS backlog_items (
     implementation_hint TEXT,
     tags TEXT NOT NULL DEFAULT '[]',               -- JSON array
     subtasks TEXT NOT NULL DEFAULT '[]',           -- JSON array of SubTask
-    status TEXT NOT NULL DEFAULT 'draft',          -- draft, ready, in_progress, done
     task_id TEXT,                                  -- Reference to task if promoted
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -141,7 +140,6 @@ CREATE TABLE IF NOT EXISTS backlog_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_backlog_items_repo_id ON backlog_items(repo_id);
-CREATE INDEX IF NOT EXISTS idx_backlog_items_status ON backlog_items(status);
 
 -- Reviews table
 CREATE TABLE IF NOT EXISTS reviews (

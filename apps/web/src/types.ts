@@ -359,7 +359,6 @@ export interface KanbanBoard {
 }
 
 // Backlog
-export type BacklogStatus = 'draft' | 'ready' | 'in_progress' | 'done';
 
 export interface SubTask {
   id: string;
@@ -382,7 +381,6 @@ export interface BacklogItem {
   implementation_hint: string | null;
   tags: string[];
   subtasks: SubTask[];
-  status: BacklogStatus;
   task_id: string | null;
   created_at: string;
   updated_at: string;
@@ -409,7 +407,6 @@ export interface BacklogItemUpdate {
   implementation_hint?: string;
   tags?: string[];
   subtasks?: SubTask[];
-  status?: BacklogStatus;
 }
 
 // Code Review
