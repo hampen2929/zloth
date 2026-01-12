@@ -8,7 +8,7 @@ from dursor_api.domain.models import (
     BacklogItem,
     BacklogItemCreate,
     BacklogItemUpdate,
-    Task,
+    BacklogStartWorkResponse,
 )
 from dursor_api.storage.dao import BacklogDAO, TaskDAO
 
@@ -147,12 +147,12 @@ async def delete_backlog_item(
         raise HTTPException(status_code=404, detail="Backlog item not found")
 
 
-@router.post("/{item_id}/start", response_model=Task)
+@router.post("/{item_id}/start", response_model=BacklogStartWorkResponse)
 async def start_work_on_backlog_item(
     item_id: str,
     backlog_dao: BacklogDAO = Depends(get_backlog_dao),
     task_dao: TaskDAO = Depends(get_task_dao),
-) -> Task:
+) -> BacklogStartWorkResponse:
     """Promote a backlog item to a task and start working on it.
 
     This endpoint:
@@ -166,7 +166,7 @@ async def start_work_on_backlog_item(
         task_dao: Task DAO instance.
 
     Returns:
-        Created Task.
+        Created Task and updated BacklogItem.
 
     Raises:
         HTTPException: If item not found or already in progress.
@@ -188,10 +188,13 @@ async def start_work_on_backlog_item(
     )
 
     # Update backlog item with task reference and status
-    await backlog_dao.update(
+    updated_item = await backlog_dao.update(
         id=item_id,
         status=BacklogStatus.IN_PROGRESS,
         task_id=task.id,
     )
 
-    return task
+    if not updated_item:
+        raise HTTPException(status_code=500, detail="Failed to update backlog item")
+
+    return BacklogStartWorkResponse(task=task, backlog_item=updated_item)

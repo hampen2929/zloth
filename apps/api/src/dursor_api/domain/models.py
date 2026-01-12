@@ -757,6 +757,13 @@ class BacklogItem(BacklogItemBase):
         from_attributes = True
 
 
+class BacklogStartWorkResponse(BaseModel):
+    """Response from starting work on a backlog item."""
+
+    task: Task = Field(..., description="Created task")
+    backlog_item: BacklogItem = Field(..., description="Updated backlog item")
+
+
 # ============================================================
 # Code Review
 # ============================================================

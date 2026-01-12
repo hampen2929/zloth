@@ -39,6 +39,7 @@ import type {
   BacklogItem,
   BacklogItemCreate,
   BacklogItemUpdate,
+  BacklogStartWorkResponse,
   BacklogStatus,
   Review,
   ReviewCreate,
@@ -451,7 +452,7 @@ export const backlogApi = {
     fetchApi<void>(`/backlog/${id}`, { method: 'DELETE' }),
 
   startWork: (id: string) =>
-    fetchApi<Task>(`/backlog/${id}/start`, { method: 'POST' }),
+    fetchApi<BacklogStartWorkResponse>(`/backlog/${id}/start`, { method: 'POST' }),
 };
 
 // Reviews

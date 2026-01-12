@@ -412,6 +412,11 @@ export interface BacklogItemUpdate {
   status?: BacklogStatus;
 }
 
+export interface BacklogStartWorkResponse {
+  task: Task;
+  backlog_item: BacklogItem;
+}
+
 // Code Review
 export type ReviewSeverity = 'critical' | 'high' | 'medium' | 'low';
 export type ReviewCategory =
