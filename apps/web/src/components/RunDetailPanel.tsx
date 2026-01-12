@@ -12,6 +12,7 @@ import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
 import { cn } from '@/lib/utils';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   DocumentTextIcon,
   CodeBracketIcon,
@@ -642,8 +643,8 @@ function StructuredSummaryDisplay({ run }: { run: Run }) {
           <SparklesIcon className={cn('w-5 h-5', typeStyles.color)} />
           <h4 className={cn('text-sm font-medium', typeStyles.color)}>Response</h4>
         </div>
-        <div className="prose prose-sm prose-invert max-w-none text-gray-300 prose-headings:text-gray-200 prose-p:text-gray-300 prose-strong:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-800 prose-ul:text-gray-300 prose-ol:text-gray-300 prose-li:text-gray-300">
-          <Markdown>{structuredSummary.response}</Markdown>
+        <div className="prose prose-sm prose-invert max-w-none text-gray-300 prose-headings:text-gray-200 prose-p:text-gray-300 prose-strong:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-800 prose-ul:text-gray-300 prose-ol:text-gray-300 prose-li:text-gray-300 prose-table:text-gray-300 prose-th:text-gray-200 prose-th:bg-gray-800 prose-td:border-gray-700 prose-th:border-gray-700 prose-thead:border-gray-700 prose-tr:border-gray-700">
+          <Markdown remarkPlugins={[remarkGfm]}>{structuredSummary.response}</Markdown>
         </div>
       </div>
 
