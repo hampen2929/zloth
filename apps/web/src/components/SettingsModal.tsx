@@ -520,7 +520,7 @@ function DefaultsTab() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [branchPrefix, setBranchPrefix] = useState<string>('');
-  const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('create');
+  const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -542,7 +542,7 @@ function DefaultsTab() {
   useEffect(() => {
     if (preferences) {
       setBranchPrefix(preferences.default_branch_prefix || '');
-      setPrCreationMode(preferences.default_pr_creation_mode || 'create');
+      setPrCreationMode(preferences.default_pr_creation_mode || 'link');
       setCodingMode(preferences.default_coding_mode || 'interactive');
     }
   }, [preferences]);
