@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { KanbanColumn } from './KanbanColumn';
+import { StartTaskModal } from './StartTaskModal';
 import { kanbanApi } from '@/lib/api';
-import type { KanbanBoard as KanbanBoardType, TaskKanbanStatus } from '@/types';
+import type { KanbanBoard as KanbanBoardType, TaskKanbanStatus, TaskWithKanbanStatus } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 
 interface KanbanBoardProps {
@@ -22,6 +24,20 @@ const COLUMN_ORDER: TaskKanbanStatus[] = [
 
 export function KanbanBoard({ board, onUpdate }: KanbanBoardProps) {
   const { success, error: toastError } = useToast();
+  const [startTaskModalTask, setStartTaskModalTask] = useState<TaskWithKanbanStatus | null>(null);
+
+  const handleStartTask = (task: TaskWithKanbanStatus) => {
+    setStartTaskModalTask(task);
+  };
+
+  const handleStartTaskModalClose = () => {
+    setStartTaskModalTask(null);
+  };
+
+  const handleStartTaskSuccess = () => {
+    setStartTaskModalTask(null);
+    onUpdate();
+  };
 
   // Get columns in the correct order
   const orderedColumns = COLUMN_ORDER.map((status) => {
@@ -70,17 +86,29 @@ export function KanbanBoard({ board, onUpdate }: KanbanBoardProps) {
   };
 
   return (
-    <div className="flex gap-4 h-full">
-      {orderedColumns.map((column) => (
-        <KanbanColumn
-          key={column.status}
-          column={column}
-          onMoveToTodo={handleMoveToTodo}
-          onMoveToBacklog={handleMoveToBacklog}
-          onArchive={handleArchive}
-          onUnarchive={handleUnarchive}
+    <>
+      <div className="flex gap-4 h-full">
+        {orderedColumns.map((column) => (
+          <KanbanColumn
+            key={column.status}
+            column={column}
+            onMoveToTodo={handleMoveToTodo}
+            onMoveToBacklog={handleMoveToBacklog}
+            onArchive={handleArchive}
+            onUnarchive={handleUnarchive}
+            onStartTask={handleStartTask}
+          />
+        ))}
+      </div>
+
+      {/* Start Task Modal */}
+      {startTaskModalTask && (
+        <StartTaskModal
+          task={startTaskModalTask}
+          onClose={handleStartTaskModalClose}
+          onSuccess={handleStartTaskSuccess}
         />
-      ))}
-    </div>
+      )}
+    </>
   );
 }

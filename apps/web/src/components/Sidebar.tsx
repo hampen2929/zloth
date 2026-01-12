@@ -17,6 +17,8 @@ import {
   ArrowsUpDownIcon,
   ClipboardDocumentListIcon,
   ViewColumnsIcon,
+  CogIcon,
+  EyeIcon,
 } from '@heroicons/react/24/outline';
 
 type SortOption = 'newest' | 'oldest' | 'alphabetical';
@@ -33,14 +35,16 @@ export default function Sidebar() {
 
   const currentTaskId = pathname?.match(/\/tasks\/(.+)/)?.[1];
 
-  // Filter and sort tasks
+  // Filter and sort tasks - only show in_progress and in_review tasks
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
 
     let result = [...tasks];
 
-    // Filter by kanban status - hide archived tasks
-    result = result.filter((task) => task.kanban_status !== 'archived');
+    // Filter by kanban status - only show in_progress and in_review tasks
+    result = result.filter(
+      (task) => task.kanban_status === 'in_progress' || task.kanban_status === 'in_review'
+    );
 
     // Filter by search query
     if (searchQuery.trim()) {
@@ -249,14 +253,24 @@ export default function Sidebar() {
             </div>
           ) : filteredTasks.length === 0 ? (
             <div className="flex flex-col items-center py-6 text-center">
-              <MagnifyingGlassIcon className="w-8 h-8 text-gray-700 mb-2" />
-              <p className="text-gray-500 text-sm">No matching tasks</p>
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-blue-400 hover:text-blue-300 text-xs mt-1 underline"
-              >
-                Clear search
-              </button>
+              {searchQuery.trim() ? (
+                <>
+                  <MagnifyingGlassIcon className="w-8 h-8 text-gray-700 mb-2" />
+                  <p className="text-gray-500 text-sm">No matching tasks</p>
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="text-blue-400 hover:text-blue-300 text-xs mt-1 underline"
+                  >
+                    Clear search
+                  </button>
+                </>
+              ) : (
+                <>
+                  <CogIcon className="w-8 h-8 text-gray-700 mb-2" />
+                  <p className="text-gray-500 text-sm">No active tasks</p>
+                  <p className="text-gray-600 text-xs mt-1">Tasks in progress or review will appear here</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-1">
@@ -272,11 +286,31 @@ export default function Sidebar() {
                       : 'text-gray-400 hover:bg-gray-800 hover:text-white border border-transparent'
                   )}
                 >
-                  <div className="truncate font-medium">
-                    {task.title || 'Untitled Task'}
+                  <div className="flex items-center gap-2">
+                    {/* Status indicator */}
+                    {task.kanban_status === 'in_progress' ? (
+                      <CogIcon className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0 animate-spin" style={{ animationDuration: '3s' }} />
+                    ) : task.kanban_status === 'in_review' ? (
+                      <EyeIcon className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                    ) : null}
+                    <div className="truncate font-medium flex-1 min-w-0">
+                      {task.title || 'Untitled Task'}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {formatRelativeTime(task.updated_at)}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-gray-500">
+                      {formatRelativeTime(task.updated_at)}
+                    </span>
+                    {task.kanban_status === 'in_progress' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-400">
+                        Running
+                      </span>
+                    )}
+                    {task.kanban_status === 'in_review' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-400">
+                        Review
+                      </span>
+                    )}
                   </div>
                 </Link>
               ))}
