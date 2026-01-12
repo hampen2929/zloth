@@ -486,15 +486,22 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
         # Try to extract JSON from the response using multiple strategies
 
         # Strategy 1: Find balanced JSON objects and try each one
+        # Process in REVERSE order since the actual response comes after the prompt
+        # (the prompt contains an example JSON that we need to skip)
         json_candidates = self._extract_json_objects(response_text)
         logs.append(f"Found {len(json_candidates)} potential JSON objects")
 
-        for i, candidate in enumerate(json_candidates):
+        for i, candidate in enumerate(reversed(json_candidates)):
+            original_index = len(json_candidates) - i
             try:
                 data = json.loads(candidate)
                 # Check if this looks like our expected review format
                 if isinstance(data, dict) and ("feedbacks" in data or "overall_summary" in data):
-                    logs.append(f"Successfully parsed JSON object #{i + 1}")
+                    # Skip if this looks like the template example from the system prompt
+                    if self._is_template_example(data):
+                        logs.append(f"Skipping template example JSON at position #{original_index}")
+                        continue
+                    logs.append(f"Successfully parsed JSON object #{original_index}")
                     return self._process_review_data(data, logs)
             except json.JSONDecodeError:
                 continue
@@ -559,6 +566,40 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
                 i += 1
 
         return objects
+
+    def _is_template_example(self, data: dict[str, Any]) -> bool:
+        """Check if the parsed JSON looks like the template example from the system prompt.
+
+        The system prompt contains an example JSON with file_path="src/example.py" that
+        should not be treated as actual review results.
+        """
+        feedbacks = data.get("feedbacks", [])
+        if not isinstance(feedbacks, list) or not feedbacks:
+            return False
+
+        # Check if all feedbacks reference the template example file
+        for fb in feedbacks:
+            if not isinstance(fb, dict):
+                continue
+            file_path = fb.get("file_path", "")
+            # The template uses "src/example.py" as the example file path
+            if file_path != "src/example.py":
+                return False
+
+        # Additional check: the template example has specific content
+        if len(feedbacks) == 1:
+            fb = feedbacks[0]
+            if (
+                fb.get("title") == "Potential null pointer exception"
+                and fb.get("line_start") == 42
+                and fb.get("line_end") == 45
+            ):
+                return True
+
+        # If all feedbacks reference src/example.py, it's likely the template
+        return all(
+            isinstance(fb, dict) and fb.get("file_path") == "src/example.py" for fb in feedbacks
+        )
 
     def _process_review_data(self, data: dict[str, Any], logs: list[str]) -> dict[str, Any]:
         """Process parsed review data into the expected format."""
