@@ -44,6 +44,7 @@ _notification_service: NotificationService | None = None
 _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
+_pr_service: PRService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -145,17 +146,20 @@ async def get_run_service() -> RunService:
 
 
 async def get_pr_service() -> PRService:
-    """Get the PR service."""
-    pr_dao = await get_pr_dao()
-    task_dao = await get_task_dao()
-    run_dao = await get_run_dao()
-    repo_service = await get_repo_service()
-    github_service = await get_github_service()
-    model_service = await get_model_service()
-    git_service = get_git_service()
-    return PRService(
-        pr_dao, task_dao, run_dao, repo_service, github_service, model_service, git_service
-    )
+    """Get the PR service singleton."""
+    global _pr_service
+    if _pr_service is None:
+        pr_dao = await get_pr_dao()
+        task_dao = await get_task_dao()
+        run_dao = await get_run_dao()
+        repo_service = await get_repo_service()
+        github_service = await get_github_service()
+        model_service = await get_model_service()
+        git_service = get_git_service()
+        _pr_service = PRService(
+            pr_dao, task_dao, run_dao, repo_service, github_service, model_service, git_service
+        )
+    return _pr_service
 
 
 async def get_github_service() -> GitHubService:
