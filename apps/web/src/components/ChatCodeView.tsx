@@ -228,9 +228,12 @@ export function ChatCodeView({
     setCreatingPR(true);
     try {
       if (preferences?.default_pr_creation_mode === 'link') {
-        const result = await prsApi.createLinkAuto(taskId, {
-          selected_run_id: latestSuccessfulRun.id,
-        });
+        // Use polling-based API to avoid timeout
+        const result = await prsApi.createLinkAutoWithPolling(
+          taskId,
+          { selected_run_id: latestSuccessfulRun.id },
+          { pollInterval: 1000, maxWaitTime: 120000 }
+        );
         setPRLinkResult({ url: result.url });
         success('PR link generated. Create the PR on GitHub.');
       } else {

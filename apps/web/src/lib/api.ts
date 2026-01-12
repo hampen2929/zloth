@@ -27,6 +27,8 @@ import type {
   PRCreateAuto,
   PRCreated,
   PRCreateLink,
+  PRLinkJob,
+  PRLinkJobResult,
   PRSyncResult,
   PRUpdate,
   PRUpdated,
@@ -278,6 +280,66 @@ export const prsApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /**
+   * Start async PR link generation job.
+   * Use this instead of createLinkAuto to avoid timeout.
+   */
+  startLinkAutoJob: (taskId: string, data: PRCreateAuto) =>
+    fetchApi<PRLinkJob>(`/tasks/${taskId}/prs/auto/link/job`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * Get status of PR link generation job.
+   */
+  getLinkAutoJob: (jobId: string) =>
+    fetchApi<PRLinkJobResult>(`/prs/jobs/${jobId}`),
+
+  /**
+   * Create PR link with polling (async job approach).
+   * This starts a job and polls until completion, avoiding timeout.
+   *
+   * @param taskId - The task ID
+   * @param data - PR creation data
+   * @param options - Polling options
+   * @returns PRCreateLink result
+   */
+  createLinkAutoWithPolling: async (
+    taskId: string,
+    data: PRCreateAuto,
+    options?: {
+      pollInterval?: number;
+      maxWaitTime?: number;
+      onProgress?: () => void;
+    }
+  ): Promise<PRCreateLink> => {
+    const pollInterval = options?.pollInterval ?? 1000;
+    const maxWaitTime = options?.maxWaitTime ?? 120000; // 2 minutes default
+    const startTime = Date.now();
+
+    // Start the job
+    const job = await prsApi.startLinkAutoJob(taskId, data);
+
+    // Poll until complete or timeout
+    while (Date.now() - startTime < maxWaitTime) {
+      const result = await prsApi.getLinkAutoJob(job.job_id);
+
+      if (result.status === 'completed' && result.result) {
+        return result.result;
+      }
+
+      if (result.status === 'failed') {
+        throw new ApiError(500, result.error || 'PR link generation failed');
+      }
+
+      options?.onProgress?.();
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+
+    throw new ApiError(504, 'PR link generation timed out');
+  },
 
   sync: (taskId: string, selectedRunId: string) =>
     fetchApi<PRSyncResult>(`/tasks/${taskId}/prs/sync`, {
