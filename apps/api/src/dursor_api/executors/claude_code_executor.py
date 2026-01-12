@@ -111,6 +111,7 @@ class ClaudeCodeExecutor:
         instruction: str,
         on_output: Callable[[str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
+        read_only: bool = False,
     ) -> ExecutorResult:
         """Execute claude CLI with the given instruction.
 
@@ -119,6 +120,7 @@ class ClaudeCodeExecutor:
             instruction: Natural language instruction for Claude Code.
             on_output: Optional callback for streaming output.
             resume_session_id: Optional session ID to resume a previous conversation.
+            read_only: If True, run in plan mode (read-only, no file modifications).
 
         Returns:
             ExecutorResult with success status, patch, and logs.
@@ -134,7 +136,6 @@ class ClaudeCodeExecutor:
         # Build command
         # Use --print (-p) for non-interactive mode with instruction as argument
         # Note: Using create_subprocess_exec avoids shell escaping issues
-        # Use --dangerously-skip-permissions to allow edits without prompts in automated mode
         # Use --output-format stream-json for streaming output with structured JSON
         # This enables session_id extraction from the result message
         # Note: --verbose is required when using --output-format=stream-json with -p
@@ -142,11 +143,19 @@ class ClaudeCodeExecutor:
             self.options.claude_cli_path,
             "-p",
             instruction,  # Pass instruction directly as argument
-            "--dangerously-skip-permissions",  # Allow file edits without permission prompts
             "--verbose",  # Required for stream-json with -p mode
             "--output-format",
             "stream-json",  # Streaming JSON for session_id extraction
         ]
+
+        # Permission mode: read_only uses plan mode, otherwise use dangerously-skip-permissions
+        if read_only:
+            # Plan mode restricts Claude to read-only operations
+            cmd.extend(["--permission-mode", "plan"])
+            logs.append("Running in read-only mode (--permission-mode plan)")
+        else:
+            # Allow file edits without permission prompts for implementation
+            cmd.append("--dangerously-skip-permissions")
 
         # Add --resume flag if we have a previous session ID
         # Note: Use --resume (not --session-id) to continue conversation

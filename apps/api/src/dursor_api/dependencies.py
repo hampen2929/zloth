@@ -13,6 +13,7 @@ from dursor_api.services.model_service import ModelService
 from dursor_api.services.notification_service import NotificationService
 from dursor_api.services.output_manager import OutputManager
 from dursor_api.services.pr_service import PRService
+from dursor_api.services.pr_status_poller import PRStatusPoller
 from dursor_api.services.repo_service import RepoService
 from dursor_api.services.review_service import ReviewService
 from dursor_api.services.run_service import RunService
@@ -40,6 +41,7 @@ _review_service: ReviewService | None = None
 _notification_service: NotificationService | None = None
 _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
+_pr_status_poller: PRStatusPoller | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -275,3 +277,13 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
             agentic_dao=agentic_dao,
         )
     return _agentic_orchestrator
+
+
+async def get_pr_status_poller() -> PRStatusPoller:
+    """Get the PR status poller singleton."""
+    global _pr_status_poller
+    if _pr_status_poller is None:
+        pr_dao = await get_pr_dao()
+        github_service = await get_github_service()
+        _pr_status_poller = PRStatusPoller(pr_dao, github_service)
+    return _pr_status_poller
