@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from collections.abc import Callable, Coroutine
 from datetime import datetime
 from pathlib import Path
@@ -489,7 +488,11 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
         # Process in REVERSE order since the actual response comes after the prompt
         # (the prompt contains an example JSON that we need to skip)
         json_candidates = self._extract_json_objects(response_text)
-        logs.append(f"Found {len(json_candidates)} potential JSON objects")
+        logs.append(f"Strategy 1: Found {len(json_candidates)} potential JSON objects")
+
+        review_format_count = 0
+        template_count = 0
+        parse_error_count = 0
 
         for i, candidate in enumerate(reversed(json_candidates)):
             original_index = len(json_candidates) - i
@@ -497,32 +500,62 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
                 data = json.loads(candidate)
                 # Check if this looks like our expected review format
                 if isinstance(data, dict) and ("feedbacks" in data or "overall_summary" in data):
+                    review_format_count += 1
                     # Skip if this looks like the template example from the system prompt
                     if self._is_template_example(data):
-                        logs.append(f"Skipping template example JSON at position #{original_index}")
+                        template_count += 1
+                        logs.append(f"Strategy 1: Skipping template at position #{original_index}")
                         continue
-                    logs.append(f"Successfully parsed JSON object #{original_index}")
+                    logs.append(
+                        f"Strategy 1: Found valid review JSON at position #{original_index}"
+                    )
                     return self._process_review_data(data, logs)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                parse_error_count += 1
+                # Log first few parse errors for debugging
+                if parse_error_count <= 3:
+                    logs.append(
+                        f"Strategy 1: JSON parse error at #{original_index}: {str(e)[:100]}"
+                    )
                 continue
 
-        # Strategy 2: Try the greedy regex as fallback
-        json_match = re.search(r"\{[\s\S]*\}", response_text)
-        if json_match:
-            # Try to find a valid JSON by trimming from the end
-            text = json_match.group()
-            for end_pos in range(len(text), 0, -1):
-                if text[end_pos - 1] == "}":
+        logs.append(
+            f"Strategy 1 summary: {review_format_count} review-format JSONs, "
+            f"{template_count} templates skipped, {parse_error_count} parse errors"
+        )
+
+        # Strategy 2: Try to find valid JSON by searching from the END of the text
+        # This is important because the actual review result comes after the prompt
+        # which contains template examples
+        logs.append("Strategy 1 failed, trying Strategy 2 (search from end)")
+
+        # Find all { positions and try from the last one first
+        brace_positions = [i for i, c in enumerate(response_text) if c == "{"]
+        for start_pos in reversed(brace_positions):
+            # Try to find a valid JSON starting from this position
+            for end_pos in range(len(response_text), start_pos, -1):
+                if response_text[end_pos - 1] == "}":
+                    candidate = response_text[start_pos:end_pos]
                     try:
-                        data = json.loads(text[:end_pos])
-                        if isinstance(data, dict):
-                            logs.append("Successfully parsed JSON using trimmed match")
+                        data = json.loads(candidate)
+                        if isinstance(data, dict) and (
+                            "feedbacks" in data or "overall_summary" in data
+                        ):
+                            # Skip template examples
+                            if self._is_template_example(data):
+                                logs.append(
+                                    f"Strategy 2: Skipping template example at position {start_pos}"
+                                )
+                                break  # Try next start position
+                            logs.append(
+                                f"Strategy 2: Successfully parsed JSON at position {start_pos}"
+                            )
                             return self._process_review_data(data, logs)
                     except json.JSONDecodeError:
                         continue
 
         # Fallback: create a summary-only result
-        logs.append("Using fallback review parsing - no valid JSON found")
+        logs.append("All strategies failed - no valid review JSON found")
         return self._create_default_review_result(response_text)
 
     def _extract_json_objects(self, text: str) -> list[str]:
