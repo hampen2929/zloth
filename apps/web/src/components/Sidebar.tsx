@@ -11,8 +11,6 @@ import { TaskListSkeleton } from './ui/Skeleton';
 import {
   PlusIcon,
   UserCircleIcon,
-  Cog6ToothIcon,
-  ChevronUpIcon,
   ChatBubbleLeftRightIcon,
   MagnifyingGlassIcon,
   XMarkIcon,
@@ -23,20 +21,14 @@ import {
 
 type SortOption = 'newest' | 'oldest' | 'alphabetical';
 
-interface SidebarProps {
-  onSettingsClick: () => void;
-}
-
-export default function Sidebar({ onSettingsClick }: SidebarProps) {
+export default function Sidebar() {
   const pathname = usePathname();
   const { data: tasks, isLoading } = useSWR('tasks', () => tasksApi.list(), {
     refreshInterval: 5000,
   });
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('newest');
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
 
   const currentTaskId = pathname?.match(/\/tasks\/(.+)/)?.[1];
@@ -76,24 +68,21 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
     return result;
   }, [tasks, searchQuery, sortOption]);
 
-  // Close menus when clicking outside
+  // Close sort menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setAccountMenuOpen(false);
-      }
       if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
         setShowSortMenu(false);
       }
     };
 
-    if (accountMenuOpen || showSortMenu) {
+    if (showSortMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [accountMenuOpen, showSortMenu]);
+  }, [showSortMenu]);
 
   return (
     <aside className="w-64 h-screen flex flex-col bg-gray-900 border-r border-gray-800">
@@ -297,17 +286,15 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
       </div>
 
       {/* Account Section */}
-      <div ref={menuRef} className="relative border-t border-gray-800 p-3">
-        <button
-          onClick={() => setAccountMenuOpen(!accountMenuOpen)}
+      <div className="border-t border-gray-800 p-3">
+        <Link
+          href="/settings"
           className={cn(
-            'flex items-center gap-3 w-full px-2 py-2 rounded-lg transition-colors text-left',
+            'flex items-center gap-3 w-full px-2 py-2 rounded-lg transition-colors',
             'hover:bg-gray-800',
             'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset',
-            accountMenuOpen && 'bg-gray-800'
+            pathname === '/settings' && 'bg-gray-800'
           )}
-          aria-expanded={accountMenuOpen}
-          aria-haspopup="true"
         >
           <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center">
             <UserCircleIcon className="w-5 h-5 text-gray-400" />
@@ -316,37 +303,7 @@ export default function Sidebar({ onSettingsClick }: SidebarProps) {
             <div className="text-sm font-medium text-white">Account</div>
             <div className="text-xs text-gray-500">Settings & Preferences</div>
           </div>
-          <ChevronUpIcon
-            className={cn(
-              'w-4 h-4 text-gray-500 transition-transform duration-200',
-              accountMenuOpen ? 'rotate-0' : 'rotate-180'
-            )}
-          />
-        </button>
-
-        {/* Account Menu Popup */}
-        {accountMenuOpen && (
-          <div
-            className="absolute bottom-full left-3 right-3 mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200"
-            role="menu"
-          >
-            <button
-              onClick={() => {
-                onSettingsClick();
-                setAccountMenuOpen(false);
-              }}
-              className={cn(
-                'flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-300',
-                'hover:bg-gray-700 transition-colors',
-                'focus:outline-none focus:bg-gray-700'
-              )}
-              role="menuitem"
-            >
-              <Cog6ToothIcon className="w-4 h-4" />
-              Settings
-            </button>
-          </div>
-        )}
+        </Link>
       </div>
     </aside>
   );
