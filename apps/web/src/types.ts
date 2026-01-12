@@ -523,3 +523,30 @@ export interface FixInstructionResponse {
   target_feedbacks: ReviewFeedbackItem[];
   estimated_changes: number;
 }
+
+// CI Check
+export type CICheckStatus = 'pending' | 'success' | 'failure' | 'error';
+
+export interface CIJobResult {
+  job_name: string;
+  result: string;  // "success" | "failure" | "skipped" | "cancelled"
+  error_log: string | null;
+}
+
+export interface CICheck {
+  id: string;
+  task_id: string;
+  pr_id: string;
+  status: CICheckStatus;
+  workflow_run_id: number | null;
+  sha: string | null;
+  jobs: Record<string, string>;
+  failed_jobs: CIJobResult[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CICheckResponse {
+  ci_check: CICheck;
+  is_complete: boolean;
+}

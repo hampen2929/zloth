@@ -27,6 +27,8 @@ from dursor_api.domain.models import (
     PR,
     AgenticState,
     BacklogItem,
+    CICheck,
+    CIJobResult,
     FileDiff,
     Message,
     ModelProfile,
@@ -1645,4 +1647,144 @@ class AgenticRunDAO:
             last_review_score=row["last_review_score"],
             error=row["error"],
             human_approved=bool(row["human_approved"]),
+        )
+
+
+class CICheckDAO:
+    """DAO for CICheck."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        task_id: str,
+        pr_id: str,
+        status: str,
+        workflow_run_id: int | None = None,
+        sha: str | None = None,
+        jobs: dict[str, str] | None = None,
+        failed_jobs: builtins.list[CIJobResult] | None = None,
+    ) -> CICheck:
+        """Create a new CI check record."""
+        id = generate_id()
+        now = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO ci_checks (
+                id, task_id, pr_id, status, workflow_run_id, sha,
+                jobs, failed_jobs, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                task_id,
+                pr_id,
+                status,
+                workflow_run_id,
+                sha,
+                json.dumps(jobs or {}),
+                json.dumps([fj.model_dump() for fj in (failed_jobs or [])]),
+                now,
+                now,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return CICheck(
+            id=id,
+            task_id=task_id,
+            pr_id=pr_id,
+            status=status,
+            workflow_run_id=workflow_run_id,
+            sha=sha,
+            jobs=jobs or {},
+            failed_jobs=failed_jobs or [],
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> CICheck | None:
+        """Get a CI check by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM ci_checks WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_latest_by_pr_id(self, pr_id: str) -> CICheck | None:
+        """Get the latest CI check for a PR."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM ci_checks WHERE pr_id = ? ORDER BY created_at DESC LIMIT 1",
+            (pr_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list_by_task_id(self, task_id: str) -> builtins.list[CICheck]:
+        """List all CI checks for a task."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM ci_checks WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update(
+        self,
+        id: str,
+        status: str,
+        workflow_run_id: int | None = None,
+        sha: str | None = None,
+        jobs: dict[str, str] | None = None,
+        failed_jobs: builtins.list[CIJobResult] | None = None,
+    ) -> CICheck | None:
+        """Update a CI check record."""
+        updates = ["status = ?", "updated_at = ?"]
+        params: builtins.list[Any] = [status, now_iso()]
+
+        if workflow_run_id is not None:
+            updates.append("workflow_run_id = ?")
+            params.append(workflow_run_id)
+        if sha is not None:
+            updates.append("sha = ?")
+            params.append(sha)
+        if jobs is not None:
+            updates.append("jobs = ?")
+            params.append(json.dumps(jobs))
+        if failed_jobs is not None:
+            updates.append("failed_jobs = ?")
+            params.append(json.dumps([fj.model_dump() for fj in failed_jobs]))
+
+        params.append(id)
+
+        await self.db.connection.execute(
+            f"UPDATE ci_checks SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.connection.commit()
+
+        return await self.get(id)
+
+    def _row_to_model(self, row: Any) -> CICheck:
+        """Convert database row to CICheck model."""
+        jobs = json.loads(row["jobs"]) if row["jobs"] else {}
+        failed_jobs_data = json.loads(row["failed_jobs"]) if row["failed_jobs"] else []
+        failed_jobs = [CIJobResult(**fj) for fj in failed_jobs_data]
+
+        return CICheck(
+            id=row["id"],
+            task_id=row["task_id"],
+            pr_id=row["pr_id"],
+            status=row["status"],
+            workflow_run_id=row["workflow_run_id"],
+            sha=row["sha"],
+            jobs=jobs,
+            failed_jobs=failed_jobs,
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )
