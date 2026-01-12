@@ -134,15 +134,27 @@ class RepoService:
                 workspace_path = Path(existing.workspace_path)
                 if workspace_path.exists():
                     repo = git.Repo(workspace_path)
+                    # Fetch latest refs to ensure remote branches are available
+                    try:
+                        repo.git.fetch("origin", "--prune")
+                    except git.GitCommandError:
+                        pass  # Ignore fetch errors (might be offline)
                     try:
                         repo.git.checkout(data.branch)
                     except git.GitCommandError as e:
+                        error_msg = str(e)
                         # If the branch is already checked out in a worktree, skip
-                        # the checkout. This happens when a run creates a worktree
-                        # with the branch, and a new task tries to select the same
-                        # branch. The branch exists and is accessible via worktree.
-                        if "already checked out at" in str(e):
+                        if "already checked out at" in error_msg:
                             pass  # Branch exists, just can't switch to it here
+                        # If branch doesn't exist locally, try to checkout from origin
+                        elif "did not match any file" in error_msg:
+                            try:
+                                repo.git.checkout("-b", data.branch, f"origin/{data.branch}")
+                            except git.GitCommandError as e2:
+                                if "already checked out at" in str(e2):
+                                    pass  # Branch exists in worktree
+                                else:
+                                    raise
                         else:
                             raise
             return existing
