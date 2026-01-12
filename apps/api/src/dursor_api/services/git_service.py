@@ -136,9 +136,16 @@ class GitService:
 
             default_branch = repo.default_branch or "main"
 
-            # Fetch to ensure we have latest refs (best-effort)
+            # Fetch to ensure we have latest refs and sufficient history (best-effort)
             try:
-                source_repo.git.fetch("origin", "--prune")
+                # Check if this is a shallow clone
+                shallow_file = Path(repo.workspace_path) / ".git" / "shallow"
+                if shallow_file.exists():
+                    # Unshallow to get full history for proper diff/merge-base calculation
+                    # Without full history, git cannot find common ancestors between branches
+                    source_repo.git.fetch("origin", "--unshallow")
+                else:
+                    source_repo.git.fetch("origin", "--prune")
             except Exception:
                 # Ignore fetch errors (might be offline)
                 pass

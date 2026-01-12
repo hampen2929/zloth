@@ -140,9 +140,14 @@ class RepoService:
                 if workspace_path.exists():
                     repo = git.Repo(workspace_path)
                     try:
-                        # Fetch the branch from origin with auth (shallow clone may not have it)
+                        # Fetch the branch from origin with auth
                         auth_url = await github_service.clone_url(data.owner, data.repo)
-                        repo.git.fetch(auth_url, data.branch, depth=1)
+                        # Check if this is a shallow clone and unshallow if needed
+                        shallow_file = workspace_path / ".git" / "shallow"
+                        if shallow_file.exists():
+                            # Unshallow to get full history for proper diff calculation
+                            repo.git.fetch(auth_url, "--unshallow")
+                        repo.git.fetch(auth_url, data.branch)
                     except git.GitCommandError:
                         # Branch might not exist on remote, ignore fetch errors
                         pass
