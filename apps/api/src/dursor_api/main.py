@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from dursor_api.config import settings
+from dursor_api.dependencies import get_pr_status_poller
 from dursor_api.routes import (
     backlog_router,
     breakdown_router,
@@ -30,7 +31,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     db = await get_db()
     await db.initialize()
 
+    # Start PR status poller
+    pr_status_poller = await get_pr_status_poller()
+    pr_status_poller.start()
+
     yield
+
+    # Shutdown: stop PR status poller
+    await pr_status_poller.stop()
 
     # Shutdown: close database
     await db.disconnect()
