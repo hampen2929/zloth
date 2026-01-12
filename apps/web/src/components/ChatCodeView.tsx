@@ -88,17 +88,6 @@ export function ChatCodeView({
   // Check if patch_agent is used
   const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
 
-  // Get branch name from selected run (each executor has its own branch)
-  const latestSuccessfulRun = sortedRuns.find((r) => r.status === 'succeeded' && r.working_branch);
-  const latestPR = prs && prs.length > 0 ? prs[0] : null;
-
-  // Sync PR result from backend
-  useEffect(() => {
-    if (latestPR && !prResult) {
-      setPRResult({ url: latestPR.url, number: latestPR.number });
-      setPRLinkResult(null);
-    }
-  }, [latestPR, prResult]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -130,6 +119,12 @@ export function ChatCodeView({
     (r) => r.executor_type === selectedExecutorType
   );
 
+  // Get branch name from selected run (each executor has its own branch)
+  // This ensures PR creation uses the selected executor's run, not any executor
+  const latestSuccessfulRun = runsForSelectedExecutor.find(
+    (r) => r.status === 'succeeded' && r.working_branch
+  );
+
   // Get successful run IDs for review (only for the selected executor type)
   const successfulRunIds = runsForSelectedExecutor
     .filter((r) => r.status === 'succeeded')
@@ -137,6 +132,34 @@ export function ChatCodeView({
 
   // Get the latest run for the selected executor (for branch info, PR creation)
   const latestRunForSelectedExecutor = runsForSelectedExecutor[0];
+
+  // Get the PR for the selected executor's branch (each executor has its own PR)
+  const selectedExecutorBranch = latestRunForSelectedExecutor?.working_branch;
+  const latestPR = useMemo(() => {
+    if (!prs || !selectedExecutorBranch) return null;
+    return prs.find((pr) => pr.branch === selectedExecutorBranch) || null;
+  }, [prs, selectedExecutorBranch]);
+
+  // Sync PR result from backend for the selected executor
+  useEffect(() => {
+    if (latestPR && !prResult) {
+      setPRResult({ url: latestPR.url, number: latestPR.number });
+      setPRLinkResult(null);
+    }
+  }, [latestPR, prResult]);
+
+  // Reset PR state when switching to a different executor
+  // This allows creating a new PR for each executor
+  const prevSelectedExecutorBranch = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (prevSelectedExecutorBranch.current !== undefined &&
+        prevSelectedExecutorBranch.current !== selectedExecutorBranch) {
+      // Executor changed, reset PR state to allow creating PR for new executor
+      setPRResult(null);
+      setPRLinkResult(null);
+    }
+    prevSelectedExecutorBranch.current = selectedExecutorBranch;
+  }, [selectedExecutorBranch]);
 
   // Build a map of message_id -> run for the selected executor
   const runByMessageId = new Map<string, Run>();
