@@ -52,11 +52,6 @@ export default function BacklogPage() {
     );
   };
 
-  const handleStartWork = () => {
-    // Refresh the list after starting work
-    fetchItems();
-  };
-
   const handleOpenBreakdown = () => {
     // Dispatch custom event to open breakdown modal
     window.dispatchEvent(new CustomEvent('openBreakdownModal'));
@@ -163,7 +158,6 @@ export default function BacklogPage() {
                 key={item.id}
                 item={item}
                 onUpdate={handleItemUpdate}
-                onStartWork={handleStartWork}
               />
             ))}
           </div>
