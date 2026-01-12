@@ -532,8 +532,10 @@ function DefaultsTab() {
       if (preferences.default_repo_owner && preferences.default_repo_name) {
         const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
         setSelectedRepo(repoFullName);
-        // Load branches for the default repo
-        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch);
+        // Find the repository to get its default branch
+        const repoData = repos.find((r) => r.full_name === repoFullName);
+        // Use repository's default branch for initial selection
+        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, repoData?.default_branch);
       }
     }
   }, [preferences, repos]);
