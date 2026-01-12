@@ -179,7 +179,7 @@ class GitService:
             return WorktreeInfo(
                 path=worktree_path,
                 branch_name=branch_name,
-                base_branch=base_branch,
+                base_branch=base_ref,  # Use resolved ref (e.g., origin/main) not local name
                 created_at=datetime.utcnow(),
             )
 
@@ -526,14 +526,27 @@ class GitService:
 
         def _get_diff_from_base() -> str:
             repo = git.Repo(worktree_path)
+
+            # Resolve base_ref to remote ref if it's a simple branch name
+            # (worktrees typically don't have local branches like "main",
+            # only remote tracking refs like "origin/main")
+            resolved_ref = base_ref
+            if "/" not in base_ref and not base_ref.startswith("refs/"):
+                try:
+                    repo.git.show_ref("--verify", f"refs/remotes/origin/{base_ref}")
+                    resolved_ref = f"origin/{base_ref}"
+                except git.GitCommandError:
+                    # Remote ref doesn't exist, keep original base_ref
+                    pass
+
             try:
                 # Get diff from merge-base to HEAD
-                merge_base = repo.git.merge_base(base_ref, "HEAD")
+                merge_base = repo.git.merge_base(resolved_ref, "HEAD")
                 return str(repo.git.diff(merge_base, "HEAD"))
             except git.GitCommandError:
                 # Fallback to simple diff
                 try:
-                    return str(repo.git.diff(base_ref, "HEAD"))
+                    return str(repo.git.diff(resolved_ref, "HEAD"))
                 except git.GitCommandError:
                     return ""
 
