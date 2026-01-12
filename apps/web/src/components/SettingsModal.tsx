@@ -601,7 +601,9 @@ function DefaultsTab() {
 
     if (fullName) {
       const [owner, repo] = fullName.split('/');
-      await loadBranches(owner, repo);
+      // Find the repository to get its default branch
+      const selectedRepoData = repos?.find((r) => r.full_name === fullName);
+      await loadBranches(owner, repo, selectedRepoData?.default_branch);
     }
   };
 
