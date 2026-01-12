@@ -76,8 +76,9 @@ export function RunDetailPanel({
   const [prTitle, setPRTitle] = useState('');
   const [prBody, setPRBody] = useState('');
   const [creating, setCreating] = useState(false);
-  const [prResult, setPRResult] = useState<{ url: string } | null>(null);
+  const [prResult, setPRResult] = useState<{ url: string; pr_id?: string } | null>(null);
   const [prResultMode, setPRResultMode] = useState<'created' | 'link' | null>(null);
+  const [updatingDesc, setUpdatingDesc] = useState(false);
   const [pendingSyncRunId, setPendingSyncRunId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -100,7 +101,7 @@ export function RunDetailPanel({
       try {
         const synced = await prsApi.sync(taskId, pendingSyncRunId);
         if (synced.found && synced.pr) {
-          setPRResult({ url: synced.pr.url });
+          setPRResult({ url: synced.pr.url, pr_id: synced.pr.pr_id });
           setPRResultMode('created');
           setPendingSyncRunId(null);
           onPRCreated();
@@ -141,7 +142,7 @@ export function RunDetailPanel({
           title: prTitle.trim(),
           body: prBody.trim() || undefined,
         });
-        setPRResult(result);
+        setPRResult({ url: result.url, pr_id: result.pr_id });
         setPRResultMode('created');
         onPRCreated();
         success('Pull request created successfully!');
@@ -152,6 +153,21 @@ export function RunDetailPanel({
       error(message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleUpdatePRDesc = async () => {
+    if (!prResult?.pr_id) return;
+
+    setUpdatingDesc(true);
+    try {
+      await prsApi.regenerateDescription(taskId, prResult.pr_id);
+      success('PR description updated successfully!');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update PR description';
+      error(message);
+    } finally {
+      setUpdatingDesc(false);
     }
   };
 
@@ -239,14 +255,39 @@ export function RunDetailPanel({
               {getStatusBadge()}
             </div>
           </div>
-          {run.status === 'succeeded' && run.patch && !prResult && (
-            <Button
-              variant="success"
-              size="sm"
-              onClick={() => setShowPRForm(!showPRForm)}
-            >
-              {showPRForm ? 'Cancel' : 'Create PR'}
-            </Button>
+          {run.status === 'succeeded' && run.patch && (
+            <div className="flex items-center gap-2">
+              {!prResult && (
+                <Button
+                  variant="success"
+                  size="sm"
+                  onClick={() => setShowPRForm(!showPRForm)}
+                >
+                  {showPRForm ? 'Cancel' : 'Create PR'}
+                </Button>
+              )}
+              {prResult && prResultMode === 'created' && prResult.pr_id && (
+                <>
+                  <a
+                    href={prResult.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-700 text-blue-400 hover:text-blue-300 hover:bg-gray-600 transition-colors"
+                  >
+                    View PR
+                    <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+                  </a>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleUpdatePRDesc}
+                    isLoading={updatingDesc}
+                  >
+                    Update PR Desc
+                  </Button>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -264,11 +305,21 @@ export function RunDetailPanel({
                 href={prResult.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors"
+                className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors mb-3"
               >
                 {prResultMode === 'link' ? 'Open PR creation page on GitHub' : 'View PR on GitHub'}
                 <ArrowTopRightOnSquareIcon className="w-4 h-4" />
               </a>
+              {prResultMode === 'created' && prResult.pr_id && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleUpdatePRDesc}
+                  isLoading={updatingDesc}
+                >
+                  Update PR Desc
+                </Button>
+              )}
             </div>
           ) : (
             <form onSubmit={handleCreatePR} className="space-y-3">

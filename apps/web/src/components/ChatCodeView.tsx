@@ -50,8 +50,9 @@ export function ChatCodeView({
   const [selectedExecutorType, setSelectedExecutorType] = useState<ExecutorType | null>(null);
   const [runTabs, setRunTabs] = useState<Record<string, RunTab>>({});
   const [creatingPR, setCreatingPR] = useState(false);
-  const [prResult, setPRResult] = useState<{ url: string; number: number } | null>(null);
+  const [prResult, setPRResult] = useState<{ url: string; number: number; pr_id?: string } | null>(null);
   const [prLinkResult, setPRLinkResult] = useState<{ url: string } | null>(null);
+  const [updatingDesc, setUpdatingDesc] = useState(false);
   const [reviewExpanded, setReviewExpanded] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
@@ -143,7 +144,7 @@ export function ChatCodeView({
   // Sync PR result from backend for the selected executor
   useEffect(() => {
     if (latestPR && !prResult) {
-      setPRResult({ url: latestPR.url, number: latestPR.number });
+      setPRResult({ url: latestPR.url, number: latestPR.number, pr_id: latestPR.id });
       setPRLinkResult(null);
     }
   }, [latestPR, prResult]);
@@ -236,7 +237,7 @@ export function ChatCodeView({
         const result = await prsApi.createAuto(taskId, {
           selected_run_id: latestSuccessfulRun.id,
         });
-        setPRResult({ url: result.url, number: result.number });
+        setPRResult({ url: result.url, number: result.number, pr_id: result.pr_id });
         onPRCreated();
         success('Pull request created successfully!');
       }
@@ -245,6 +246,21 @@ export function ChatCodeView({
       error(message);
     } finally {
       setCreatingPR(false);
+    }
+  };
+
+  const handleUpdatePRDesc = async () => {
+    if (!prResult?.pr_id) return;
+
+    setUpdatingDesc(true);
+    try {
+      await prsApi.regenerateDescription(taskId, prResult.pr_id);
+      success('PR description updated successfully!');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update PR description';
+      error(message);
+    } finally {
+      setUpdatingDesc(false);
     }
   };
 
@@ -258,7 +274,7 @@ export function ChatCodeView({
       try {
         const synced = await prsApi.sync(taskId, latestSuccessfulRun.id);
         if (synced.found && synced.pr) {
-          setPRResult({ url: synced.pr.url, number: synced.pr.number });
+          setPRResult({ url: synced.pr.url, number: synced.pr.number, pr_id: synced.pr.pr_id });
           setPRLinkResult(null);
           onPRCreated();
           success('PR detected. Opening PR link.');
@@ -429,8 +445,10 @@ export function ChatCodeView({
           successfulRunIds={successfulRunIds}
           taskId={taskId}
           creatingPR={creatingPR}
+          updatingDesc={updatingDesc}
           onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
+          onUpdatePRDesc={handleUpdatePRDesc}
           onReviewCreated={() => {
             mutateReviews();
             success('Review started');
@@ -533,14 +551,16 @@ export function ChatCodeView({
 
 interface SessionHeaderProps {
   sessionBranch: string;
-  prResult: { url: string; number: number } | null;
+  prResult: { url: string; number: number; pr_id?: string } | null;
   prLinkResult: { url: string } | null;
   latestSuccessfulRun: Run | undefined;
   successfulRunIds: string[];
   taskId: string;
   creatingPR: boolean;
+  updatingDesc: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
+  onUpdatePRDesc: () => void;
   onReviewCreated: () => void;
   onReviewError: (message: string) => void;
 }
@@ -553,8 +573,10 @@ function SessionHeader({
   successfulRunIds,
   taskId,
   creatingPR,
+  updatingDesc,
   onCopyBranch,
   onCreatePR,
+  onUpdatePRDesc,
   onReviewCreated,
   onReviewError,
 }: SessionHeaderProps) {
@@ -583,16 +605,29 @@ function SessionHeader({
       )}
 
       {prResult ? (
-        <a
-          href={prResult.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-500 text-white text-sm font-medium transition-colors"
-        >
-          <CheckCircleIcon className="w-4 h-4" />
-          PR #{prResult.number}
-          <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
-        </a>
+        <>
+          <a
+            href={prResult.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-500 text-white text-sm font-medium transition-colors"
+          >
+            <CheckCircleIcon className="w-4 h-4" />
+            PR #{prResult.number}
+            <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+          </a>
+          {prResult.pr_id && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onUpdatePRDesc}
+              disabled={updatingDesc}
+              isLoading={updatingDesc}
+            >
+              Update PR Desc
+            </Button>
+          )}
+        </>
       ) : prLinkResult ? (
         <a
           href={prLinkResult.url}
