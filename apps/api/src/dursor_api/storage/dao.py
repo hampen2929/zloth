@@ -10,7 +10,6 @@ from typing import Any
 
 from dursor_api.domain.enums import (
     AgenticPhase,
-    BacklogStatus,
     BrokenDownTaskType,
     CodingMode,
     EstimatedSize,
@@ -1079,9 +1078,9 @@ class BacklogDAO:
             INSERT INTO backlog_items (
                 id, repo_id, title, description, type, estimated_size,
                 target_files, implementation_hint, tags, subtasks,
-                status, created_at, updated_at
+                created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 id,
@@ -1094,7 +1093,6 @@ class BacklogDAO:
                 implementation_hint,
                 json.dumps(tags or []),
                 json.dumps(subtask_list),
-                BacklogStatus.DRAFT.value,
                 now,
                 now,
             ),
@@ -1112,7 +1110,6 @@ class BacklogDAO:
             implementation_hint=implementation_hint,
             tags=tags or [],
             subtasks=[SubTask(**st) for st in subtask_list],
-            status=BacklogStatus.DRAFT,
             task_id=None,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
@@ -1129,13 +1126,11 @@ class BacklogDAO:
     async def list(
         self,
         repo_id: str | None = None,
-        status: BacklogStatus | None = None,
     ) -> list[BacklogItem]:
         """List backlog items with optional filters.
 
         Args:
             repo_id: Filter by repository ID.
-            status: Filter by status.
 
         Returns:
             List of BacklogItem.
@@ -1146,10 +1141,6 @@ class BacklogDAO:
         if repo_id:
             query += " AND repo_id = ?"
             params.append(repo_id)
-
-        if status:
-            query += " AND status = ?"
-            params.append(status.value)
 
         query += " ORDER BY created_at DESC"
 
@@ -1168,7 +1159,6 @@ class BacklogDAO:
         implementation_hint: str | None = None,
         tags: builtins.list[str] | None = None,
         subtasks: builtins.list[dict[str, Any]] | None = None,
-        status: BacklogStatus | None = None,
         task_id: str | None = None,
     ) -> BacklogItem | None:
         """Update a backlog item.
@@ -1207,9 +1197,6 @@ class BacklogDAO:
         if subtasks is not None:
             updates.append("subtasks = ?")
             params.append(json.dumps(subtasks))
-        if status is not None:
-            updates.append("status = ?")
-            params.append(status.value)
         if task_id is not None:
             updates.append("task_id = ?")
             params.append(task_id)
@@ -1263,7 +1250,6 @@ class BacklogDAO:
             implementation_hint=row["implementation_hint"],
             tags=tags,
             subtasks=subtasks,
-            status=BacklogStatus(row["status"]),
             task_id=row["task_id"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),

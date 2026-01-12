@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 from dursor_api.domain.enums import (
     AgenticPhase,
-    BacklogStatus,
     BreakdownStatus,
     BrokenDownTaskType,
     CodingMode,
@@ -739,7 +738,6 @@ class BacklogItemUpdate(BaseModel):
     implementation_hint: str | None = Field(None, description="Implementation hints")
     tags: list[str] | None = Field(None, description="Tags")
     subtasks: list[SubTask] | None = Field(None, description="Subtasks")
-    status: BacklogStatus | None = Field(None, description="Status")
 
 
 class BacklogItem(BacklogItemBase):
@@ -748,7 +746,6 @@ class BacklogItem(BacklogItemBase):
     id: str = Field(..., description="Backlog item ID")
     repo_id: str = Field(..., description="Repository ID")
     subtasks: list[SubTask] = Field(default_factory=list, description="Subtasks")
-    status: BacklogStatus = Field(default=BacklogStatus.DRAFT, description="Status")
     task_id: str | None = Field(None, description="Linked task ID if promoted")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")

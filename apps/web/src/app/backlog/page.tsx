@@ -2,45 +2,33 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { backlogApi } from '@/lib/api';
-import type { BacklogItem, BacklogStatus } from '@/types';
+import type { BacklogItem } from '@/types';
 import BacklogCard from '@/components/BacklogCard';
 import NewBacklogModal from '@/components/NewBacklogModal';
 import {
   ClipboardDocumentListIcon,
   SparklesIcon,
-  FunnelIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline';
-import { cn } from '@/lib/utils';
-
-const statusFilters: { value: BacklogStatus | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'ready', label: 'Ready' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
-];
 
 export default function BacklogPage() {
   const [items, setItems] = useState<BacklogItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<BacklogStatus | 'all'>('all');
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
 
   const fetchItems = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const status = statusFilter === 'all' ? undefined : statusFilter;
-      const data = await backlogApi.list(undefined, status);
+      const data = await backlogApi.list();
       setItems(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load backlog items');
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter]);
+  }, []);
 
   useEffect(() => {
     fetchItems();
@@ -89,27 +77,6 @@ export default function BacklogPage() {
               <SparklesIcon className="w-4 h-4" />
               Breakdown
             </button>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="flex items-center gap-2 mt-4">
-          <FunnelIcon className="w-4 h-4 text-gray-500" />
-          <div className="flex gap-1">
-            {statusFilters.map((filter) => (
-              <button
-                key={filter.value}
-                onClick={() => setStatusFilter(filter.value)}
-                className={cn(
-                  'px-3 py-1 text-sm rounded transition-colors',
-                  statusFilter === filter.value
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
           </div>
         </div>
       </div>
