@@ -87,15 +87,12 @@ class CICheckService:
 
         logger.debug(f"Fetching CI status for {repo_full_name} PR #{pr.number}")
 
-        # Get CI status from GitHub
-        try:
-            status = await self.github.get_pr_check_status(pr.number, repo_full_name)
-        except Exception as e:
-            logger.error(f"Failed to get CI status: {e}")
-            status = "error"
+        # Build detailed CI result first (jobs data)
+        ci_data = await self._build_ci_data(pr.number, repo_full_name)
 
-        # Build detailed CI result
-        ci_data = await self._build_ci_data(pr.number, repo_full_name, status)
+        # Derive status from jobs data instead of relying on combined status API
+        # This ensures consistency between displayed jobs and overall status
+        status = self._derive_status_from_jobs(ci_data.get("jobs", {}))
 
         # Create or update CICheck record
         existing = await self.ci_check_dao.get_latest_by_pr_id(pr_id)
@@ -144,18 +141,59 @@ class CICheckService:
         """
         return await self.ci_check_dao.list_by_task_id(task_id)
 
+    def _derive_status_from_jobs(self, jobs: dict[str, str]) -> str:
+        """Derive overall CI status from individual job results.
+
+        Args:
+            jobs: Dict mapping job name to result/status.
+
+        Returns:
+            Overall status: "success", "pending", "failure", or "error".
+        """
+        if not jobs:
+            # No jobs found - could be CI hasn't started yet
+            return "pending"
+
+        pending_states = {"in_progress", "queued", "pending"}
+        failure_states = {"failure", "cancelled", "timed_out"}
+        success_states = {"success", "skipped", "neutral"}
+
+        has_pending = False
+        has_failure = False
+        has_success = False
+
+        for result in jobs.values():
+            if result in pending_states:
+                has_pending = True
+            elif result in failure_states:
+                has_failure = True
+            elif result in success_states:
+                has_success = True
+            else:
+                # Unknown state, treat as pending
+                has_pending = True
+
+        # Priority: failure > pending > success
+        if has_failure:
+            return "failure"
+        if has_pending:
+            return "pending"
+        if has_success:
+            return "success"
+
+        # Fallback
+        return "pending"
+
     async def _build_ci_data(
         self,
         pr_number: int,
         repo_full_name: str,
-        status: str,
     ) -> dict:
         """Build CI data from GitHub API.
 
         Args:
             pr_number: PR number.
             repo_full_name: Full repository name.
-            status: Combined CI status.
 
         Returns:
             Dict with CI data (sha, jobs, failed_jobs).
@@ -221,9 +259,7 @@ class CICheckService:
             # 403 error likely means GitHub App doesn't have "checks:read" permission
             # Fall back to using the combined status API (requires "statuses:read")
             if "403" in str(e):
-                logger.warning(
-                    f"No 'checks:read' permission, falling back to statuses API: {e}"
-                )
+                logger.warning(f"No 'checks:read' permission, falling back to statuses API: {e}")
                 # Try to get statuses as fallback
                 try:
                     statuses_data = await self.github._github_request(
