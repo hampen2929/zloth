@@ -180,8 +180,9 @@ async def get_kanban_service() -> KanbanService:
     task_dao = await get_task_dao()
     run_dao = await get_run_dao()
     pr_dao = await get_pr_dao()
+    review_dao = await get_review_dao()
     github_service = await get_github_service()
-    return KanbanService(task_dao, run_dao, pr_dao, github_service)
+    return KanbanService(task_dao, run_dao, pr_dao, review_dao, github_service)
 
 
 async def get_review_dao() -> ReviewDAO:
