@@ -1,11 +1,14 @@
 'use client';
 
-import type { Run } from '@/types';
+import type { Run, SummaryType } from '@/types';
 import { cn } from '@/lib/utils';
+import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-utils';
 import { isCLIExecutor, getExecutorDisplayName } from '@/hooks';
 import { StatusBadge, getStatusBorderColor, getStatusBackgroundColor } from './ui/StatusBadge';
 import { DiffViewer } from './DiffViewer';
 import { StreamingLogs } from './StreamingLogs';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   CpuChipIcon,
   CommandLineIcon,
@@ -16,6 +19,12 @@ import {
   ClockIcon,
   ExclamationTriangleIcon,
   DocumentDuplicateIcon,
+  ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon,
+  CheckCircleIcon,
+  LightBulbIcon,
+  DocumentMagnifyingGlassIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 
 export type RunTab = 'summary' | 'diff' | 'logs';
@@ -118,7 +127,7 @@ export function RunResultCard({
               </div>
 
               {/* Tab Content */}
-              <div className="p-4 max-h-96 overflow-y-auto" role="tabpanel">
+              <div className="p-4 max-h-[600px] overflow-y-auto" role="tabpanel">
                 {activeTab === 'summary' && (
                   run.status === 'succeeded' ? (
                     <SummaryTab run={run} />
@@ -185,17 +194,98 @@ export function RunResultCard({
   );
 }
 
+/**
+ * Get icon for summary type
+ */
+function getSummaryTypeIcon(type: SummaryType) {
+  switch (type) {
+    case 'code_change':
+      return <CodeBracketIcon className="w-5 h-5" />;
+    case 'qa_response':
+      return <ChatBubbleLeftRightIcon className="w-5 h-5" />;
+    case 'analysis':
+      return <MagnifyingGlassIcon className="w-5 h-5" />;
+    case 'no_action':
+      return <CheckCircleIcon className="w-5 h-5" />;
+  }
+}
+
 function SummaryTab({ run }: { run: Run }) {
+  const structuredSummary = deriveStructuredSummary(run);
+  const typeStyles = getSummaryTypeStyles(structuredSummary.type);
+  const typeIcon = getSummaryTypeIcon(structuredSummary.type);
+
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="font-medium text-gray-200 text-sm mb-2 flex items-center gap-2">
-          <DocumentTextIcon className="w-5 h-5 text-gray-400" />
-          <span>Summary</span>
-        </h3>
-        <p className="text-gray-300 text-sm leading-relaxed">{run.summary}</p>
+      {/* Summary Type Badge */}
+      <div className={cn(
+        'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium',
+        typeStyles.bgColor,
+        typeStyles.color
+      )}>
+        {typeIcon}
+        {typeStyles.label}
       </div>
 
+      {/* Response (Agent's Answer) - Rendered as Markdown */}
+      <div className={cn(
+        'p-3 rounded-lg border',
+        typeStyles.bgColor,
+        typeStyles.borderColor
+      )}>
+        <div className="flex items-center gap-2 mb-2">
+          <SparklesIcon className={cn('w-4 h-4', typeStyles.color)} />
+          <h4 className={cn('text-xs font-medium', typeStyles.color)}>Response</h4>
+        </div>
+        <div className="prose prose-sm prose-invert max-w-none text-gray-300 prose-headings:text-gray-200 prose-p:text-gray-300 prose-strong:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-800 prose-ul:text-gray-300 prose-ol:text-gray-300 prose-li:text-gray-300 prose-table:text-gray-300 prose-th:text-gray-200 prose-th:bg-gray-800 prose-td:border-gray-700 prose-th:border-gray-700 prose-thead:border-gray-700 prose-tr:border-gray-700">
+          <Markdown remarkPlugins={[remarkGfm]}>{structuredSummary.response}</Markdown>
+        </div>
+      </div>
+
+      {/* Key Points (if available) */}
+      {structuredSummary.key_points.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <LightBulbIcon className="w-4 h-4 text-yellow-400" />
+            <h4 className="text-xs font-medium text-gray-300">Key Points</h4>
+          </div>
+          <ul className="space-y-1.5">
+            {structuredSummary.key_points.map((point, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-2 p-2 bg-gray-800/30 rounded text-xs text-gray-400"
+              >
+                <span className="text-gray-600 mt-0.5">•</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Analyzed Files (for Q&A/Analysis types) */}
+      {structuredSummary.analyzed_files.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <DocumentMagnifyingGlassIcon className="w-4 h-4 text-gray-400" />
+            <h4 className="text-xs font-medium text-gray-300">
+              Files Analyzed ({structuredSummary.analyzed_files.length})
+            </h4>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {structuredSummary.analyzed_files.map((file, i) => (
+              <span
+                key={i}
+                className="px-2 py-1 bg-gray-800/50 rounded text-xs font-mono text-gray-400"
+              >
+                {file}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Warnings */}
       {run.warnings && run.warnings.length > 0 && (
         <div className="p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
@@ -212,6 +302,7 @@ function SummaryTab({ run }: { run: Run }) {
         </div>
       )}
 
+      {/* Files Changed (for code changes) */}
       {run.files_changed && run.files_changed.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-2">
