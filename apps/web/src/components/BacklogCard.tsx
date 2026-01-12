@@ -88,11 +88,12 @@ export default function BacklogCard({
 
     setIsStarting(true);
     try {
-      const task = await backlogApi.startWork(item.id);
+      const response = await backlogApi.startWork(item.id);
       if (onStartWork) {
-        onStartWork(item, task.id);
+        onStartWork(item, response.task.id);
       }
-      router.push(`/tasks/${task.id}`);
+      // Navigate to task page with fromBacklog param to trigger execution setup
+      router.push(`/tasks/${response.task.id}?fromBacklog=${item.id}`);
     } catch (error) {
       console.error('Failed to start work:', error);
     } finally {
