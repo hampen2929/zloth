@@ -31,6 +31,7 @@ export interface Repo {
   id: string;
   repo_url: string;
   default_branch: string;
+  selected_branch: string | null;  // user-selected branch for worktree base
   latest_commit: string;
   workspace_path: string;
   created_at: string;

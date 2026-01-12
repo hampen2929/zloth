@@ -71,7 +71,8 @@ export function StartTaskModal({ task, onClose, onSuccess }: StartTaskModalProps
   // Set default branch when repo is loaded
   useEffect(() => {
     if (repo && !selectedBranch) {
-      setSelectedBranch(preferences?.default_branch || repo.default_branch);
+      // Prioritize: selected_branch (from backlog) > user preference > repo default
+      setSelectedBranch(repo.selected_branch || preferences?.default_branch || repo.default_branch);
     }
   }, [repo, preferences, selectedBranch]);
 
