@@ -156,8 +156,15 @@ class RepoService:
                         try:
                             repo.git.checkout(data.branch)
                         except git.GitCommandError:
-                            # Try checking out from FETCH_HEAD
-                            repo.git.checkout("-b", data.branch, "FETCH_HEAD")
+                            # Branch doesn't exist locally, try to create from FETCH_HEAD
+                            # First check if branch already exists (could be in a worktree)
+                            try:
+                                repo.git.show_ref("--verify", f"refs/heads/{data.branch}")
+                                # Branch exists locally but checkout failed (likely in a worktree)
+                                # This is fine - the branch is available for worktree operations
+                            except git.GitCommandError:
+                                # Branch doesn't exist, create it from FETCH_HEAD
+                                repo.git.checkout("-b", data.branch, "FETCH_HEAD")
                     except git.GitCommandError as e:
                         # Branch might already be checked out in a worktree, which is fine.
                         # Git prevents checking out the same branch in multiple places,
