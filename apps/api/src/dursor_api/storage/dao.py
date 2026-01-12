@@ -851,6 +851,17 @@ class PRDAO:
         )
         await self.db.connection.commit()
 
+    async def list_open(self) -> builtins.list[PR]:
+        """List all PRs with status='open'.
+
+        Used by the PR status poller to check for merge status updates.
+        """
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM prs WHERE status = 'open' ORDER BY created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
     def _row_to_model(self, row: Any) -> PR:
         return PR(
             id=row["id"],
