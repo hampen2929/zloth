@@ -34,16 +34,7 @@ function extractResponseFromLogs(logs: string[]): string {
   // Join all response texts
   const fullResponse = responseTexts.join('\n').trim();
 
-  // If we got a response, return it (truncated if too long)
-  if (fullResponse) {
-    // Return first 2000 chars for display
-    if (fullResponse.length > 2000) {
-      return fullResponse.slice(0, 2000) + '...';
-    }
-    return fullResponse;
-  }
-
-  return '';
+  return fullResponse;
 }
 
 /**
@@ -170,14 +161,21 @@ export function deriveStructuredSummary(run: Run): StructuredSummary {
   }
 
   // Extract analyzed files from logs (files that were read)
+  // Only match actual file paths with common source file extensions
   const analyzedFiles: string[] = [];
   if (run.logs) {
-    const filePattern = /(?:Read|Viewed|Analyzed|Opened|Reading)\s+([^\s]+\.[a-z]+)/gi;
+    // Match file paths that contain / and have common source code extensions
+    const filePattern = /(?:Read|Viewed|Analyzed|Opened|Reading)\s+((?:[\w./\-]+\/)?[\w.\-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|rb|vue|svelte|css|scss|html|json|yaml|yml|md|txt))/gi;
     for (const log of run.logs) {
       const matches = log.matchAll(filePattern);
       for (const match of matches) {
-        if (!analyzedFiles.includes(match[1]) && analyzedFiles.length < 5) {
-          analyzedFiles.push(match[1]);
+        const filePath = match[1];
+        // Skip if it looks like code (contains parentheses, braces, or camelCase properties)
+        if (filePath.includes('(') || filePath.includes('{') || /\.[a-z]+[A-Z]/.test(filePath)) {
+          continue;
+        }
+        if (!analyzedFiles.includes(filePath) && analyzedFiles.length < 5) {
+          analyzedFiles.push(filePath);
         }
       }
     }
