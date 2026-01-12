@@ -26,6 +26,7 @@ from dursor_api.domain.enums import (
     RunStatus,
 )
 from dursor_api.domain.models import (
+    AgentConstraints,
     FixInstructionRequest,
     FixInstructionResponse,
     Message,
@@ -51,6 +52,13 @@ logger = logging.getLogger(__name__)
 REVIEW_SYSTEM_PROMPT = """You are an expert code reviewer. \
 Analyze the provided code changes and provide detailed feedback.
 
+CRITICAL: This is a READ-ONLY review task.
+- DO NOT modify any files
+- DO NOT write any code changes
+- DO NOT create new files
+- DO NOT use any file editing tools
+- ONLY analyze the code and provide feedback in JSON format
+
 For each issue found, provide:
 1. **Severity**: critical, high, medium, or low
    - critical: Security vulnerabilities, data loss risks, critical bugs
@@ -69,6 +77,7 @@ documentation, test
 
 IMPORTANT: You MUST output ONLY valid JSON in the following format. Do not include any text \
 before or after the JSON. Do not use markdown code blocks. Output raw JSON only.
+DO NOT make any file modifications - just analyze and respond with JSON.
 
 {
   "overall_summary": "Brief summary of the code review findings",
@@ -389,18 +398,27 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
             work_dir = Path(tmpfile.mkdtemp(prefix="review_"))
             logs.append(f"Using temporary directory: {work_dir}")
 
+        patch_file: Path | None = None
         try:
+            # Build constraints to ensure review doesn't modify files
+            constraints = AgentConstraints()
+            constraints_prompt = constraints.to_prompt()
+
             # For large patches, write to a file and reference it
             if len(patch) > MAX_INLINE_PATCH_SIZE:
                 patch_file = work_dir / "review_patch.diff"
                 patch_file.write_text(patch, encoding="utf-8")
                 logs.append(f"Patch too large for inline, written to: {patch_file}")
 
-                review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
+                review_prompt = f"""{constraints_prompt}
+
+{REVIEW_SYSTEM_PROMPT}
 
 {REVIEW_USER_PROMPT_FILE_TEMPLATE.format(file_path=str(patch_file))}"""
             else:
-                review_prompt = f"""{REVIEW_SYSTEM_PROMPT}
+                review_prompt = f"""{constraints_prompt}
+
+{REVIEW_SYSTEM_PROMPT}
 
 {REVIEW_USER_PROMPT_TEMPLATE.format(patch=patch)}"""
 
@@ -420,8 +438,42 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
             return self._parse_review_response(response_text, logs)
 
         finally:
-            # Cleanup temporary directory if we created one
-            if not worktree_path or not worktree_path.exists():
+            # Clean up the patch file if we created one
+            if patch_file and patch_file.exists():
+                try:
+                    patch_file.unlink()
+                    logs.append("Cleaned up review_patch.diff")
+                except Exception as e:
+                    logs.append(f"Warning: Failed to clean up patch file: {e}")
+
+            # Reset any uncommitted changes in the worktree to prevent pollution
+            # This is critical to ensure review doesn't affect subsequent runs
+            if worktree_path and worktree_path.exists():
+                try:
+                    import subprocess
+
+                    # Discard any uncommitted changes made by the review executor
+                    result_reset = subprocess.run(
+                        ["git", "checkout", "--", "."],
+                        cwd=work_dir,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result_reset.returncode == 0:
+                        logs.append("Reset worktree to clean state after review")
+                    # Also remove any untracked files created by review
+                    result_clean = subprocess.run(
+                        ["git", "clean", "-fd"],
+                        cwd=work_dir,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result_clean.returncode == 0:
+                        logs.append("Removed untracked files from worktree")
+                except Exception as e:
+                    logs.append(f"Warning: Failed to reset worktree: {e}")
+            else:
+                # Cleanup temporary directory if we created one
                 import shutil
 
                 if work_dir.exists():
