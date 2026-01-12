@@ -1,12 +1,16 @@
 """FastAPI dependency injection."""
 
 from dursor_api.config import settings
+from dursor_api.services.agentic_orchestrator import AgenticOrchestrator
 from dursor_api.services.breakdown_service import BreakdownService
+from dursor_api.services.ci_polling_service import CIPollingService
 from dursor_api.services.crypto_service import CryptoService
 from dursor_api.services.git_service import GitService
 from dursor_api.services.github_service import GitHubService
 from dursor_api.services.kanban_service import KanbanService
+from dursor_api.services.merge_gate_service import MergeGateService
 from dursor_api.services.model_service import ModelService
+from dursor_api.services.notification_service import NotificationService
 from dursor_api.services.output_manager import OutputManager
 from dursor_api.services.pr_service import PRService
 from dursor_api.services.pr_status_poller import PRStatusPoller
@@ -15,6 +19,7 @@ from dursor_api.services.review_service import ReviewService
 from dursor_api.services.run_service import RunService
 from dursor_api.storage.dao import (
     PRDAO,
+    AgenticRunDAO,
     BacklogDAO,
     MessageDAO,
     ModelProfileDAO,
@@ -33,6 +38,9 @@ _git_service: GitService | None = None
 _output_manager: OutputManager | None = None
 _breakdown_service: BreakdownService | None = None
 _review_service: ReviewService | None = None
+_notification_service: NotificationService | None = None
+_ci_polling_service: CIPollingService | None = None
+_agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 
 
@@ -210,6 +218,65 @@ async def get_review_service() -> ReviewService:
             output_manager,
         )
     return _review_service
+
+
+async def get_agentic_run_dao() -> AgenticRunDAO:
+    """Get AgenticRun DAO."""
+    db = await get_db()
+    return AgenticRunDAO(db)
+
+
+def get_notification_service() -> NotificationService:
+    """Get the notification service singleton."""
+    global _notification_service
+    if _notification_service is None:
+        _notification_service = NotificationService()
+    return _notification_service
+
+
+async def get_merge_gate_service() -> MergeGateService:
+    """Get the merge gate service."""
+    github_service = await get_github_service()
+    review_dao = await get_review_dao()
+    return MergeGateService(github_service, review_dao)
+
+
+async def get_ci_polling_service() -> CIPollingService:
+    """Get the CI polling service singleton."""
+    global _ci_polling_service
+    if _ci_polling_service is None:
+        github_service = await get_github_service()
+        _ci_polling_service = CIPollingService(github_service)
+    return _ci_polling_service
+
+
+async def get_agentic_orchestrator() -> AgenticOrchestrator:
+    """Get the agentic orchestrator singleton."""
+    global _agentic_orchestrator
+    if _agentic_orchestrator is None:
+        run_service = await get_run_service()
+        review_service = await get_review_service()
+        merge_gate_service = await get_merge_gate_service()
+        git_service = get_git_service()
+        github_service = await get_github_service()
+        notification_service = get_notification_service()
+        ci_polling_service = await get_ci_polling_service()
+        task_dao = await get_task_dao()
+        pr_dao = await get_pr_dao()
+        agentic_dao = await get_agentic_run_dao()
+        _agentic_orchestrator = AgenticOrchestrator(
+            run_service=run_service,
+            review_service=review_service,
+            merge_gate_service=merge_gate_service,
+            git_service=git_service,
+            github_service=github_service,
+            notification_service=notification_service,
+            ci_polling_service=ci_polling_service,
+            task_dao=task_dao,
+            pr_dao=pr_dao,
+            agentic_dao=agentic_dao,
+        )
+    return _agentic_orchestrator
 
 
 async def get_pr_status_poller() -> PRStatusPoller:
