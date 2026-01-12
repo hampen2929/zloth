@@ -264,6 +264,7 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
         task_dao = await get_task_dao()
         pr_dao = await get_pr_dao()
         agentic_dao = await get_agentic_run_dao()
+        message_dao = await get_message_dao()
         _agentic_orchestrator = AgenticOrchestrator(
             run_service=run_service,
             review_service=review_service,
@@ -275,6 +276,7 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
             task_dao=task_dao,
             pr_dao=pr_dao,
             agentic_dao=agentic_dao,
+            message_dao=message_dao,
         )
     return _agentic_orchestrator
 

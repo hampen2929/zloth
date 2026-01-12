@@ -20,6 +20,7 @@ from dursor_api.domain.enums import (
     AgenticPhase,
     CodingMode,
     ExecutorType,
+    MessageRole,
     ReviewSeverity,
 )
 from dursor_api.domain.models import (
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
     from dursor_api.services.notification_service import NotificationService
     from dursor_api.services.review_service import ReviewService
     from dursor_api.services.run_service import RunService
-    from dursor_api.storage.dao import PRDAO, AgenticRunDAO, TaskDAO
+    from dursor_api.storage.dao import PRDAO, AgenticRunDAO, MessageDAO, TaskDAO
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class AgenticOrchestrator:
         task_dao: "TaskDAO",
         pr_dao: "PRDAO",
         agentic_dao: "AgenticRunDAO",
+        message_dao: "MessageDAO",
     ):
         """Initialize agentic orchestrator.
 
@@ -80,6 +82,7 @@ class AgenticOrchestrator:
             task_dao: Task DAO.
             pr_dao: PR DAO.
             agentic_dao: Agentic run DAO.
+            message_dao: Message DAO for recording CI results to task.
         """
         self.run_service = run_service
         self.review_service = review_service
@@ -91,6 +94,7 @@ class AgenticOrchestrator:
         self.task_dao = task_dao
         self.pr_dao = pr_dao
         self.agentic_dao = agentic_dao
+        self.message_dao = message_dao
 
         # In-memory state management
         self._states: dict[str, AgenticState] = {}
@@ -226,6 +230,9 @@ class AgenticOrchestrator:
         if not state:
             logger.warning(f"No active agentic state for task {task_id}")
             return None
+
+        # Record CI result as a message in the task
+        await self._record_ci_result_message(task_id, ci_result, state)
 
         async with self._locks[task_id]:
             state.last_ci_result = ci_result
@@ -747,6 +754,121 @@ class AgenticOrchestrator:
     # =========================================
     # Helper Methods
     # =========================================
+
+    async def _record_ci_result_message(
+        self,
+        task_id: str,
+        ci_result: CIResult,
+        state: AgenticState,
+    ) -> None:
+        """Record CI result as a message in the task.
+
+        Args:
+            task_id: Task ID.
+            ci_result: CI execution result.
+            state: Current agentic state.
+        """
+        try:
+            if ci_result.success:
+                # CI passed message
+                message_content = self._build_ci_success_message(ci_result, state)
+            else:
+                # CI failed message
+                message_content = self._build_ci_failure_message(ci_result, state)
+
+            await self.message_dao.create(
+                task_id=task_id,
+                role=MessageRole.ASSISTANT,
+                content=message_content,
+            )
+            logger.info(f"Recorded CI result message for task {task_id}")
+        except Exception as e:
+            # Don't fail the CI handling if message recording fails
+            logger.warning(f"Failed to record CI result message: {e}")
+
+    def _build_ci_success_message(
+        self,
+        ci_result: CIResult,
+        state: AgenticState,
+    ) -> str:
+        """Build message content for successful CI.
+
+        Args:
+            ci_result: CI execution result.
+            state: Current agentic state.
+
+        Returns:
+            Formatted message string.
+        """
+        parts = [
+            "## CI Result: PASSED",
+            "",
+            f"**Commit:** `{ci_result.sha[:8]}`",
+            f"**Workflow Run ID:** {ci_result.workflow_run_id}",
+            f"**Iteration:** {state.iteration} (CI attempts: {state.ci_iterations})",
+            "",
+            "### Job Results",
+        ]
+
+        for job_name, result in ci_result.jobs.items():
+            status_icon = "+" if result == "success" else "-"
+            parts.append(f"- [{status_icon}] {job_name}: {result}")
+
+        parts.append("")
+        parts.append("Proceeding to code review phase.")
+
+        return "\n".join(parts)
+
+    def _build_ci_failure_message(
+        self,
+        ci_result: CIResult,
+        state: AgenticState,
+    ) -> str:
+        """Build message content for failed CI.
+
+        Args:
+            ci_result: CI execution result.
+            state: Current agentic state.
+
+        Returns:
+            Formatted message string.
+        """
+        parts = [
+            "## CI Result: FAILED",
+            "",
+            f"**Commit:** `{ci_result.sha[:8]}`",
+            f"**Workflow Run ID:** {ci_result.workflow_run_id}",
+            f"**Iteration:** {state.iteration} (CI attempts: {state.ci_iterations + 1})",
+            "",
+            "### Job Results",
+        ]
+
+        for job_name, result in ci_result.jobs.items():
+            status_icon = "+" if result == "success" else "x"
+            parts.append(f"- [{status_icon}] {job_name}: {result}")
+
+        if ci_result.failed_jobs:
+            parts.append("")
+            parts.append("### Failed Job Details")
+            for job in ci_result.failed_jobs:
+                parts.append(f"\n#### {job.job_name}")
+                if job.error_log:
+                    # Truncate error log if too long
+                    error_log = job.error_log
+                    if len(error_log) > 2000:
+                        error_log = error_log[:2000] + "\n... (truncated)"
+                    parts.append(f"```\n{error_log}\n```")
+
+        parts.append("")
+        if state.ci_iterations + 1 >= self._default_limits.max_ci_iterations:
+            parts.append(
+                f"Max CI iterations ({self._default_limits.max_ci_iterations}) reached. "
+                "Stopping agentic execution."
+            )
+        else:
+            parts.append("Attempting automatic fix...")
+
+        return "\n".join(parts)
 
     def _build_ci_fix_instruction(self, failed_jobs: list[CIJobResult]) -> str:
         """Build instruction for fixing CI failures.
