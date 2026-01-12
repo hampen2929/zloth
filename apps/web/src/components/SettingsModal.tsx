@@ -43,22 +43,22 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
-type TabType = 'models' | 'github' | 'defaults';
+export type SettingsTabType = 'models' | 'github' | 'defaults';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultTab?: TabType;
+  defaultTab?: SettingsTabType;
 }
 
-const tabConfig: { id: TabType; label: string; icon: React.ReactNode }[] = [
+export const settingsTabConfig: { id: SettingsTabType; label: string; icon: React.ReactNode }[] = [
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>(defaultTab || 'models');
+  const [activeTab, setActiveTab] = useState<SettingsTabType>(defaultTab || 'models');
 
   // Update active tab when defaultTab changes
   // This is intentional: we want to switch tabs when externally triggered
@@ -78,7 +78,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
     >
       {/* Tabs */}
       <div className="flex border-b border-gray-800" role="tablist">
-        {tabConfig.map((tab) => (
+        {settingsTabConfig.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -108,7 +108,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
   );
 }
 
-function ModelsTab() {
+export function ModelsTab() {
   const { data: models, error } = useSWR('models', modelsApi.list);
   const [showForm, setShowForm] = useState(false);
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -337,7 +337,7 @@ function AddModelForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function GitHubAppTab() {
+export function GitHubAppTab() {
   const { data: config, isLoading } = useSWR('github-config', githubApi.getConfig);
   const [appId, setAppId] = useState('');
   const [privateKey, setPrivateKey] = useState('');
@@ -508,7 +508,7 @@ function GitHubAppTab() {
   );
 }
 
-function DefaultsTab() {
+export function DefaultsTab() {
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: githubConfig } = useSWR('github-config', githubApi.getConfig);
   const { data: repos, isLoading: reposLoading } = useSWR(
@@ -520,7 +520,7 @@ function DefaultsTab() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [branchPrefix, setBranchPrefix] = useState<string>('');
-  const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('create');
+  const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -532,8 +532,12 @@ function DefaultsTab() {
       if (preferences.default_repo_owner && preferences.default_repo_name) {
         const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
         setSelectedRepo(repoFullName);
-        // Load branches for the default repo
-        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch);
+        // Find the repository to get its default branch
+        const repoData = repos.find((r) => r.full_name === repoFullName);
+        // Set selected branch to repository's default branch directly (like top page)
+        setSelectedBranch(repoData?.default_branch || '');
+        // Load branch list
+        loadBranches(preferences.default_repo_owner, preferences.default_repo_name);
       }
     }
   }, [preferences, repos]);
@@ -542,7 +546,7 @@ function DefaultsTab() {
   useEffect(() => {
     if (preferences) {
       setBranchPrefix(preferences.default_branch_prefix || '');
-      setPrCreationMode(preferences.default_pr_creation_mode || 'create');
+      setPrCreationMode(preferences.default_pr_creation_mode || 'link');
       setCodingMode(preferences.default_coding_mode || 'interactive');
     }
   }, [preferences]);
@@ -574,18 +578,11 @@ function DefaultsTab() {
     return opts;
   })();
 
-  const loadBranches = async (owner: string, repo: string, defaultBranch?: string | null) => {
+  const loadBranches = async (owner: string, repo: string) => {
     setBranchesLoading(true);
     try {
       const branchList = await githubApi.listBranches(owner, repo);
       setBranches(branchList);
-      if (defaultBranch && branchList.includes(defaultBranch)) {
-        setSelectedBranch(defaultBranch);
-      } else if (branchList.length > 0) {
-        // Try to select 'main' or 'master' or the first branch
-        const mainBranch = branchList.find(b => b === 'main') || branchList.find(b => b === 'master') || branchList[0];
-        setSelectedBranch(mainBranch);
-      }
     } catch (err) {
       console.error('Failed to load branches:', err);
       setBranches([]);
@@ -596,12 +593,16 @@ function DefaultsTab() {
 
   const handleRepoChange = async (fullName: string) => {
     setSelectedRepo(fullName);
-    setSelectedBranch('');
     setBranches([]);
 
     if (fullName) {
       const [owner, repo] = fullName.split('/');
+      // Find the repository to get its default branch and set it directly (like top page)
+      const selectedRepoData = repos?.find((r) => r.full_name === fullName);
+      setSelectedBranch(selectedRepoData?.default_branch || '');
       await loadBranches(owner, repo);
+    } else {
+      setSelectedBranch('');
     }
   };
 
@@ -794,7 +795,7 @@ function DefaultsTab() {
               'text-gray-100 transition-colors'
             )}
           >
-            <option value="create">Create PR automatically (current behavior)</option>
+            <option value="create">Create PR automatically</option>
             <option value="link">Open PR link (manual creation)</option>
           </select>
           <p className="text-xs text-gray-500">

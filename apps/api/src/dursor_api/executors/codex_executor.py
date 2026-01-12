@@ -115,13 +115,14 @@ class CodexExecutor:
         base = [self.options.codex_cli_path, "exec"]
 
         # Determine approval mode flag
+        # Note: Codex CLI's `exec` subcommand does not support --approval-mode flag.
+        # For read-only mode (e.g., code review), we rely on the prompt instructions
+        # to prevent file modifications. The worktree is reset after review anyway.
+        approval_flag = "--full-auto"
         if read_only:
-            # Read-only mode: can analyze but not modify files
-            approval_flag = "--approval-mode=readonly"
-            logs.append("Running in read-only mode (--approval-mode=readonly)")
+            logs.append("Running in read-only mode (prompt-based, --full-auto)")
         else:
-            # Full auto mode for implementation
-            approval_flag = "--full-auto"
+            logs.append("Running in full-auto mode")
 
         cmds: list[list[str]] = []
         if resume_session_id:

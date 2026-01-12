@@ -560,7 +560,7 @@ class UserPreferences(BaseModel):
     default_repo_name: str | None = None
     default_branch: str | None = None
     default_branch_prefix: str | None = None
-    default_pr_creation_mode: PRCreationMode = PRCreationMode.CREATE
+    default_pr_creation_mode: PRCreationMode = PRCreationMode.LINK
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
 
 
