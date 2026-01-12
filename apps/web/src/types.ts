@@ -99,6 +99,25 @@ export interface FileDiff {
   patch: string;
 }
 
+// Structured Summary Types
+export type SummaryType = 'code_change' | 'qa_response' | 'analysis' | 'no_action';
+
+export interface CodeReference {
+  file: string;
+  line?: number;
+  description: string;
+}
+
+export interface StructuredSummary {
+  type: SummaryType;
+  title: string;
+  instruction: string;
+  response: string;
+  key_points: string[];
+  analyzed_files: string[];
+  references: CodeReference[];
+}
+
 export interface Run {
   id: string;
   task_id: string;
@@ -114,6 +133,7 @@ export interface Run {
   commit_sha: string | null;
   status: RunStatus;
   summary: string | null;
+  structured_summary: StructuredSummary | null;
   patch: string | null;
   files_changed: FileDiff[];
   logs: string[];

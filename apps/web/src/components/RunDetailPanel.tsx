@@ -11,6 +11,8 @@ import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
 import { cn } from '@/lib/utils';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   DocumentTextIcon,
   CodeBracketIcon,
@@ -24,7 +26,13 @@ import {
   ClipboardDocumentIcon,
   LightBulbIcon,
   Cog6ToothIcon,
+  ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon,
+  DocumentMagnifyingGlassIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
+import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-utils';
+import type { SummaryType } from '@/types';
 import { getErrorDisplay, type ErrorAction } from '@/lib/error-handling';
 import { getExecutorDisplayName, isCLIExecutor } from '@/hooks';
 
@@ -380,59 +388,7 @@ export function RunDetailPanel({
         {run.status === 'succeeded' && (
           <>
             {activeTab === 'summary' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="font-medium text-gray-200 mb-2 flex items-center gap-2">
-                    <DocumentTextIcon className="w-5 h-5 text-gray-400" />
-                    <span>Summary</span>
-                  </h3>
-                  <p className="text-gray-300 text-sm leading-relaxed">{run.summary}</p>
-                </div>
-
-                {run.warnings && run.warnings.length > 0 && (
-                  <div className="p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <ExclamationTriangleIcon className="w-4 h-4 text-yellow-400" />
-                      <h4 className="text-sm font-medium text-yellow-400">
-                        Warnings ({run.warnings.length})
-                      </h4>
-                    </div>
-                    <ul className="list-disc list-inside text-sm text-yellow-300 space-y-1">
-                      {run.warnings.map((w, i) => (
-                        <li key={i}>{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {run.files_changed && run.files_changed.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <DocumentDuplicateIcon className="w-4 h-4 text-gray-400" />
-                      <h4 className="text-sm font-medium text-gray-300">
-                        Files Changed ({run.files_changed.length})
-                      </h4>
-                    </div>
-                    <ul className="space-y-2">
-                      {run.files_changed.map((f, i) => (
-                        <li
-                          key={i}
-                          className="flex items-center justify-between p-2 bg-gray-800/50 rounded text-sm"
-                        >
-                          <span className="font-mono text-gray-300 truncate mr-2">
-                            {f.path}
-                          </span>
-                          <span className="flex-shrink-0 text-xs font-medium">
-                            <span className="text-green-400">+{f.added_lines}</span>
-                            <span className="text-gray-600 mx-1">/</span>
-                            <span className="text-red-400">-{f.removed_lines}</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
+              <StructuredSummaryDisplay run={run} />
             )}
 
             {activeTab === 'diff' && (
@@ -637,5 +593,149 @@ function ActionButton({ action, onClick, disabled, countdown, hasHandler }: Acti
       {getIcon()}
       {buttonLabel}
     </button>
+  );
+}
+
+/**
+ * Get icon for summary type
+ */
+function getSummaryTypeIcon(type: SummaryType) {
+  switch (type) {
+    case 'code_change':
+      return <CodeBracketIcon className="w-5 h-5" />;
+    case 'qa_response':
+      return <ChatBubbleLeftRightIcon className="w-5 h-5" />;
+    case 'analysis':
+      return <MagnifyingGlassIcon className="w-5 h-5" />;
+    case 'no_action':
+      return <CheckCircleIcon className="w-5 h-5" />;
+  }
+}
+
+/**
+ * Structured Summary Display Component
+ * Displays rich, structured information about the run results.
+ */
+function StructuredSummaryDisplay({ run }: { run: Run }) {
+  const structuredSummary = deriveStructuredSummary(run);
+  const typeStyles = getSummaryTypeStyles(structuredSummary.type);
+  const typeIcon = getSummaryTypeIcon(structuredSummary.type);
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Type Badge */}
+      <div className={cn(
+        'inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium',
+        typeStyles.bgColor,
+        typeStyles.color
+      )}>
+        {typeIcon}
+        {typeStyles.label}
+      </div>
+
+      {/* Response (Agent's Answer) - Rendered as Markdown */}
+      <div className={cn(
+        'p-4 rounded-lg border',
+        typeStyles.bgColor,
+        typeStyles.borderColor
+      )}>
+        <div className="flex items-center gap-2 mb-3">
+          <SparklesIcon className={cn('w-5 h-5', typeStyles.color)} />
+          <h4 className={cn('text-sm font-medium', typeStyles.color)}>Response</h4>
+        </div>
+        <div className="prose prose-sm prose-invert max-w-none text-gray-300 prose-headings:text-gray-200 prose-p:text-gray-300 prose-strong:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-800 prose-ul:text-gray-300 prose-ol:text-gray-300 prose-li:text-gray-300 prose-table:text-gray-300 prose-th:text-gray-200 prose-th:bg-gray-800 prose-td:border-gray-700 prose-th:border-gray-700 prose-thead:border-gray-700 prose-tr:border-gray-700">
+          <Markdown remarkPlugins={[remarkGfm]}>{structuredSummary.response}</Markdown>
+        </div>
+      </div>
+
+      {/* Key Points (if available) */}
+      {structuredSummary.key_points.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <LightBulbIcon className="w-5 h-5 text-yellow-400" />
+            <h4 className="text-sm font-medium text-gray-200">Key Points</h4>
+          </div>
+          <ul className="space-y-2">
+            {structuredSummary.key_points.map((point, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-3 p-3 bg-gray-800/30 rounded-lg text-sm text-gray-300"
+              >
+                <span className="text-yellow-400 mt-0.5 font-bold">{i + 1}.</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Analyzed Files (for Q&A/Analysis types) */}
+      {structuredSummary.analyzed_files.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <DocumentMagnifyingGlassIcon className="w-5 h-5 text-gray-400" />
+            <h4 className="text-sm font-medium text-gray-200">
+              Files Analyzed ({structuredSummary.analyzed_files.length})
+            </h4>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {structuredSummary.analyzed_files.map((file, i) => (
+              <span
+                key={i}
+                className="px-3 py-1.5 bg-gray-800/50 rounded-lg text-sm font-mono text-gray-300"
+              >
+                {file}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Warnings */}
+      {run.warnings && run.warnings.length > 0 && (
+        <div className="p-4 bg-yellow-900/20 border border-yellow-800/50 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <ExclamationTriangleIcon className="w-5 h-5 text-yellow-400" />
+            <h4 className="text-sm font-medium text-yellow-400">
+              Warnings ({run.warnings.length})
+            </h4>
+          </div>
+          <ul className="list-disc list-inside text-sm text-yellow-300 space-y-1.5">
+            {run.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Files Changed (for code changes) */}
+      {run.files_changed && run.files_changed.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <DocumentDuplicateIcon className="w-5 h-5 text-gray-400" />
+            <h4 className="text-sm font-medium text-gray-200">
+              Files Changed ({run.files_changed.length})
+            </h4>
+          </div>
+          <ul className="space-y-2">
+            {run.files_changed.map((f, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg text-sm"
+              >
+                <span className="font-mono text-gray-300 truncate mr-3">
+                  {f.path}
+                </span>
+                <span className="flex-shrink-0 text-sm font-medium">
+                  <span className="text-green-400">+{f.added_lines}</span>
+                  <span className="text-gray-600 mx-2">/</span>
+                  <span className="text-red-400">-{f.removed_lines}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
