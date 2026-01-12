@@ -134,7 +134,17 @@ class RepoService:
                 workspace_path = Path(existing.workspace_path)
                 if workspace_path.exists():
                     repo = git.Repo(workspace_path)
-                    repo.git.checkout(data.branch)
+                    try:
+                        repo.git.checkout(data.branch)
+                    except git.GitCommandError as e:
+                        # If the branch is already checked out in a worktree, skip
+                        # the checkout. This happens when a run creates a worktree
+                        # with the branch, and a new task tries to select the same
+                        # branch. The branch exists and is accessible via worktree.
+                        if "already checked out at" in str(e):
+                            pass  # Branch exists, just can't switch to it here
+                        else:
+                            raise
             return existing
 
         # Ensure workspaces directory is writable before cloning
