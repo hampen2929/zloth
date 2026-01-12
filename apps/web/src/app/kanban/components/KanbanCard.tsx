@@ -12,6 +12,7 @@ interface KanbanCardProps {
   onMoveToBacklog: (taskId: string) => void;
   onArchive: (taskId: string) => void;
   onUnarchive: (taskId: string) => void;
+  onStartTask?: (task: TaskWithKanbanStatus) => void;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -124,6 +125,7 @@ export function KanbanCard({
   onMoveToBacklog,
   onArchive,
   onUnarchive,
+  onStartTask,
 }: KanbanCardProps) {
   const renderActions = () => {
     switch (columnStatus) {
@@ -156,9 +158,16 @@ export function KanbanCard({
       case 'todo':
         return (
           <div className="flex gap-2">
-            <span className="text-xs text-green-400">
-              Start AI
-            </span>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onStartTask?.(task);
+              }}
+              className="text-xs text-green-400 hover:text-green-300 transition-colors font-medium"
+            >
+              Start Task
+            </button>
             <button
               onClick={(e) => {
                 e.preventDefault();

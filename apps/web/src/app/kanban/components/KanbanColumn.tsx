@@ -1,7 +1,7 @@
 'use client';
 
 import { KanbanCard } from './KanbanCard';
-import type { KanbanColumn as KanbanColumnType, TaskKanbanStatus } from '@/types';
+import type { KanbanColumn as KanbanColumnType, TaskKanbanStatus, TaskWithKanbanStatus } from '@/types';
 import {
   InboxIcon,
   ClipboardDocumentListIcon,
@@ -18,6 +18,7 @@ interface KanbanColumnProps {
   onMoveToBacklog: (taskId: string) => void;
   onArchive: (taskId: string) => void;
   onUnarchive: (taskId: string) => void;
+  onStartTask?: (task: TaskWithKanbanStatus) => void;
 }
 
 const COLUMN_CONFIG: Record<
@@ -80,6 +81,7 @@ export function KanbanColumn({
   onMoveToBacklog,
   onArchive,
   onUnarchive,
+  onStartTask,
 }: KanbanColumnProps) {
   const config = COLUMN_CONFIG[column.status];
   const Icon = config.icon;
@@ -107,6 +109,7 @@ export function KanbanColumn({
             onMoveToBacklog={onMoveToBacklog}
             onArchive={onArchive}
             onUnarchive={onUnarchive}
+            onStartTask={onStartTask}
           />
         ))}
         {column.tasks.length === 0 && (
