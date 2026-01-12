@@ -722,6 +722,59 @@ class RunDAO:
             ),
         )
 
+    async def get_latest_runs_by_executor_for_tasks(
+        self, task_ids: builtins.list[str]
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        """Get latest run per executor type for each task.
+
+        For kanban board display, fetches the most recent run for each
+        executor type (claude_code, codex_cli, gemini_cli) per task.
+
+        Args:
+            task_ids: List of task IDs to fetch runs for.
+
+        Returns:
+            Dict mapping task_id -> executor_type -> run info dict
+            {
+                "task_id_1": {
+                    "claude_code": {"run_id": "...", "status": "succeeded"},
+                    "codex_cli": {"run_id": "...", "status": "running"},
+                },
+                ...
+            }
+        """
+        if not task_ids:
+            return {}
+
+        placeholders = ",".join("?" * len(task_ids))
+        query = f"""
+            SELECT r.task_id, r.id as run_id, r.executor_type, r.status
+            FROM runs r
+            INNER JOIN (
+                SELECT task_id, executor_type, MAX(created_at) as max_created
+                FROM runs
+                WHERE task_id IN ({placeholders})
+                GROUP BY task_id, executor_type
+            ) latest
+            ON r.task_id = latest.task_id
+                AND r.executor_type = latest.executor_type
+                AND r.created_at = latest.max_created
+        """
+        cursor = await self.db.connection.execute(query, task_ids)
+        rows = await cursor.fetchall()
+
+        result: dict[str, dict[str, dict[str, Any]]] = {}
+        for row in rows:
+            task_id = row["task_id"]
+            executor_type = row["executor_type"]
+            if task_id not in result:
+                result[task_id] = {}
+            result[task_id][executor_type] = {
+                "run_id": row["run_id"],
+                "status": row["status"],
+            }
+        return result
+
 
 class PRDAO:
     """DAO for PR."""
@@ -1407,6 +1460,34 @@ class ReviewDAO:
             low_count=row["low_count"] or 0,
             created_at=datetime.fromisoformat(row["created_at"]),
         )
+
+    async def get_reviewed_run_ids(self, run_ids: builtins.list[str]) -> set[str]:
+        """Get the set of run IDs that have been reviewed.
+
+        Args:
+            run_ids: List of run IDs to check.
+
+        Returns:
+            Set of run IDs that have completed reviews.
+        """
+        if not run_ids:
+            return set()
+
+        # Get all reviews that have succeeded
+        cursor = await self.db.connection.execute(
+            "SELECT target_run_ids FROM reviews WHERE status = 'succeeded'"
+        )
+        rows = await cursor.fetchall()
+
+        reviewed_run_ids: set[str] = set()
+        run_ids_set = set(run_ids)
+        for row in rows:
+            target_ids = json.loads(row["target_run_ids"]) if row["target_run_ids"] else []
+            for target_id in target_ids:
+                if target_id in run_ids_set:
+                    reviewed_run_ids.add(target_id)
+
+        return reviewed_run_ids
 
 
 class AgenticRunDAO:

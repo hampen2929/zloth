@@ -107,6 +107,15 @@ class Task(BaseModel):
         from_attributes = True
 
 
+class ExecutorRunStatus(BaseModel):
+    """Status of a specific executor's run for a task."""
+
+    executor_type: ExecutorType
+    run_id: str | None = None  # None if no run for this executor
+    status: RunStatus | None = None  # None if no run for this executor
+    has_review: bool = False  # Whether this run has been reviewed
+
+
 class TaskWithKanbanStatus(Task):
     """Task with computed kanban status for kanban board display."""
 
@@ -116,6 +125,9 @@ class TaskWithKanbanStatus(Task):
     completed_count: int = 0  # Number of completed runs
     pr_count: int = 0
     latest_pr_status: str | None = None
+    executor_statuses: list[ExecutorRunStatus] = Field(
+        default_factory=list, description="Status per executor type"
+    )
 
 
 class KanbanColumn(BaseModel):

@@ -330,6 +330,13 @@ export type TaskKanbanStatus =
   | 'done'
   | 'archived';
 
+export interface ExecutorRunStatus {
+  executor_type: ExecutorType;
+  run_id: string | null;
+  status: RunStatus | null;
+  has_review: boolean;
+}
+
 export interface TaskWithKanbanStatus extends Task {
   computed_status: TaskKanbanStatus;
   run_count: number;
@@ -337,6 +344,7 @@ export interface TaskWithKanbanStatus extends Task {
   completed_count: number;
   pr_count: number;
   latest_pr_status: string | null;
+  executor_statuses: ExecutorRunStatus[];
 }
 
 export interface KanbanColumn {
