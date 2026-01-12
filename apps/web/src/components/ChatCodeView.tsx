@@ -141,25 +141,18 @@ export function ChatCodeView({
   }, [prs, selectedExecutorBranch]);
 
   // Sync PR result from backend for the selected executor
+  // Always sync based on latestPR to ensure correct PR link is shown
+  // - When latestPR exists: show the PR link (even after additional instructions)
+  // - When latestPR is null (different executor without PR): clear prResult
   useEffect(() => {
-    if (latestPR && !prResult) {
+    if (latestPR) {
       setPRResult({ url: latestPR.url, number: latestPR.number });
       setPRLinkResult(null);
-    }
-  }, [latestPR, prResult]);
-
-  // Reset PR state when switching to a different executor
-  // This allows creating a new PR for each executor
-  const prevSelectedExecutorBranch = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    if (prevSelectedExecutorBranch.current !== undefined &&
-        prevSelectedExecutorBranch.current !== selectedExecutorBranch) {
-      // Executor changed, reset PR state to allow creating PR for new executor
+    } else {
+      // Clear prResult when switching to an executor that doesn't have a PR yet
       setPRResult(null);
-      setPRLinkResult(null);
     }
-    prevSelectedExecutorBranch.current = selectedExecutorBranch;
-  }, [selectedExecutorBranch]);
+  }, [latestPR]);
 
   // Build a map of message_id -> run for the selected executor
   const runByMessageId = new Map<string, Run>();
