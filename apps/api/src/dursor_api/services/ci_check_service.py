@@ -185,6 +185,7 @@ class CICheckService:
             return result
 
         # Get check runs for detailed job info
+        # This requires "checks:read" permission on the GitHub App
         try:
             check_runs_data = await self.github._github_request(
                 "GET",
@@ -217,7 +218,34 @@ class CICheckService:
             result["failed_jobs"] = failed_jobs
 
         except Exception as e:
-            logger.warning(f"Failed to get check runs: {e}")
+            # 403 error likely means GitHub App doesn't have "checks:read" permission
+            # Fall back to using the combined status API (requires "statuses:read")
+            if "403" in str(e):
+                logger.warning(
+                    f"No 'checks:read' permission, falling back to statuses API: {e}"
+                )
+                # Try to get statuses as fallback
+                try:
+                    statuses_data = await self.github._github_request(
+                        "GET",
+                        f"/repos/{owner}/{repo}/commits/{head_sha}/statuses",
+                    )
+                    for status_item in statuses_data:
+                        context = status_item.get("context", "unknown")
+                        state = status_item.get("state", "unknown")
+                        result["jobs"][context] = state
+                        if state == "failure":
+                            result["failed_jobs"].append(
+                                CIJobResult(
+                                    job_name=context,
+                                    result=state,
+                                    error_log=status_item.get("description"),
+                                )
+                            )
+                except Exception as status_err:
+                    logger.warning(f"Failed to get statuses as fallback: {status_err}")
+            else:
+                logger.warning(f"Failed to get check runs: {e}")
 
         return result
 
