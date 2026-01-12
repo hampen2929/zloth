@@ -794,7 +794,7 @@ function DefaultsTab() {
               'text-gray-100 transition-colors'
             )}
           >
-            <option value="create">Create PR automatically (current behavior)</option>
+            <option value="create">Create PR automatically</option>
             <option value="link">Open PR link (manual creation)</option>
           </select>
           <p className="text-xs text-gray-500">
