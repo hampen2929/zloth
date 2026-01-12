@@ -40,6 +40,7 @@ class CodexExecutor:
         instruction: str,
         on_output: Callable[[str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
+        read_only: bool = False,
     ) -> ExecutorResult:
         """Execute codex CLI with the given instruction.
 
@@ -48,6 +49,7 @@ class CodexExecutor:
             instruction: Natural language instruction for Codex.
             on_output: Optional callback for streaming output.
             resume_session_id: Optional session ID to resume a previous conversation.
+            read_only: If True, run in readonly approval mode (no file modifications).
 
         Returns:
             ExecutorResult with success status, patch, and logs.
@@ -111,18 +113,28 @@ class CodexExecutor:
         # Exit code 2 usually means a clap argument parse error, so we try a small
         # set of known-good orderings before giving up.
         base = [self.options.codex_cli_path, "exec"]
+
+        # Determine approval mode flag
+        if read_only:
+            # Read-only mode: can analyze but not modify files
+            approval_flag = "--approval-mode=readonly"
+            logs.append("Running in read-only mode (--approval-mode=readonly)")
+        else:
+            # Full auto mode for implementation
+            approval_flag = "--full-auto"
+
         cmds: list[list[str]] = []
         if resume_session_id:
             logs.append(f"Continuing session: {resume_session_id}")
             # Prefer this ordering (confirmed working with Codex v0.77.0):
             #   codex exec --full-auto <PROMPT> resume <SESSION_ID>
-            cmds.append([*base, "--full-auto", instruction, "resume", resume_session_id])
+            cmds.append([*base, approval_flag, instruction, "resume", resume_session_id])
             # Fallbacks for other parser behaviors:
-            cmds.append([*base, instruction, "resume", resume_session_id, "--full-auto"])
-            cmds.append([*base, "resume", resume_session_id, instruction, "--full-auto"])
-            cmds.append([*base, "--full-auto", "resume", resume_session_id, instruction])
+            cmds.append([*base, instruction, "resume", resume_session_id, approval_flag])
+            cmds.append([*base, "resume", resume_session_id, instruction, approval_flag])
+            cmds.append([*base, approval_flag, "resume", resume_session_id, instruction])
         else:
-            cmds.append([*base, instruction, "--full-auto"])
+            cmds.append([*base, instruction, approval_flag])
 
         try:
             last_code: int | None = None

@@ -39,6 +39,7 @@ class GeminiExecutor:
         instruction: str,
         on_output: Callable[[str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
+        read_only: bool = False,
     ) -> ExecutorResult:
         """Execute gemini CLI with the given instruction.
 
@@ -47,6 +48,7 @@ class GeminiExecutor:
             instruction: Natural language instruction for Gemini.
             on_output: Optional callback for streaming output.
             resume_session_id: Optional session ID (not yet supported by Gemini CLI).
+            read_only: If True, run in default approval mode (requires approval for all ops).
 
         Returns:
             ExecutorResult with success status, patch, and logs.
@@ -61,20 +63,30 @@ class GeminiExecutor:
         env.update(self.options.env_vars)
 
         # Build command
-        # Gemini CLI: gemini "prompt" --yolo
-        # --yolo = auto-approve all actions
+        # Gemini CLI: gemini "prompt" [--yolo | --approval-mode default]
+        # --yolo = auto-approve all actions (for implementation)
+        # --approval-mode default = prompt for all tool calls (for read-only review)
         # See: https://github.com/google-gemini/gemini-cli
         cmd = [
             self.options.gemini_cli_path,
             instruction,  # Pass instruction as positional argument
-            "--yolo",
         ]
 
+        # Approval mode: read_only uses default (prompts for all), otherwise yolo
+        if read_only:
+            # Default mode requires approval for all operations (effectively read-only)
+            cmd.extend(["--approval-mode", "default"])
+            logs.append("Running in read-only mode (--approval-mode default)")
+        else:
+            # YOLO mode auto-approves all actions for implementation
+            cmd.append("--yolo")
+
         # Don't log full instruction - it can be very long
+        approval_mode_display = "--approval-mode default" if read_only else "--yolo"
         cmd_display = [
             self.options.gemini_cli_path,
             f"<instruction:{len(instruction)} chars>",
-            "--yolo",
+            approval_mode_display,
         ]
         logs.append(f"Executing: {' '.join(cmd_display)}")
         logs.append(f"Working directory: {worktree_path}")

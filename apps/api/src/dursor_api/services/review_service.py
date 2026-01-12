@@ -424,10 +424,12 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
 
             logs.append(f"Prompt size: {len(review_prompt)} characters")
 
+            # Execute in read-only mode to prevent file modifications during review
             result = await executor.execute(
                 worktree_path=work_dir,
                 instruction=review_prompt,
                 on_output=lambda line: self._log_output(review.id, line, logs),
+                read_only=True,  # Review should never modify files
             )
 
             if not result.success:
