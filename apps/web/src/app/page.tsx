@@ -299,6 +299,8 @@ export default function HomePage() {
             showDropdown={showRepoDropdown}
             repoSearch={repoSearch}
             dropdownRef={repoDropdownRef}
+            defaultRepoOwner={preferences?.default_repo_owner}
+            defaultRepoName={preferences?.default_repo_name}
             onToggleDropdown={() => setShowRepoDropdown(!showRepoDropdown)}
             onSearchChange={setRepoSearch}
             onSelect={handleRepoSelect}
@@ -310,12 +312,14 @@ export default function HomePage() {
             branches={branches ?? undefined}
             selectedRepo={selectedRepo}
             onBranchSelect={setSelectedBranch}
+            defaultBranch={preferences?.default_branch}
           />
 
           {/* Mode Selector */}
           <ModeSelector
             selectedMode={selectedMode}
             onModeChange={setSelectedMode}
+            defaultMode={preferences?.default_coding_mode}
           />
         </div>
 
@@ -379,6 +383,8 @@ interface RepoSelectorProps {
   showDropdown: boolean;
   repoSearch: string;
   dropdownRef: React.RefObject<HTMLDivElement | null>;
+  defaultRepoOwner: string | null | undefined;
+  defaultRepoName: string | null | undefined;
   onToggleDropdown: () => void;
   onSearchChange: (value: string) => void;
   onSelect: (repo: GitHubRepository) => void;
@@ -391,10 +397,15 @@ function RepoSelector({
   showDropdown,
   repoSearch,
   dropdownRef,
+  defaultRepoOwner,
+  defaultRepoName,
   onToggleDropdown,
   onSearchChange,
   onSelect,
 }: RepoSelectorProps) {
+  const isDefaultRepo = (repo: GitHubRepository) =>
+    defaultRepoOwner && defaultRepoName &&
+    repo.owner === defaultRepoOwner && repo.name === defaultRepoName;
   return (
     <div className="relative" ref={dropdownRef}>
       <button
@@ -407,6 +418,9 @@ function RepoSelector({
       >
         <FolderIcon className="w-4 h-4" />
         <span>{selectedRepo ? selectedRepo.full_name : 'Select repository'}</span>
+        {selectedRepo && isDefaultRepo(selectedRepo) && (
+          <span className="text-xs text-gray-500">(Default)</span>
+        )}
         <ChevronDownIcon
           className={cn('w-4 h-4 transition-transform', showDropdown && 'rotate-180')}
         />
@@ -451,12 +465,17 @@ function RepoSelector({
                   )}
                 >
                   <span className="text-gray-100 truncate">{repo.full_name}</span>
-                  {repo.private && (
-                    <span className="flex items-center gap-1 text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-400 ml-2 flex-shrink-0">
-                      <LockClosedIcon className="w-3 h-3" />
-                      Private
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                    {isDefaultRepo(repo) && (
+                      <span className="text-xs text-gray-500">(Default)</span>
+                    )}
+                    {repo.private && (
+                      <span className="flex items-center gap-1 text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-400">
+                        <LockClosedIcon className="w-3 h-3" />
+                        Private
+                      </span>
+                    )}
+                  </div>
                 </button>
               ))
             )}
@@ -477,15 +496,17 @@ const MODE_CONFIG: { value: CodingMode; label: string; description: string }[] =
 interface ModeSelectorProps {
   selectedMode: CodingMode;
   onModeChange: (mode: CodingMode) => void;
+  defaultMode?: CodingMode | null;
 }
 
-function ModeSelector({ selectedMode, onModeChange }: ModeSelectorProps) {
+function ModeSelector({ selectedMode, onModeChange, defaultMode }: ModeSelectorProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useClickOutside(dropdownRef, () => setShowDropdown(false), showDropdown);
 
   const currentConfig = MODE_CONFIG.find((m) => m.value === selectedMode) || MODE_CONFIG[0];
+  const isDefaultMode = defaultMode && selectedMode === defaultMode;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -499,6 +520,9 @@ function ModeSelector({ selectedMode, onModeChange }: ModeSelectorProps) {
       >
         <BoltIcon className="w-4 h-4" />
         <span>{currentConfig.label}</span>
+        {isDefaultMode && (
+          <span className="text-xs text-gray-500">(Default)</span>
+        )}
         <ChevronDownIcon
           className={cn('w-4 h-4 transition-transform', showDropdown && 'rotate-180')}
         />
@@ -521,7 +545,12 @@ function ModeSelector({ selectedMode, onModeChange }: ModeSelectorProps) {
               )}
             >
               <div>
-                <div className="text-gray-100">{mode.label}</div>
+                <div className="text-gray-100 flex items-center gap-2">
+                  {mode.label}
+                  {defaultMode === mode.value && (
+                    <span className="text-xs text-gray-500">(Default)</span>
+                  )}
+                </div>
                 <div className="text-xs text-gray-500">{mode.description}</div>
               </div>
               {selectedMode === mode.value && (

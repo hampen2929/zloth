@@ -12,6 +12,7 @@ interface BranchSelectorProps {
   selectedRepo: GitHubRepository | null;
   onBranchSelect: (branch: string) => void;
   disabled?: boolean;
+  defaultBranch?: string | null;
 }
 
 export function BranchSelector({
@@ -20,7 +21,9 @@ export function BranchSelector({
   selectedRepo,
   onBranchSelect,
   disabled = false,
+  defaultBranch,
 }: BranchSelectorProps) {
+  const isDefaultBranch = defaultBranch && selectedBranch === defaultBranch;
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -46,6 +49,9 @@ export function BranchSelector({
       >
         <BoltIcon className="w-4 h-4" />
         <span>{selectedBranch || 'Select branch'}</span>
+        {isDefaultBranch && (
+          <span className="text-xs text-gray-500">(Default)</span>
+        )}
         <ChevronDownIcon
           className={cn('w-4 h-4 transition-transform', showDropdown && 'rotate-180')}
         />
@@ -66,9 +72,14 @@ export function BranchSelector({
                 )}
               >
                 <span className="truncate">{branch}</span>
-                {selectedRepo && branch === selectedRepo.default_branch && (
-                  <span className="text-xs text-gray-500 ml-2 flex-shrink-0">(default)</span>
-                )}
+                <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                  {defaultBranch && branch === defaultBranch && (
+                    <span className="text-xs text-gray-500">(Default)</span>
+                  )}
+                  {selectedRepo && branch === selectedRepo.default_branch && branch !== defaultBranch && (
+                    <span className="text-xs text-gray-500">(default)</span>
+                  )}
+                </div>
               </button>
             ))}
           </div>
