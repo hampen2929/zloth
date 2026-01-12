@@ -129,12 +129,38 @@ class RepoService:
         # Check if already cloned
         existing = await self.find_by_url(repo_url)
         if existing:
-            # Optionally update to the requested branch
+            # Update selected_branch if a branch is specified
             if data.branch:
+                # Save selected_branch to database for use as default base_ref
+                await self.dao.update_selected_branch(existing.id, data.branch)
+                # Update the existing object to reflect the change
+                existing.selected_branch = data.branch
+
                 workspace_path = Path(existing.workspace_path)
                 if workspace_path.exists():
                     repo = git.Repo(workspace_path)
-                    repo.git.checkout(data.branch)
+                    try:
+                        # Fetch the branch from origin with auth (shallow clone may not have it)
+                        auth_url = await github_service.clone_url(data.owner, data.repo)
+                        repo.git.fetch(auth_url, data.branch, depth=1)
+                    except git.GitCommandError:
+                        # Branch might not exist on remote, ignore fetch errors
+                        pass
+                    try:
+                        # Checkout the branch (try remote tracking branch if local doesn't exist)
+                        try:
+                            repo.git.checkout(data.branch)
+                        except git.GitCommandError:
+                            # Try checking out from FETCH_HEAD
+                            repo.git.checkout("-b", data.branch, "FETCH_HEAD")
+                    except git.GitCommandError as e:
+                        # Branch might already be checked out in a worktree, which is fine.
+                        # Git prevents checking out the same branch in multiple places,
+                        # but the branch exists and is available for worktree operations.
+                        if "already checked out at" in str(e):
+                            pass  # Safe to ignore - branch exists in a worktree
+                        else:
+                            raise
             return existing
 
         # Ensure workspaces directory is writable before cloning
@@ -160,10 +186,14 @@ class RepoService:
         default_branch = repo.active_branch.name
         latest_commit = repo.head.commit.hexsha
 
+        # Determine selected_branch (only if explicitly specified and different from default)
+        selected_branch = data.branch if data.branch and data.branch != default_branch else None
+
         # Save to database (store public URL, not auth URL)
         return await self.dao.create(
             repo_url=repo_url,
             default_branch=default_branch,
+            selected_branch=selected_branch,
             latest_commit=latest_commit,
             workspace_path=str(workspace_path),
         )

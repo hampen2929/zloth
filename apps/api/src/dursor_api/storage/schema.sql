@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS repos (
     id TEXT PRIMARY KEY,
     repo_url TEXT NOT NULL,
     default_branch TEXT NOT NULL,
+    selected_branch TEXT,            -- user-selected branch for worktree base
     latest_commit TEXT NOT NULL,
     workspace_path TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))

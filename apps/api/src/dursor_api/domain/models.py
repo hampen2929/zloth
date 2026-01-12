@@ -70,6 +70,7 @@ class Repo(BaseModel):
     id: str
     repo_url: str
     default_branch: str
+    selected_branch: str | None = None  # user-selected branch for worktree base
     latest_commit: str
     workspace_path: str
     created_at: datetime

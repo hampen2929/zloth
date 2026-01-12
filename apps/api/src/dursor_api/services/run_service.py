@@ -198,7 +198,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 task_id=task_id,
                 repo=repo,
                 instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
+                base_ref=data.base_ref or repo.selected_branch or repo.default_branch,
                 executor_type=executor_type,
                 message_id=data.message_id,
             )
@@ -242,7 +242,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     model_id=model_id,
                     model_name=model.model_name,
                     provider=model.provider,
-                    base_ref=data.base_ref or repo.default_branch,
+                    base_ref=data.base_ref or repo.selected_branch or repo.default_branch,
                 )
                 runs.append(run)
 
