@@ -56,27 +56,36 @@ class CICheckService:
         Raises:
             ValueError: If PR or task not found.
         """
+        logger.debug(f"Checking CI for task={task_id}, pr={pr_id}")
+
         # Validate task and PR exist
         task = await self.task_dao.get(task_id)
         if not task:
+            logger.warning(f"Task not found: {task_id}")
             raise ValueError(f"Task not found: {task_id}")
 
         pr = await self.pr_dao.get(pr_id)
         if not pr:
+            logger.warning(f"PR not found: {pr_id}")
             raise ValueError(f"PR not found: {pr_id}")
 
         if pr.task_id != task_id:
+            logger.warning(f"PR {pr_id} does not belong to task {task_id}")
             raise ValueError(f"PR {pr_id} does not belong to task {task_id}")
 
         # Get repo info for GitHub API
         repo = await self.repo_dao.get(task.repo_id)
         if not repo:
+            logger.warning(f"Repo not found: {task.repo_id}")
             raise ValueError(f"Repo not found: {task.repo_id}")
 
         # Extract owner/repo from repo_url
         repo_full_name = self._extract_repo_full_name(repo.repo_url)
         if not repo_full_name:
+            logger.warning(f"Cannot parse repo URL: {repo.repo_url}")
             raise ValueError(f"Cannot parse repo URL: {repo.repo_url}")
+
+        logger.debug(f"Fetching CI status for {repo_full_name} PR #{pr.number}")
 
         # Get CI status from GitHub
         try:

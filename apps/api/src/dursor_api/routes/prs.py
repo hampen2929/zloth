@@ -1,5 +1,7 @@
 """Pull Request routes."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from dursor_api.dependencies import get_ci_check_service, get_pr_service
@@ -20,6 +22,8 @@ from dursor_api.domain.models import (
 )
 from dursor_api.services.ci_check_service import CICheckService
 from dursor_api.services.pr_service import GitHubPermissionError, PRService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["prs"])
 
@@ -225,7 +229,11 @@ async def check_ci(
     try:
         return await ci_check_service.check_ci(task_id, pr_id)
     except ValueError as e:
+        logger.warning(f"CI check validation error for task={task_id}, pr={pr_id}: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"CI check failed for task={task_id}, pr={pr_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"CI check failed: {e}")
 
 
 @router.get("/tasks/{task_id}/ci-checks", response_model=list[CICheck])

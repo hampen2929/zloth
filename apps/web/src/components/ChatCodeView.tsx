@@ -300,6 +300,7 @@ export function ChatCodeView({
         error('CI checks failed. Check the results for details.');
       }
     } catch (err) {
+      console.error('CI check error:', err);
       const message = err instanceof Error ? err.message : 'Failed to check CI status';
       error(message);
     } finally {
