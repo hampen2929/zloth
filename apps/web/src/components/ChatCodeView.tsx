@@ -22,6 +22,8 @@ import {
 } from '@heroicons/react/24/outline';
 import { ReviewButton } from './ReviewButton';
 import { ReviewResultCard } from './ReviewResultCard';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatCodeViewProps {
   taskId: string;
@@ -387,12 +389,13 @@ export function ChatCodeView({
   // Create a unified timeline of messages+runs and reviews, sorted chronologically
   type TimelineItem =
     | { type: 'message-run'; message: Message; run: Run; createdAt: string }
+    | { type: 'standalone-message'; message: Message; createdAt: string }
     | { type: 'review'; review: Review; createdAt: string };
 
   const timeline = useMemo<TimelineItem[]>(() => {
     const items: TimelineItem[] = [];
 
-    // Add message+run pairs
+    // Add message+run pairs for user messages with runs
     messages
       .filter((msg) => runByMessageId.has(msg.id))
       .forEach((msg) => {
@@ -401,6 +404,18 @@ export function ChatCodeView({
           type: 'message-run',
           message: msg,
           run,
+          createdAt: msg.created_at,
+        });
+      });
+
+    // Add standalone assistant messages (CI results, PR creation, etc.)
+    // These are messages without associated runs
+    messages
+      .filter((msg) => msg.role === 'assistant' && !runByMessageId.has(msg.id))
+      .forEach((msg) => {
+        items.push({
+          type: 'standalone-message',
+          message: msg,
           createdAt: msg.created_at,
         });
       });
@@ -503,6 +518,13 @@ export function ChatCodeView({
                         onTabChange={(tab) => setRunTab(item.run.id, tab)}
                       />
                     </div>
+                  </div>
+                );
+              } else if (item.type === 'standalone-message') {
+                // Standalone assistant messages (CI results, PR creation, etc.)
+                return (
+                  <div key={item.message.id} className="ml-4 border-l-2 border-green-500/30 pl-4">
+                    <MessageBubble message={item.message} />
                   </div>
                 );
               } else {
@@ -764,7 +786,13 @@ function MessageBubble({ message }: { message: Message }) {
         )}
         <span className="capitalize font-medium">{message.role}</span>
       </div>
-      <div className="text-sm whitespace-pre-wrap text-gray-200">{message.content}</div>
+      {message.role === 'assistant' ? (
+        <div className="text-sm text-gray-200 prose prose-invert prose-sm max-w-none prose-headings:mt-2 prose-headings:mb-1 prose-p:my-1 prose-ul:my-1 prose-li:my-0">
+          <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+        </div>
+      ) : (
+        <div className="text-sm whitespace-pre-wrap text-gray-200">{message.content}</div>
+      )}
     </div>
   );
 }

@@ -435,6 +435,9 @@ class GitHubService:
     async def get_pr_check_status(self, pr_number: int, repo_full_name: str) -> str:
         """Get combined CI check status for a PR.
 
+        Uses the Check Runs API (GitHub Actions) first, then falls back to
+        Commit Statuses API for older CI systems.
+
         Args:
             pr_number: PR number.
             repo_full_name: Full repository name (owner/repo).
@@ -454,13 +457,62 @@ class GitHubService:
         if not head_sha:
             return "error"
 
-        # Get combined status
-        status_data = await self._github_request(
-            "GET",
-            f"/repos/{owner}/{repo}/commits/{head_sha}/status",
-        )
+        # Try Check Runs API first (GitHub Actions uses this)
+        try:
+            check_runs_data = await self._github_request(
+                "GET",
+                f"/repos/{owner}/{repo}/commits/{head_sha}/check-runs",
+            )
+            check_runs = check_runs_data.get("check_runs", [])
 
-        return status_data.get("state", "pending")
+            if check_runs:
+                # Determine combined status from check runs
+                conclusions = []
+                has_pending = False
+
+                for check_run in check_runs:
+                    status = check_run.get("status")
+                    conclusion = check_run.get("conclusion")
+
+                    if status != "completed":
+                        has_pending = True
+                    elif conclusion:
+                        conclusions.append(conclusion)
+
+                if has_pending:
+                    return "pending"
+
+                if not conclusions:
+                    return "pending"
+
+                # Any failure/error = failure
+                if any(c in ("failure", "cancelled", "timed_out") for c in conclusions):
+                    return "failure"
+
+                # All success
+                if all(c == "success" for c in conclusions):
+                    return "success"
+
+                # Some skipped/neutral but no failures = success
+                if all(c in ("success", "skipped", "neutral") for c in conclusions):
+                    return "success"
+
+                return "pending"
+
+        except Exception:
+            # Fall back to commit statuses API if check-runs fails
+            pass
+
+        # Fall back to Commit Statuses API (older CI systems)
+        try:
+            status_data = await self._github_request(
+                "GET",
+                f"/repos/{owner}/{repo}/commits/{head_sha}/status",
+            )
+            return status_data.get("state", "pending")
+        except Exception:
+            # If both APIs fail, return pending to continue polling
+            return "pending"
 
     async def check_pr_conflicts(self, pr_number: int, repo_full_name: str) -> bool:
         """Check if PR has merge conflicts.

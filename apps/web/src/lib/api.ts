@@ -47,6 +47,9 @@ import type {
   ReviewSummary,
   FixInstructionRequest,
   FixInstructionResponse,
+  AgenticStartRequest,
+  AgenticStartResponse,
+  AgenticStatusResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -632,6 +635,30 @@ export const reviewsApi = {
       onError: options.onError,
     });
   },
+};
+
+// Agentic Execution
+export const agenticApi = {
+  start: (taskId: string, data: AgenticStartRequest) =>
+    fetchApi<AgenticStartResponse>(`/tasks/${taskId}/agentic`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getStatus: (taskId: string) =>
+    fetchApi<AgenticStatusResponse>(`/tasks/${taskId}/agentic/status`),
+
+  cancel: (taskId: string) =>
+    fetchApi<void>(`/tasks/${taskId}/agentic/cancel`, { method: 'POST' }),
+
+  approveMerge: (taskId: string) =>
+    fetchApi<void>(`/tasks/${taskId}/approve-merge`, { method: 'POST' }),
+
+  rejectMerge: (taskId: string, feedback?: string) =>
+    fetchApi<void>(`/tasks/${taskId}/reject-merge`, {
+      method: 'POST',
+      body: JSON.stringify({ feedback }),
+    }),
 };
 
 export { ApiError };

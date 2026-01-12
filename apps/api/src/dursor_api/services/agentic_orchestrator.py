@@ -20,6 +20,7 @@ from dursor_api.domain.enums import (
     AgenticPhase,
     CodingMode,
     ExecutorType,
+    MessageRole,
     ReviewSeverity,
 )
 from dursor_api.domain.models import (
@@ -34,14 +35,16 @@ from dursor_api.domain.models import (
 )
 
 if TYPE_CHECKING:
+    from dursor_api.domain.models import PR
     from dursor_api.services.ci_polling_service import CIPollingService
     from dursor_api.services.git_service import GitService
     from dursor_api.services.github_service import GitHubService
     from dursor_api.services.merge_gate_service import MergeGateService
     from dursor_api.services.notification_service import NotificationService
+    from dursor_api.services.pr_service import PRService
     from dursor_api.services.review_service import ReviewService
     from dursor_api.services.run_service import RunService
-    from dursor_api.storage.dao import PRDAO, AgenticRunDAO, TaskDAO
+    from dursor_api.storage.dao import PRDAO, AgenticRunDAO, MessageDAO, TaskDAO
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +66,11 @@ class AgenticOrchestrator:
         github_service: "GitHubService",
         notification_service: "NotificationService",
         ci_polling_service: "CIPollingService",
+        pr_service: "PRService",
         task_dao: "TaskDAO",
         pr_dao: "PRDAO",
         agentic_dao: "AgenticRunDAO",
+        message_dao: "MessageDAO",
     ):
         """Initialize agentic orchestrator.
 
@@ -77,9 +82,11 @@ class AgenticOrchestrator:
             github_service: Service for GitHub API operations.
             notification_service: Service for notifications.
             ci_polling_service: Service for CI status polling.
+            pr_service: Service for PR operations.
             task_dao: Task DAO.
             pr_dao: PR DAO.
             agentic_dao: Agentic run DAO.
+            message_dao: Message DAO for recording CI results to task.
         """
         self.run_service = run_service
         self.review_service = review_service
@@ -88,9 +95,11 @@ class AgenticOrchestrator:
         self.github = github_service
         self.notifier = notification_service
         self.ci_poller = ci_polling_service
+        self.pr_service = pr_service
         self.task_dao = task_dao
         self.pr_dao = pr_dao
         self.agentic_dao = agentic_dao
+        self.message_dao = message_dao
 
         # In-memory state management
         self._states: dict[str, AgenticState] = {}
@@ -114,6 +123,7 @@ class AgenticOrchestrator:
         task_id: str,
         instruction: str,
         mode: CodingMode = CodingMode.FULL_AUTO,
+        message_id: str | None = None,
         config: AgenticConfig | None = None,
     ) -> AgenticState:
         """Start agentic execution for a task.
@@ -122,6 +132,7 @@ class AgenticOrchestrator:
             task_id: Target task ID.
             instruction: Development instruction.
             mode: CodingMode (SEMI_AUTO or FULL_AUTO).
+            message_id: Optional message ID to link runs to (for UI display).
             config: Optional agentic configuration.
 
         Returns:
@@ -163,8 +174,10 @@ class AgenticOrchestrator:
         # Persist state
         await self.agentic_dao.create(state)
 
-        # Start coding phase in background
-        asyncio.create_task(self._run_coding_phase(task_id, instruction, limits))
+        # Start coding phase in background (pass message_id for UI linking)
+        asyncio.create_task(
+            self._run_coding_phase(task_id, instruction, limits, message_id=message_id)
+        )
 
         return state
 
@@ -226,6 +239,9 @@ class AgenticOrchestrator:
         if not state:
             logger.warning(f"No active agentic state for task {task_id}")
             return None
+
+        # Record CI result as a message in the task
+        await self._record_ci_result_message(task_id, ci_result, state)
 
         async with self._locks[task_id]:
             state.last_ci_result = ci_result
@@ -416,6 +432,7 @@ class AgenticOrchestrator:
         instruction: str,
         limits: IterationLimits,
         context: dict[str, Any] | None = None,
+        message_id: str | None = None,
     ) -> None:
         """Execute Claude Code for coding.
 
@@ -424,6 +441,7 @@ class AgenticOrchestrator:
             instruction: Coding instruction.
             limits: Iteration limits.
             context: Additional context.
+            message_id: Optional message ID to link runs to (for UI display).
         """
         state = self._states.get(task_id)
         if not state:
@@ -458,6 +476,7 @@ class AgenticOrchestrator:
             run_data = RunCreate(
                 instruction=full_instruction,
                 executor_type=ExecutorType.CLAUDE_CODE,
+                message_id=message_id,  # Link run to message for UI display
             )
 
             runs = await self.run_service.create_runs(task_id, run_data)
@@ -476,6 +495,13 @@ class AgenticOrchestrator:
 
             # Get run result
             run = await self.run_service.get(run_id)
+            logger.info(
+                f"Run completed for task {task_id}: "
+                f"status={run.status if run else 'None'}, "
+                f"working_branch={run.working_branch if run else 'None'}, "
+                f"commit_sha={run.commit_sha if run else 'None'}"
+            )
+
             if not run or run.status != "succeeded":
                 async with self._locks[task_id]:
                     state.phase = AgenticPhase.FAILED
@@ -487,6 +513,24 @@ class AgenticOrchestrator:
             # Update state with commit SHA
             async with self._locks[task_id]:
                 state.current_sha = run.commit_sha
+
+            # Auto-create PR if not exists (required for CI polling in Semi/Full Auto mode)
+            logger.info(f"Checking if PR needs to be created: state.pr_number={state.pr_number}")
+            if not state.pr_number:
+                pr = await self._auto_create_pr(task_id, run_id)
+                if pr:
+                    async with self._locks[task_id]:
+                        state.pr_number = pr.number
+                        await self.agentic_dao.update(state)
+                else:
+                    async with self._locks[task_id]:
+                        state.phase = AgenticPhase.FAILED
+                        state.error = "Failed to auto-create PR for CI polling"
+                        await self.agentic_dao.update(state)
+                        await self._notify_failure(state)
+                    return
+
+            async with self._locks[task_id]:
                 state.phase = AgenticPhase.WAITING_CI
                 await self.agentic_dao.update(state)
 
@@ -744,9 +788,211 @@ class AgenticOrchestrator:
         """
         await self.ci_poller.stop_polling(task_id)
 
+    async def _auto_create_pr(self, task_id: str, run_id: str) -> "PR | None":
+        """Auto-create PR for agentic execution (Semi Auto / Full Auto mode).
+
+        This method creates a PR automatically when the first commit is made
+        in Semi Auto or Full Auto mode. This is required for CI polling to work.
+
+        Args:
+            task_id: Task ID.
+            run_id: Run ID that created the commit.
+
+        Returns:
+            Created PR object or None if failed.
+        """
+        from dursor_api.domain.models import PRCreateAuto
+
+        try:
+            logger.info(f"Auto-creating PR for task {task_id}, run {run_id}")
+
+            # Get run to verify it has necessary data
+            run = await self.run_service.get(run_id)
+            if not run:
+                logger.error(f"Run not found for PR creation: {run_id}")
+                raise ValueError(f"Run not found: {run_id}")
+
+            logger.info(
+                f"Run details for PR creation: "
+                f"working_branch={run.working_branch}, "
+                f"commit_sha={run.commit_sha}, "
+                f"status={run.status}"
+            )
+
+            if not run.working_branch:
+                logger.error(f"Run has no working_branch: {run_id}")
+                raise ValueError(f"Run has no working branch: {run_id}")
+
+            if not run.commit_sha:
+                logger.error(f"Run has no commit_sha: {run_id}")
+                raise ValueError(f"Run has no commits: {run_id}")
+
+            # Create PR with auto-generated title and description
+            pr_data = PRCreateAuto(selected_run_id=run_id)
+            pr = await self.pr_service.create_auto(task_id, pr_data)
+
+            # Record PR creation as a message in the task
+            await self._record_pr_created_message(task_id, pr)
+
+            logger.info(f"Auto-created PR #{pr.number} for task {task_id}")
+            return pr
+
+        except Exception as e:
+            logger.error(f"Failed to auto-create PR for task {task_id}: {e}", exc_info=True)
+            # Record failure as a message
+            try:
+                await self.message_dao.create(
+                    task_id=task_id,
+                    role=MessageRole.ASSISTANT,
+                    content=f"## PR Creation Failed\n\nFailed to automatically create PR: {str(e)}",
+                )
+            except Exception:
+                pass
+            return None
+
+    async def _record_pr_created_message(self, task_id: str, pr: "PR") -> None:
+        """Record PR creation as a message in the task.
+
+        Args:
+            task_id: Task ID.
+            pr: Created PR object.
+        """
+        try:
+            message_content = f"""## PR Created
+
+**PR #{pr.number}**: [{pr.title}]({pr.url})
+
+Branch: `{pr.branch}`
+
+The PR has been automatically created. CI will now be monitored for results.
+"""
+            await self.message_dao.create(
+                task_id=task_id,
+                role=MessageRole.ASSISTANT,
+                content=message_content,
+            )
+            logger.info(f"Recorded PR creation message for task {task_id}")
+        except Exception as e:
+            logger.warning(f"Failed to record PR creation message: {e}")
+
     # =========================================
     # Helper Methods
     # =========================================
+
+    async def _record_ci_result_message(
+        self,
+        task_id: str,
+        ci_result: CIResult,
+        state: AgenticState,
+    ) -> None:
+        """Record CI result as a message in the task.
+
+        Args:
+            task_id: Task ID.
+            ci_result: CI execution result.
+            state: Current agentic state.
+        """
+        try:
+            if ci_result.success:
+                # CI passed message
+                message_content = self._build_ci_success_message(ci_result, state)
+            else:
+                # CI failed message
+                message_content = self._build_ci_failure_message(ci_result, state)
+
+            await self.message_dao.create(
+                task_id=task_id,
+                role=MessageRole.ASSISTANT,
+                content=message_content,
+            )
+            logger.info(f"Recorded CI result message for task {task_id}")
+        except Exception as e:
+            # Don't fail the CI handling if message recording fails
+            logger.warning(f"Failed to record CI result message: {e}")
+
+    def _build_ci_success_message(
+        self,
+        ci_result: CIResult,
+        state: AgenticState,
+    ) -> str:
+        """Build message content for successful CI.
+
+        Args:
+            ci_result: CI execution result.
+            state: Current agentic state.
+
+        Returns:
+            Formatted message string.
+        """
+        parts = [
+            "## CI Result: PASSED",
+            "",
+            f"**Commit:** `{ci_result.sha[:8]}`",
+            f"**Workflow Run ID:** {ci_result.workflow_run_id}",
+            f"**Iteration:** {state.iteration} (CI attempts: {state.ci_iterations})",
+            "",
+            "### Job Results",
+        ]
+
+        for job_name, result in ci_result.jobs.items():
+            status_icon = "+" if result == "success" else "-"
+            parts.append(f"- [{status_icon}] {job_name}: {result}")
+
+        parts.append("")
+        parts.append("Proceeding to code review phase.")
+
+        return "\n".join(parts)
+
+    def _build_ci_failure_message(
+        self,
+        ci_result: CIResult,
+        state: AgenticState,
+    ) -> str:
+        """Build message content for failed CI.
+
+        Args:
+            ci_result: CI execution result.
+            state: Current agentic state.
+
+        Returns:
+            Formatted message string.
+        """
+        parts = [
+            "## CI Result: FAILED",
+            "",
+            f"**Commit:** `{ci_result.sha[:8]}`",
+            f"**Workflow Run ID:** {ci_result.workflow_run_id}",
+            f"**Iteration:** {state.iteration} (CI attempts: {state.ci_iterations + 1})",
+            "",
+            "### Job Results",
+        ]
+
+        for job_name, result in ci_result.jobs.items():
+            status_icon = "+" if result == "success" else "x"
+            parts.append(f"- [{status_icon}] {job_name}: {result}")
+
+        if ci_result.failed_jobs:
+            parts.append("")
+            parts.append("### Failed Job Details")
+            for job in ci_result.failed_jobs:
+                parts.append(f"\n#### {job.job_name}")
+                if job.error_log:
+                    # Truncate error log if too long
+                    error_log = job.error_log
+                    if len(error_log) > 2000:
+                        error_log = error_log[:2000] + "\n... (truncated)"
+                    parts.append(f"```\n{error_log}\n```")
+
+        parts.append("")
+        if state.ci_iterations + 1 >= self._default_limits.max_ci_iterations:
+            parts.append(
+                f"Max CI iterations ({self._default_limits.max_ci_iterations}) reached. "
+                "Stopping agentic execution."
+            )
+        else:
+            parts.append("Attempting automatic fix...")
+
+        return "\n".join(parts)
 
     def _build_ci_fix_instruction(self, failed_jobs: list[CIJobResult]) -> str:
         """Build instruction for fixing CI failures.

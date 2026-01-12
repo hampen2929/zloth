@@ -261,9 +261,11 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
         github_service = await get_github_service()
         notification_service = get_notification_service()
         ci_polling_service = await get_ci_polling_service()
+        pr_service = await get_pr_service()
         task_dao = await get_task_dao()
         pr_dao = await get_pr_dao()
         agentic_dao = await get_agentic_run_dao()
+        message_dao = await get_message_dao()
         _agentic_orchestrator = AgenticOrchestrator(
             run_service=run_service,
             review_service=review_service,
@@ -272,9 +274,11 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
             github_service=github_service,
             notification_service=notification_service,
             ci_polling_service=ci_polling_service,
+            pr_service=pr_service,
             task_dao=task_dao,
             pr_dao=pr_dao,
             agentic_dao=agentic_dao,
+            message_dao=message_dao,
         )
     return _agentic_orchestrator
 

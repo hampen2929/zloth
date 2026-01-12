@@ -523,3 +523,44 @@ export interface FixInstructionResponse {
   target_feedbacks: ReviewFeedbackItem[];
   estimated_changes: number;
 }
+
+// Agentic Execution
+export type AgenticPhase =
+  | 'coding'
+  | 'waiting_ci'
+  | 'reviewing'
+  | 'fixing_ci'
+  | 'fixing_review'
+  | 'awaiting_human'
+  | 'merge_check'
+  | 'merging'
+  | 'completed'
+  | 'failed';
+
+export interface AgenticStartRequest {
+  instruction: string;
+  mode?: CodingMode;
+  message_id?: string;
+}
+
+export interface AgenticStartResponse {
+  agentic_run_id: string;
+  status: string;
+  mode: CodingMode;
+}
+
+export interface AgenticStatusResponse {
+  agentic_run_id: string;
+  task_id: string;
+  mode: CodingMode;
+  phase: AgenticPhase;
+  iteration: number;
+  ci_iterations: number;
+  review_iterations: number;
+  pr_number: number | null;
+  last_review_score: number | null;
+  human_approved: boolean;
+  error: string | null;
+  started_at: string;
+  last_activity: string;
+}

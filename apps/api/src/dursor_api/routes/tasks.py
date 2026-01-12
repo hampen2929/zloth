@@ -237,6 +237,7 @@ async def start_agentic_execution(
             task_id=task_id,
             instruction=data.instruction,
             mode=data.mode,
+            message_id=data.message_id,
             config=data.config,
         )
 

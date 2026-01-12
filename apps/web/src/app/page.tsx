@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
+import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi, agenticApi } from '@/lib/api';
 import type { GitHubRepository, ExecutorType, CodingMode } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
@@ -138,15 +138,28 @@ export default function HomePage() {
         content: instruction,
       });
 
-      // Build executor_types array for the API (CLI only)
-      const executorTypesToRun: ExecutorType[] = [...selectedCLIs];
+      // For Semi Auto and Full Auto modes, start agentic execution
+      // For Interactive mode, create runs directly
+      if (selectedMode === 'semi_auto' || selectedMode === 'full_auto') {
+        // Start agentic execution (auto PR creation, CI polling, etc.)
+        // Pass message_id to link runs to the message for UI display
+        await agenticApi.start(task.id, {
+          instruction: instruction,
+          mode: selectedMode,
+          message_id: message.id,
+        });
+      } else {
+        // Interactive mode: create runs directly
+        // Build executor_types array for the API (CLI only)
+        const executorTypesToRun: ExecutorType[] = [...selectedCLIs];
 
-      // Create runs with executor_types for parallel execution, linked to the message
-      await runsApi.create(task.id, {
-        instruction: instruction,
-        executor_types: executorTypesToRun,
-        message_id: message.id,
-      });
+        // Create runs with executor_types for parallel execution, linked to the message
+        await runsApi.create(task.id, {
+          instruction: instruction,
+          executor_types: executorTypesToRun,
+          message_id: message.id,
+        });
+      }
 
       // Navigate to the task page with executor info
       const params = new URLSearchParams();
