@@ -1,7 +1,8 @@
 'use client';
 
-import type { Run } from '@/types';
+import type { Run, SummaryType } from '@/types';
 import { cn } from '@/lib/utils';
+import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-utils';
 import { isCLIExecutor, getExecutorDisplayName } from '@/hooks';
 import { StatusBadge, getStatusBorderColor, getStatusBackgroundColor } from './ui/StatusBadge';
 import { DiffViewer } from './DiffViewer';
@@ -16,6 +17,11 @@ import {
   ClockIcon,
   ExclamationTriangleIcon,
   DocumentDuplicateIcon,
+  ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon,
+  CheckCircleIcon,
+  LightBulbIcon,
+  DocumentMagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
 export type RunTab = 'summary' | 'diff' | 'logs';
@@ -185,17 +191,97 @@ export function RunResultCard({
   );
 }
 
+/**
+ * Get icon for summary type
+ */
+function getSummaryTypeIcon(type: SummaryType) {
+  switch (type) {
+    case 'code_change':
+      return <CodeBracketIcon className="w-5 h-5" />;
+    case 'qa_response':
+      return <ChatBubbleLeftRightIcon className="w-5 h-5" />;
+    case 'analysis':
+      return <MagnifyingGlassIcon className="w-5 h-5" />;
+    case 'no_action':
+      return <CheckCircleIcon className="w-5 h-5" />;
+  }
+}
+
 function SummaryTab({ run }: { run: Run }) {
+  const structuredSummary = deriveStructuredSummary(run);
+  const typeStyles = getSummaryTypeStyles(structuredSummary.type);
+  const typeIcon = getSummaryTypeIcon(structuredSummary.type);
+
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="font-medium text-gray-200 text-sm mb-2 flex items-center gap-2">
-          <DocumentTextIcon className="w-5 h-5 text-gray-400" />
-          <span>Summary</span>
-        </h3>
-        <p className="text-gray-300 text-sm leading-relaxed">{run.summary}</p>
+      {/* Summary Type Badge */}
+      <div className={cn(
+        'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium',
+        typeStyles.bgColor,
+        typeStyles.color
+      )}>
+        {typeIcon}
+        {typeStyles.label}
       </div>
 
+      {/* Main Summary Section */}
+      <div className={cn(
+        'p-3 rounded-lg border',
+        typeStyles.bgColor,
+        typeStyles.borderColor
+      )}>
+        <h3 className={cn('font-medium text-sm mb-2', typeStyles.color)}>
+          {structuredSummary.title}
+        </h3>
+        <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
+          {structuredSummary.description}
+        </p>
+      </div>
+
+      {/* Key Points (if available) */}
+      {structuredSummary.key_points.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <LightBulbIcon className="w-4 h-4 text-yellow-400" />
+            <h4 className="text-xs font-medium text-gray-300">Key Points</h4>
+          </div>
+          <ul className="space-y-1.5">
+            {structuredSummary.key_points.map((point, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-2 p-2 bg-gray-800/30 rounded text-xs text-gray-400"
+              >
+                <span className="text-gray-600 mt-0.5">•</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Analyzed Files (for Q&A/Analysis types) */}
+      {structuredSummary.analyzed_files.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <DocumentMagnifyingGlassIcon className="w-4 h-4 text-gray-400" />
+            <h4 className="text-xs font-medium text-gray-300">
+              Files Analyzed ({structuredSummary.analyzed_files.length})
+            </h4>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {structuredSummary.analyzed_files.map((file, i) => (
+              <span
+                key={i}
+                className="px-2 py-1 bg-gray-800/50 rounded text-xs font-mono text-gray-400"
+              >
+                {file}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Warnings */}
       {run.warnings && run.warnings.length > 0 && (
         <div className="p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
@@ -212,6 +298,7 @@ function SummaryTab({ run }: { run: Run }) {
         </div>
       )}
 
+      {/* Files Changed (for code changes) */}
       {run.files_changed && run.files_changed.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-2">
