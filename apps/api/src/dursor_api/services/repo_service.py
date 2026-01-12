@@ -135,7 +135,19 @@ class RepoService:
                 if workspace_path.exists():
                     repo = git.Repo(workspace_path)
                     try:
-                        repo.git.checkout(data.branch)
+                        # Fetch the branch from origin with auth (shallow clone may not have it)
+                        auth_url = await github_service.clone_url(data.owner, data.repo)
+                        repo.git.fetch(auth_url, data.branch, depth=1)
+                    except git.GitCommandError:
+                        # Branch might not exist on remote, ignore fetch errors
+                        pass
+                    try:
+                        # Checkout the branch (try remote tracking branch if local doesn't exist)
+                        try:
+                            repo.git.checkout(data.branch)
+                        except git.GitCommandError:
+                            # Try checking out from FETCH_HEAD
+                            repo.git.checkout("-b", data.branch, "FETCH_HEAD")
                     except git.GitCommandError as e:
                         # Branch might already be checked out in a worktree, which is fine.
                         # Git prevents checking out the same branch in multiple places,
