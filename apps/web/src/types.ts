@@ -8,6 +8,7 @@ export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancele
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type ExecutorType = 'patch_agent' | 'claude_code' | 'codex_cli' | 'gemini_cli';
 export type PRCreationMode = 'create' | 'link';
+export type CodingMode = 'interactive' | 'semi_auto' | 'full_auto';
 
 // Model Profile
 export interface ModelProfile {
@@ -45,6 +46,7 @@ export interface Task {
   id: string;
   repo_id: string;
   title: string | null;
+  coding_mode: CodingMode;
   kanban_status: string;
   created_at: string;
   updated_at: string;
@@ -53,6 +55,7 @@ export interface Task {
 export interface TaskCreate {
   repo_id: string;
   title?: string;
+  coding_mode?: CodingMode;
 }
 
 export interface TaskDetail extends Task {
@@ -246,6 +249,7 @@ export interface UserPreferences {
   default_branch: string | null;
   default_branch_prefix: string | null;
   default_pr_creation_mode: PRCreationMode;
+  default_coding_mode: CodingMode;
 }
 
 export interface UserPreferencesSave {
@@ -254,6 +258,7 @@ export interface UserPreferencesSave {
   default_branch?: string | null;
   default_branch_prefix?: string | null;
   default_pr_creation_mode?: PRCreationMode | null;
+  default_coding_mode?: CodingMode | null;
 }
 
 // Task Breakdown
