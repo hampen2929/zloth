@@ -173,23 +173,30 @@ export function ChatCodeView({
     });
   }, [runs, error, success]);
 
-  // Auto-switch to logs tab when run is running/queued, switch to summary when succeeded
+  // Auto-switch tabs only when run status actually changes (not on every runTabs update)
+  // This prevents overriding user's manual tab selection
+  const prevStatusesForTab = useRef<Map<string, RunStatus>>(new Map());
   useEffect(() => {
+    const prevStatuses = prevStatusesForTab.current;
+
     runs.forEach((run) => {
-      const currentTab = runTabs[run.id];
-      if (run.status === 'running' || run.status === 'queued') {
-        // Auto-switch to logs tab when running/queued
-        if (currentTab !== 'logs') {
+      const prevStatus = prevStatuses.get(run.id);
+      const currentStatus = run.status;
+
+      // Only auto-switch when status actually changes
+      if (prevStatus !== currentStatus) {
+        if (currentStatus === 'running' || currentStatus === 'queued') {
+          // Auto-switch to logs tab when run starts
           setRunTab(run.id, 'logs');
-        }
-      } else if (run.status === 'succeeded') {
-        // Auto-switch to summary tab when succeeded (only if currently on logs)
-        if (currentTab === 'logs' || currentTab === undefined) {
+        } else if (currentStatus === 'succeeded' && (prevStatus === 'running' || prevStatus === 'queued')) {
+          // Auto-switch to summary tab when run completes (only from running/queued state)
           setRunTab(run.id, 'summary');
         }
       }
+
+      prevStatuses.set(run.id, currentStatus);
     });
-  }, [runs, runTabs]);
+  }, [runs]);
 
   const handleCreatePR = async () => {
     if (!latestSuccessfulRun) return;
