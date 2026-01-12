@@ -16,6 +16,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
+import BacklogStartModal from './BacklogStartModal';
 
 interface BacklogCardProps {
   item: BacklogItem;
@@ -75,6 +76,7 @@ export default function BacklogCard({
   const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [showStartModal, setShowStartModal] = useState(false);
   const typeInfo = typeConfig[item.type] || typeConfig.feature;
   const sizeInfo = sizeConfig[item.estimated_size] || sizeConfig.medium;
   const statusInfo = statusConfig[item.status] || statusConfig.draft;
@@ -82,22 +84,10 @@ export default function BacklogCard({
   const completedSubtasks = item.subtasks.filter((st) => st.completed).length;
   const totalSubtasks = item.subtasks.length;
 
-  const handleStartWork = async (e: React.MouseEvent) => {
+  const handleStartWork = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isStarting || item.task_id) return;
-
-    setIsStarting(true);
-    try {
-      const task = await backlogApi.startWork(item.id);
-      if (onStartWork) {
-        onStartWork(item, task.id);
-      }
-      router.push(`/tasks/${task.id}`);
-    } catch (error) {
-      console.error('Failed to start work:', error);
-    } finally {
-      setIsStarting(false);
-    }
+    if (item.task_id) return;
+    setShowStartModal(true);
   };
 
   const handleViewTask = (e: React.MouseEvent) => {
@@ -281,6 +271,21 @@ export default function BacklogCard({
           </div>
         </div>
       </div>
+      {/* Start Modal */}
+      {showStartModal && (
+        <BacklogStartModal
+          isOpen={showStartModal}
+          item={item}
+          onClose={() => setShowStartModal(false)}
+          onStarted={(taskId) => {
+            setIsStarting(false);
+            if (onStartWork) {
+              onStartWork(item, taskId);
+            }
+            router.push(`/tasks/${taskId}`);
+          }}
+        />
+      )}
     </div>
   );
 }
