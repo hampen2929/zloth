@@ -9,8 +9,10 @@ from datetime import datetime
 from typing import Any
 
 from dursor_api.domain.enums import (
+    AgenticPhase,
     BacklogStatus,
     BrokenDownTaskType,
+    CodingMode,
     EstimatedSize,
     ExecutorType,
     MessageRole,
@@ -24,6 +26,7 @@ from dursor_api.domain.enums import (
 )
 from dursor_api.domain.models import (
     PR,
+    AgenticState,
     BacklogItem,
     FileDiff,
     Message,
@@ -199,17 +202,22 @@ class TaskDAO:
     def __init__(self, db: Database):
         self.db = db
 
-    async def create(self, repo_id: str, title: str | None = None) -> Task:
+    async def create(
+        self,
+        repo_id: str,
+        title: str | None = None,
+        coding_mode: CodingMode = CodingMode.INTERACTIVE,
+    ) -> Task:
         """Create a new task."""
         id = generate_id()
         now = now_iso()
 
         await self.db.connection.execute(
             """
-            INSERT INTO tasks (id, repo_id, title, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tasks (id, repo_id, title, coding_mode, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (id, repo_id, title, now, now),
+            (id, repo_id, title, coding_mode.value, now, now),
         )
         await self.db.connection.commit()
 
@@ -217,6 +225,7 @@ class TaskDAO:
             id=id,
             repo_id=repo_id,
             title=title,
+            coding_mode=coding_mode,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
         )
@@ -316,11 +325,18 @@ class TaskDAO:
         for row in rows:
             # Handle kanban_status for backward compatibility
             kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
+            # Handle coding_mode for backward compatibility
+            coding_mode_str = (
+                row["coding_mode"]
+                if "coding_mode" in row.keys() and row["coding_mode"]
+                else "interactive"
+            )
             result.append(
                 {
                     "id": row["id"],
                     "repo_id": row["repo_id"],
                     "title": row["title"],
+                    "coding_mode": CodingMode(coding_mode_str),
                     "kanban_status": kanban_status,
                     "created_at": datetime.fromisoformat(row["created_at"]),
                     "updated_at": datetime.fromisoformat(row["updated_at"]),
@@ -336,10 +352,17 @@ class TaskDAO:
     def _row_to_model(self, row: Any) -> Task:
         # Handle kanban_status for backward compatibility
         kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
+        # Handle coding_mode for backward compatibility
+        coding_mode_str = (
+            row["coding_mode"]
+            if "coding_mode" in row.keys() and row["coding_mode"]
+            else "interactive"
+        )
         return Task(
             id=row["id"],
             repo_id=row["repo_id"],
             title=row["title"],
+            coding_mode=CodingMode(coding_mode_str),
             kanban_status=kanban_status,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
@@ -818,6 +841,17 @@ class PRDAO:
             return None
         return self._row_to_model(row)
 
+    async def get_by_number(self, number: int) -> PR | None:
+        """Get a PR by PR number (across all tasks)."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM prs WHERE number = ? ORDER BY created_at DESC LIMIT 1",
+            (number,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
     async def list(self, task_id: str) -> list[PR]:
         """List PRs for a task."""
         cursor = await self.db.connection.execute(
@@ -899,6 +933,7 @@ class UserPreferencesDAO:
         default_branch: str | None = None,
         default_branch_prefix: str | None = None,
         default_pr_creation_mode: str | None = None,
+        default_coding_mode: str | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
@@ -916,6 +951,7 @@ class UserPreferencesDAO:
                     default_branch = ?,
                     default_branch_prefix = ?,
                     default_pr_creation_mode = ?,
+                    default_coding_mode = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
@@ -925,6 +961,7 @@ class UserPreferencesDAO:
                     default_branch,
                     default_branch_prefix,
                     default_pr_creation_mode,
+                    default_coding_mode,
                     now,
                 ),
             )
@@ -938,10 +975,11 @@ class UserPreferencesDAO:
                     default_branch,
                     default_branch_prefix,
                     default_pr_creation_mode,
+                    default_coding_mode,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -949,6 +987,7 @@ class UserPreferencesDAO:
                     default_branch,
                     default_branch_prefix,
                     default_pr_creation_mode,
+                    default_coding_mode,
                     now,
                     now,
                 ),
@@ -962,6 +1001,7 @@ class UserPreferencesDAO:
             default_branch=default_branch,
             default_branch_prefix=default_branch_prefix,
             default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
+            default_coding_mode=CodingMode(default_coding_mode or "interactive"),
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -976,6 +1016,11 @@ class UserPreferencesDAO:
                 row["default_pr_creation_mode"]
                 if "default_pr_creation_mode" in row.keys() and row["default_pr_creation_mode"]
                 else "create"
+            ),
+            default_coding_mode=CodingMode(
+                row["default_coding_mode"]
+                if "default_coding_mode" in row.keys() and row["default_coding_mode"]
+                else "interactive"
             ),
         )
 
@@ -1454,3 +1499,144 @@ class ReviewDAO:
                     reviewed_run_ids.add(target_id)
 
         return reviewed_run_ids
+
+
+class AgenticRunDAO:
+    """DAO for AgenticRun (agentic execution state)."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    async def create(self, state: AgenticState) -> AgenticState:
+        """Create a new agentic run record."""
+        await self.db.connection.execute(
+            """
+            INSERT INTO agentic_runs (
+                id, task_id, mode, phase, iteration, ci_iterations, review_iterations,
+                started_at, last_activity, pr_number, current_sha, last_ci_result,
+                last_review_score, error, human_approved
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                state.id,
+                state.task_id,
+                state.mode.value,
+                state.phase.value,
+                state.iteration,
+                state.ci_iterations,
+                state.review_iterations,
+                state.started_at.isoformat(),
+                state.last_activity.isoformat(),
+                state.pr_number,
+                state.current_sha,
+                json.dumps(state.last_ci_result.model_dump()) if state.last_ci_result else None,
+                state.last_review_score,
+                state.error,
+                1 if state.human_approved else 0,
+            ),
+        )
+        await self.db.connection.commit()
+        return state
+
+    async def get(self, id: str) -> AgenticState | None:
+        """Get an agentic run by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM agentic_runs WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_task_id(self, task_id: str) -> AgenticState | None:
+        """Get the latest agentic run for a task."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM agentic_runs
+            WHERE task_id = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_pr_number(self, pr_number: int) -> AgenticState | None:
+        """Get an agentic run by PR number."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM agentic_runs WHERE pr_number = ? ORDER BY started_at DESC LIMIT 1",
+            (pr_number,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def update(self, state: AgenticState) -> None:
+        """Update an agentic run record."""
+        await self.db.connection.execute(
+            """
+            UPDATE agentic_runs SET
+                mode = ?, phase = ?, iteration = ?, ci_iterations = ?, review_iterations = ?,
+                last_activity = ?, pr_number = ?, current_sha = ?, last_ci_result = ?,
+                last_review_score = ?, error = ?, human_approved = ?
+            WHERE id = ?
+            """,
+            (
+                state.mode.value,
+                state.phase.value,
+                state.iteration,
+                state.ci_iterations,
+                state.review_iterations,
+                state.last_activity.isoformat(),
+                state.pr_number,
+                state.current_sha,
+                json.dumps(state.last_ci_result.model_dump()) if state.last_ci_result else None,
+                state.last_review_score,
+                state.error,
+                1 if state.human_approved else 0,
+                state.id,
+            ),
+        )
+        await self.db.connection.commit()
+
+    async def list_active(self) -> builtins.list[AgenticState]:
+        """List all active (non-completed, non-failed) agentic runs."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM agentic_runs
+            WHERE phase NOT IN ('completed', 'failed')
+            ORDER BY started_at DESC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    def _row_to_model(self, row: Any) -> AgenticState:
+        """Convert database row to AgenticState model."""
+        from dursor_api.domain.models import CIResult
+
+        last_ci_result = None
+        if row["last_ci_result"]:
+            ci_data = json.loads(row["last_ci_result"])
+            last_ci_result = CIResult(**ci_data)
+
+        return AgenticState(
+            id=row["id"],
+            task_id=row["task_id"],
+            mode=CodingMode(row["mode"]),
+            phase=AgenticPhase(row["phase"]),
+            iteration=row["iteration"],
+            ci_iterations=row["ci_iterations"],
+            review_iterations=row["review_iterations"],
+            started_at=datetime.fromisoformat(row["started_at"]),
+            last_activity=datetime.fromisoformat(row["last_activity"]),
+            pr_number=row["pr_number"],
+            current_sha=row["current_sha"],
+            last_ci_result=last_ci_result,
+            last_review_score=row["last_review_score"],
+            error=row["error"],
+            human_approved=bool(row["human_approved"]),
+        )

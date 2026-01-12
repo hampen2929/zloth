@@ -7,6 +7,7 @@ import type {
   Provider,
   ModelProfileCreate,
   PRCreationMode,
+  CodingMode,
 } from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
@@ -520,6 +521,7 @@ function DefaultsTab() {
   const [branches, setBranches] = useState<string[]>([]);
   const [branchPrefix, setBranchPrefix] = useState<string>('');
   const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('create');
+  const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -536,11 +538,12 @@ function DefaultsTab() {
     }
   }, [preferences, repos]);
 
-  // Initialize branch prefix from preferences
+  // Initialize branch prefix and other settings from preferences
   useEffect(() => {
     if (preferences) {
       setBranchPrefix(preferences.default_branch_prefix || '');
       setPrCreationMode(preferences.default_pr_creation_mode || 'create');
+      setCodingMode(preferences.default_coding_mode || 'interactive');
     }
   }, [preferences]);
 
@@ -612,6 +615,7 @@ function DefaultsTab() {
         default_branch: selectedBranch || null,
         default_branch_prefix: branchPrefix.trim() ? branchPrefix.trim() : null,
         default_pr_creation_mode: prCreationMode,
+        default_coding_mode: codingMode,
       });
       mutate('preferences');
       success('Default settings saved successfully');
@@ -631,12 +635,14 @@ function DefaultsTab() {
         default_branch: null,
         default_branch_prefix: null,
         default_pr_creation_mode: null,
+        default_coding_mode: null,
       });
       setSelectedRepo('');
       setSelectedBranch('');
       setBranches([]);
       setBranchPrefix('');
       setPrCreationMode('create');
+      setCodingMode('interactive');
       mutate('preferences');
       success('Default settings cleared');
     } catch {
@@ -751,6 +757,29 @@ function DefaultsTab() {
           hint="Prefix used for new work branches (e.g., dursor/abcd1234). Leave blank to use the default."
         />
 
+        {/* Default coding mode */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Default Coding Mode
+          </label>
+          <select
+            value={codingMode}
+            onChange={(e) => setCodingMode(e.target.value as CodingMode)}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors'
+            )}
+          >
+            <option value="interactive">Interactive - Manual control</option>
+            <option value="semi_auto">Semi Auto - Autonomous with human approval for merge</option>
+            <option value="full_auto">Full Auto - Fully autonomous including merge</option>
+          </select>
+          <p className="text-xs text-gray-500">
+            Choose the default coding mode for new tasks.
+          </p>
+        </div>
+
         {/* PR creation behavior */}
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-300">
@@ -769,7 +798,7 @@ function DefaultsTab() {
             <option value="link">Open PR link (manual creation)</option>
           </select>
           <p className="text-xs text-gray-500">
-            Choose whether “Create PR” creates the PR immediately or opens the GitHub PR creation page.
+            Choose whether &ldquo;Create PR&rdquo; creates the PR immediately or opens the GitHub PR creation page.
           </p>
         </div>
 

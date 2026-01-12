@@ -410,3 +410,142 @@ class GitHubService:
             "merged": pr_data.get("merged", False),
             "merged_at": pr_data.get("merged_at"),
         }
+
+    # =========================================
+    # Agentic Mode Methods
+    # =========================================
+
+    async def get_pr_check_status(self, pr_number: int, repo_full_name: str) -> str:
+        """Get combined CI check status for a PR.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            Combined status: "success", "pending", "failure", or "error".
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        # Get PR to find the head SHA
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        head_sha = pr_data.get("head", {}).get("sha")
+        if not head_sha:
+            return "error"
+
+        # Get combined status
+        status_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/commits/{head_sha}/status",
+        )
+
+        return status_data.get("state", "pending")
+
+    async def check_pr_conflicts(self, pr_number: int, repo_full_name: str) -> bool:
+        """Check if PR has merge conflicts.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            True if PR has conflicts, False otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        # GitHub uses "dirty" for conflict state
+        mergeable_state = pr_data.get("mergeable_state", "unknown")
+        return mergeable_state == "dirty"
+
+    async def is_pr_mergeable(self, pr_number: int, repo_full_name: str) -> bool:
+        """Check if PR is mergeable.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            True if PR is mergeable, False otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        # mergeable can be null while GitHub is computing
+        mergeable = pr_data.get("mergeable")
+        return mergeable is True
+
+    async def merge_pr(
+        self,
+        pr_number: int,
+        repo_full_name: str,
+        method: str = "squash",
+    ) -> str | None:
+        """Merge a pull request.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+            method: Merge method: "merge", "squash", or "rebase".
+
+        Returns:
+            Merge commit SHA if successful, None otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        result = await self._github_request(
+            "PUT",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+            json={"merge_method": method},
+        )
+
+        return result.get("sha")
+
+    async def delete_pr_branch(self, pr_number: int, repo_full_name: str) -> bool:
+        """Delete the branch associated with a PR.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            True if branch was deleted, False otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        # Get PR to find the branch name
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        branch_name = pr_data.get("head", {}).get("ref")
+        if not branch_name:
+            return False
+
+        token = await self._get_installation_token()
+        if not token:
+            return False
+
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"https://api.github.com/repos/{owner}/{repo}/git/refs/heads/{branch_name}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            return response.status_code == 204

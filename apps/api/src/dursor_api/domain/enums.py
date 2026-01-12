@@ -140,3 +140,45 @@ class ReviewCategory(str, Enum):
 
 # ReviewStatus alias for backward compatibility
 ReviewStatus = RoleExecutionStatus
+
+
+class CodingMode(str, Enum):
+    """Coding mode for task execution.
+
+    Defines the level of automation for coding tasks:
+    - INTERACTIVE: Manual control at each step (default)
+    - SEMI_AUTO: Automatic execution with human merge approval
+    - FULL_AUTO: Fully autonomous execution including merge
+    """
+
+    INTERACTIVE = "interactive"  # Human controls each step
+    SEMI_AUTO = "semi_auto"  # Auto execution, human merges
+    FULL_AUTO = "full_auto"  # Fully autonomous
+
+
+class AgenticPhase(str, Enum):
+    """Agentic execution phase.
+
+    Represents the current phase of an agentic execution cycle:
+    CODING → WAITING_CI → REVIEWING → (AWAITING_HUMAN | MERGE_CHECK) → MERGING → COMPLETED
+    """
+
+    CODING = "coding"  # Claude Code generating/fixing code
+    WAITING_CI = "waiting_ci"  # Waiting for CI results
+    REVIEWING = "reviewing"  # Codex reviewing code
+    FIXING_CI = "fixing_ci"  # Fixing CI failures
+    FIXING_REVIEW = "fixing_review"  # Addressing review feedback
+    AWAITING_HUMAN = "awaiting_human"  # Semi Auto: waiting for human approval
+    MERGE_CHECK = "merge_check"  # Checking merge conditions
+    MERGING = "merging"  # Executing merge
+    COMPLETED = "completed"  # Successfully completed
+    FAILED = "failed"  # Failed (unrecoverable)
+
+
+class NotificationType(str, Enum):
+    """Notification event type for agentic execution."""
+
+    READY_FOR_MERGE = "ready_for_merge"  # PR ready for human review (Semi Auto)
+    COMPLETED = "completed"  # Task successfully completed
+    FAILED = "failed"  # Task failed
+    WARNING = "warning"  # Warning (high iteration count, etc.)
