@@ -111,7 +111,8 @@ export interface CodeReference {
 export interface StructuredSummary {
   type: SummaryType;
   title: string;
-  description: string;
+  instruction: string;
+  response: string;
   key_points: string[];
   analyzed_files: string[];
   references: CodeReference[];

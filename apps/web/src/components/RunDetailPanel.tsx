@@ -27,6 +27,8 @@ import {
   ChatBubbleLeftRightIcon,
   MagnifyingGlassIcon,
   DocumentMagnifyingGlassIcon,
+  UserIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-utils';
 import type { SummaryType } from '@/types';
@@ -630,17 +632,31 @@ function StructuredSummaryDisplay({ run }: { run: Run }) {
         {typeStyles.label}
       </div>
 
-      {/* Main Summary Section */}
+      {/* Instruction (User's Request) */}
+      {structuredSummary.instruction && (
+        <div className="p-4 rounded-lg border border-gray-700 bg-gray-800/30">
+          <div className="flex items-center gap-2 mb-3">
+            <UserIcon className="w-5 h-5 text-gray-400" />
+            <h4 className="text-sm font-medium text-gray-200">Request</h4>
+          </div>
+          <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap line-clamp-4">
+            {structuredSummary.instruction}
+          </p>
+        </div>
+      )}
+
+      {/* Response (Agent's Answer) */}
       <div className={cn(
         'p-4 rounded-lg border',
         typeStyles.bgColor,
         typeStyles.borderColor
       )}>
-        <h3 className={cn('font-semibold text-base mb-3', typeStyles.color)}>
-          {structuredSummary.title}
-        </h3>
+        <div className="flex items-center gap-2 mb-3">
+          <SparklesIcon className={cn('w-5 h-5', typeStyles.color)} />
+          <h4 className={cn('text-sm font-medium', typeStyles.color)}>Response</h4>
+        </div>
         <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-          {structuredSummary.description}
+          {structuredSummary.response}
         </p>
       </div>
 

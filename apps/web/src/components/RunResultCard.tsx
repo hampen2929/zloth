@@ -22,6 +22,8 @@ import {
   CheckCircleIcon,
   LightBulbIcon,
   DocumentMagnifyingGlassIcon,
+  UserIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 
 export type RunTab = 'summary' | 'diff' | 'logs';
@@ -224,17 +226,31 @@ function SummaryTab({ run }: { run: Run }) {
         {typeStyles.label}
       </div>
 
-      {/* Main Summary Section */}
+      {/* Instruction (User's Request) */}
+      {structuredSummary.instruction && (
+        <div className="p-3 rounded-lg border border-gray-700 bg-gray-800/30">
+          <div className="flex items-center gap-2 mb-2">
+            <UserIcon className="w-4 h-4 text-gray-400" />
+            <h4 className="text-xs font-medium text-gray-300">Request</h4>
+          </div>
+          <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">
+            {structuredSummary.instruction}
+          </p>
+        </div>
+      )}
+
+      {/* Response (Agent's Answer) */}
       <div className={cn(
         'p-3 rounded-lg border',
         typeStyles.bgColor,
         typeStyles.borderColor
       )}>
-        <h3 className={cn('font-medium text-sm mb-2', typeStyles.color)}>
-          {structuredSummary.title}
-        </h3>
+        <div className="flex items-center gap-2 mb-2">
+          <SparklesIcon className={cn('w-4 h-4', typeStyles.color)} />
+          <h4 className={cn('text-xs font-medium', typeStyles.color)}>Response</h4>
+        </div>
         <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-          {structuredSummary.description}
+          {structuredSummary.response}
         </p>
       </div>
 

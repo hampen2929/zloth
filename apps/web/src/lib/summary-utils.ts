@@ -4,6 +4,73 @@
 import type { Run, StructuredSummary, SummaryType } from '@/types';
 
 /**
+ * Extract assistant's response text from logs.
+ * Logs may contain JSON lines in stream-json format from Claude Code CLI.
+ */
+function extractResponseFromLogs(logs: string[]): string {
+  const responseTexts: string[] = [];
+
+  for (const log of logs) {
+    // Try to parse as JSON (stream-json format)
+    if (log.startsWith('{')) {
+      try {
+        const data = JSON.parse(log);
+        if (data.type === 'assistant' && data.message?.content) {
+          const content = data.message.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && block.text) {
+                responseTexts.push(block.text);
+              }
+            }
+          }
+        }
+      } catch {
+        // Not valid JSON, skip
+      }
+    }
+  }
+
+  // Join all response texts
+  const fullResponse = responseTexts.join('\n').trim();
+
+  // If we got a response, return it (truncated if too long)
+  if (fullResponse) {
+    // Return first 2000 chars for display
+    if (fullResponse.length > 2000) {
+      return fullResponse.slice(0, 2000) + '...';
+    }
+    return fullResponse;
+  }
+
+  return '';
+}
+
+/**
+ * Extract key points from the response text.
+ * Looks for bullet points, numbered lists, or important sentences.
+ */
+function extractKeyPoints(response: string): string[] {
+  const keyPoints: string[] = [];
+
+  // Look for bullet points or numbered lists
+  const lines = response.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Match bullet points (-, *, •) or numbered lists (1., 2., etc.)
+    if (/^[-*•]\s+.+/.test(trimmed) || /^\d+\.\s+.+/.test(trimmed)) {
+      // Remove the bullet/number prefix
+      const content = trimmed.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, '');
+      if (content.length > 10 && content.length < 200 && keyPoints.length < 5) {
+        keyPoints.push(content);
+      }
+    }
+  }
+
+  return keyPoints;
+}
+
+/**
  * Derive structured summary from run data.
  * This function generates a structured summary based on available run information,
  * providing useful context even when there are no code changes.
@@ -66,17 +133,37 @@ export function deriveStructuredSummary(run: Run): StructuredSummary {
       break;
   }
 
-  // Extract key points from logs if available
-  const keyPoints: string[] = [];
+  // Get instruction
+  const instruction = run.instruction || '';
+
+  // Extract response from logs
+  let response = '';
   if (run.logs && run.logs.length > 0) {
-    // Look for meaningful log entries
+    response = extractResponseFromLogs(run.logs);
+  }
+
+  // If no response from logs, use summary as fallback
+  if (!response && run.summary) {
+    response = run.summary;
+  }
+
+  // Extract key points from response
+  const keyPoints = extractKeyPoints(response);
+
+  // If no bullet points found, try to extract from non-JSON logs
+  if (keyPoints.length === 0 && run.logs) {
     for (const log of run.logs.slice(-20)) {
       // Skip raw JSON lines
       if (log.startsWith('{') || log.startsWith('[system]')) continue;
       // Skip empty or very short lines
       if (!log.trim() || log.trim().length < 10) continue;
       // Add meaningful content
-      if (keyPoints.length < 3 && !log.includes('Executing:') && !log.includes('Working directory:')) {
+      if (
+        keyPoints.length < 3 &&
+        !log.includes('Executing:') &&
+        !log.includes('Working directory:') &&
+        !log.includes('Instruction length:')
+      ) {
         keyPoints.push(log.trim().slice(0, 150));
       }
     }
@@ -99,7 +186,8 @@ export function deriveStructuredSummary(run: Run): StructuredSummary {
   return {
     type,
     title,
-    description: run.summary || 'No description available',
+    instruction,
+    response: response || 'No response available',
     key_points: keyPoints,
     analyzed_files: analyzedFiles,
     references: [],
