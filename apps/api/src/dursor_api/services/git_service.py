@@ -85,6 +85,23 @@ class GitService:
             self.worktrees_dir = self.workspaces_dir / "worktrees"
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
+    def set_worktrees_dir(self, worktrees_dir: str | Path | None) -> None:
+        """Update the worktrees directory.
+
+        This allows dynamic configuration from UserPreferences.
+
+        Args:
+            worktrees_dir: New worktrees directory path. If None or empty, keeps current value.
+        """
+        if not worktrees_dir:
+            return
+
+        new_path = Path(worktrees_dir).expanduser()
+        if new_path != self.worktrees_dir:
+            self.worktrees_dir = new_path
+            self.worktrees_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Updated worktrees_dir to: {self.worktrees_dir}")
+
     # ============================================================
     # Worktree Management
     # ============================================================

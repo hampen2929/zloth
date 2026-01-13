@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     workspaces_dir: Path | None = Field(default=None)
     worktrees_dir: Path | None = Field(
         default=None,
-        description="Directory for git worktrees. Defaults to ~/.local/share/dursor/worktrees "
+        description="Directory for git worktrees. Defaults to ~/.dursor/worktrees "
         "to avoid inheriting parent directory's CLAUDE.md",
     )
     data_dir: Path | None = Field(default=None)
@@ -171,9 +171,9 @@ class Settings(BaseSettings):
         if self.workspaces_dir is None:
             self.workspaces_dir = self.base_dir / "workspaces"
         if self.worktrees_dir is None:
-            # Default to ~/.local/share/dursor/worktrees to avoid inheriting
+            # Default to ~/.dursor/worktrees to avoid inheriting
             # parent directory's CLAUDE.md when CLI agents run in worktrees
-            self.worktrees_dir = Path.home() / ".local" / "share" / "dursor" / "worktrees"
+            self.worktrees_dir = Path.home() / ".dursor" / "worktrees"
         if self.data_dir is None:
             self.data_dir = self.base_dir / "data"
         if self.database_url is None:

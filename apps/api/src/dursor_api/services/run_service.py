@@ -358,6 +358,9 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             if self.user_preferences_dao:
                 prefs = await self.user_preferences_dao.get()
                 branch_prefix = prefs.default_branch_prefix if prefs else None
+                # Apply custom worktrees_dir from UserPreferences if set
+                if prefs and prefs.worktrees_dir:
+                    self.git_service.set_worktrees_dir(prefs.worktrees_dir)
 
             # Create new worktree for this run
             worktree_info = await self.git_service.create_worktree(
