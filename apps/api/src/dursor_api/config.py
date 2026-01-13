@@ -100,6 +100,11 @@ class Settings(BaseSettings):
         default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent
     )
     workspaces_dir: Path | None = Field(default=None)
+    worktrees_dir: Path | None = Field(
+        default=None,
+        description="Directory for git worktrees. Defaults to ~/.local/share/dursor/worktrees "
+        "to avoid inheriting parent directory's CLAUDE.md",
+    )
     data_dir: Path | None = Field(default=None)
 
     # Database
@@ -165,6 +170,10 @@ class Settings(BaseSettings):
         """Set derived paths after initialization."""
         if self.workspaces_dir is None:
             self.workspaces_dir = self.base_dir / "workspaces"
+        if self.worktrees_dir is None:
+            # Default to ~/.local/share/dursor/worktrees to avoid inheriting
+            # parent directory's CLAUDE.md when CLI agents run in worktrees
+            self.worktrees_dir = Path.home() / ".local" / "share" / "dursor" / "worktrees"
         if self.data_dir is None:
             self.data_dir = self.base_dir / "data"
         if self.database_url is None:
@@ -173,6 +182,7 @@ class Settings(BaseSettings):
         # Ensure directories exist and are writable
         for dir_path, dir_name in [
             (self.workspaces_dir, "workspaces"),
+            (self.worktrees_dir, "worktrees"),
             (self.data_dir, "data"),
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
