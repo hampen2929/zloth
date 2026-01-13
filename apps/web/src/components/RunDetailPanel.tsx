@@ -8,7 +8,6 @@ import { DiffViewer } from '@/components/DiffViewer';
 import { StreamingLogs } from '@/components/StreamingLogs';
 import { ProgressDisplay } from '@/components/ProgressDisplay';
 import { Button } from './ui/Button';
-import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
 import { cn } from '@/lib/utils';
 import Markdown from 'react-markdown';
@@ -72,15 +71,11 @@ export function RunDetailPanel({
   onCancel,
 }: RunDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>(() => getDefaultTab(run.status));
-  const [showPRForm, setShowPRForm] = useState(false);
-  const [prTitle, setPRTitle] = useState('');
-  const [prBody, setPRBody] = useState('');
   const [creating, setCreating] = useState(false);
   const [prResult, setPRResult] = useState<{ url: string; pr_id?: string } | null>(null);
   const [prResultMode, setPRResultMode] = useState<'created' | 'link' | null>(null);
   const [updatingDesc, setUpdatingDesc] = useState(false);
   const [pendingSyncRunId, setPendingSyncRunId] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
 
   // Update tab when run changes or status changes
   useEffect(() => {
@@ -118,38 +113,66 @@ export function RunDetailPanel({
     };
   }, [pendingSyncRunId, prResultMode, taskId, onPRCreated, success]);
 
-  const handleCreatePR = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prTitle.trim()) return;
+  // Derive PR title from run summary or use a default
+  const derivePRTitle = (): string => {
+    if (run.summary) {
+      // Use first line of summary, truncated to 72 chars
+      const firstLine = run.summary.split('\n')[0].trim();
+      return firstLine.length > 72 ? firstLine.slice(0, 69) + '...' : firstLine;
+    }
+    return 'Update code changes';
+  };
 
+  const handleCreatePR = async () => {
     setCreating(true);
-    setFormError(null);
 
     try {
+      const title = derivePRTitle();
+      const autoGenerate = preferences?.auto_generate_pr_description ?? false;
+
       if (preferences?.default_pr_creation_mode === 'link') {
-        const result = await prsApi.createLink(taskId, {
-          selected_run_id: run.id,
-          title: prTitle.trim(),
-          body: prBody.trim() || undefined,
-        });
+        // Link mode: open GitHub PR creation page
+        let result;
+        if (autoGenerate) {
+          // Use auto API to generate title and description with AI
+          result = await prsApi.createLinkAuto(taskId, {
+            selected_run_id: run.id,
+          });
+        } else {
+          // Use regular API with derived title
+          result = await prsApi.createLink(taskId, {
+            selected_run_id: run.id,
+            title,
+          });
+        }
         setPRResult({ url: result.url });
         setPRResultMode('link');
         setPendingSyncRunId(run.id);
-        success('PR link generated. Create the PR on GitHub.');
+        // Open GitHub PR creation page immediately
+        window.open(result.url, '_blank');
       } else {
-        const result = await prsApi.create(taskId, {
-          selected_run_id: run.id,
-          title: prTitle.trim(),
-          body: prBody.trim() || undefined,
-        });
+        // Direct mode: create PR immediately
+        let result;
+        if (autoGenerate) {
+          // Use auto API to generate title and description with AI
+          result = await prsApi.createAuto(taskId, {
+            selected_run_id: run.id,
+          });
+        } else {
+          // Use regular API with derived title
+          result = await prsApi.create(taskId, {
+            selected_run_id: run.id,
+            title,
+          });
+        }
         setPRResult({ url: result.url, pr_id: result.pr_id });
         setPRResultMode('created');
         onPRCreated();
-        success('Pull request created successfully!');
+        // Open created PR immediately
+        window.open(result.url, '_blank');
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create PR';
-      setFormError(message);
       error(message);
     } finally {
       setCreating(false);
@@ -261,10 +284,22 @@ export function RunDetailPanel({
                 <Button
                   variant="success"
                   size="sm"
-                  onClick={() => setShowPRForm(!showPRForm)}
+                  onClick={handleCreatePR}
+                  isLoading={creating}
                 >
-                  {showPRForm ? 'Cancel' : 'Create PR'}
+                  Create PR
                 </Button>
+              )}
+              {prResult && prResultMode === 'link' && (
+                <a
+                  href={prResult.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-green-700 text-green-100 hover:bg-green-600 transition-colors"
+                >
+                  Open PR on GitHub
+                  <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+                </a>
               )}
               {prResult && prResultMode === 'created' && prResult.pr_id && (
                 <>
@@ -292,72 +327,6 @@ export function RunDetailPanel({
         </div>
       </div>
 
-      {/* PR Form */}
-      {showPRForm && (
-        <div className="p-4 border-b border-gray-800 bg-gray-800/30 animate-in fade-in duration-200">
-          {prResult ? (
-            <div className="flex flex-col items-center text-center py-4">
-              <CheckCircleIcon className="w-10 h-10 text-green-400 mb-3" />
-              <p className="text-green-400 font-medium mb-2">
-                {prResultMode === 'link' ? 'PR link generated!' : 'PR created successfully!'}
-              </p>
-              <a
-                href={prResult.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors mb-3"
-              >
-                {prResultMode === 'link' ? 'Open PR creation page on GitHub' : 'View PR on GitHub'}
-                <ArrowTopRightOnSquareIcon className="w-4 h-4" />
-              </a>
-              {prResultMode === 'created' && prResult.pr_id && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleUpdatePRDesc}
-                  isLoading={updatingDesc}
-                >
-                  Update PR Desc
-                </Button>
-              )}
-            </div>
-          ) : (
-            <form onSubmit={handleCreatePR} className="space-y-3">
-              <Input
-                value={prTitle}
-                onChange={(e) => setPRTitle(e.target.value)}
-                placeholder="PR title"
-                error={formError || undefined}
-              />
-              <Textarea
-                value={prBody}
-                onChange={(e) => setPRBody(e.target.value)}
-                placeholder="PR description (optional)"
-                rows={2}
-              />
-              <div className="flex gap-2">
-                <Button
-                  type="submit"
-                  variant="success"
-                  size="sm"
-                  disabled={!prTitle.trim()}
-                  isLoading={creating}
-                >
-                  {preferences?.default_pr_creation_mode === 'link' ? 'Open PR link' : 'Create PR'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowPRForm(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="flex border-b border-gray-800" role="tablist">

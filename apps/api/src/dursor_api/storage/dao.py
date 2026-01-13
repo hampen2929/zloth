@@ -955,9 +955,11 @@ class UserPreferencesDAO:
         default_branch_prefix: str | None = None,
         default_pr_creation_mode: str | None = None,
         default_coding_mode: str | None = None,
+        auto_generate_pr_description: bool | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
+        auto_gen = 1 if auto_generate_pr_description else 0
 
         # Try to update first
         cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")
@@ -973,6 +975,7 @@ class UserPreferencesDAO:
                     default_branch_prefix = ?,
                     default_pr_creation_mode = ?,
                     default_coding_mode = ?,
+                    auto_generate_pr_description = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
@@ -983,6 +986,7 @@ class UserPreferencesDAO:
                     default_branch_prefix,
                     default_pr_creation_mode,
                     default_coding_mode,
+                    auto_gen,
                     now,
                 ),
             )
@@ -997,10 +1001,11 @@ class UserPreferencesDAO:
                     default_branch_prefix,
                     default_pr_creation_mode,
                     default_coding_mode,
+                    auto_generate_pr_description,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1009,6 +1014,7 @@ class UserPreferencesDAO:
                     default_branch_prefix,
                     default_pr_creation_mode,
                     default_coding_mode,
+                    auto_gen,
                     now,
                     now,
                 ),
@@ -1023,6 +1029,7 @@ class UserPreferencesDAO:
             default_branch_prefix=default_branch_prefix,
             default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
             default_coding_mode=CodingMode(default_coding_mode or "interactive"),
+            auto_generate_pr_description=auto_generate_pr_description or False,
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -1042,6 +1049,11 @@ class UserPreferencesDAO:
                 row["default_coding_mode"]
                 if "default_coding_mode" in row.keys() and row["default_coding_mode"]
                 else "interactive"
+            ),
+            auto_generate_pr_description=bool(
+                row["auto_generate_pr_description"]
+                if "auto_generate_pr_description" in row.keys()
+                else False
             ),
         )
 

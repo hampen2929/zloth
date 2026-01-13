@@ -563,6 +563,7 @@ class UserPreferences(BaseModel):
     default_branch_prefix: str | None = None
     default_pr_creation_mode: PRCreationMode = PRCreationMode.LINK
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
+    auto_generate_pr_description: bool = False
 
 
 class UserPreferencesSave(BaseModel):
@@ -574,6 +575,7 @@ class UserPreferencesSave(BaseModel):
     default_branch_prefix: str | None = None
     default_pr_creation_mode: PRCreationMode | None = None
     default_coding_mode: CodingMode | None = None
+    auto_generate_pr_description: bool | None = None
 
 
 class PRCreateLink(BaseModel):

@@ -285,6 +285,7 @@ export interface UserPreferences {
   default_branch_prefix: string | null;
   default_pr_creation_mode: PRCreationMode;
   default_coding_mode: CodingMode;
+  auto_generate_pr_description: boolean;
 }
 
 export interface UserPreferencesSave {
@@ -294,6 +295,7 @@ export interface UserPreferencesSave {
   default_branch_prefix?: string | null;
   default_pr_creation_mode?: PRCreationMode | null;
   default_coding_mode?: CodingMode | null;
+  auto_generate_pr_description?: boolean | null;
 }
 
 // Task Breakdown

@@ -35,4 +35,5 @@ async def save_preferences(
             data.default_pr_creation_mode.value if data.default_pr_creation_mode else None
         ),
         default_coding_mode=(data.default_coding_mode.value if data.default_coding_mode else None),
+        auto_generate_pr_description=data.auto_generate_pr_description,
     )
