@@ -137,7 +137,8 @@ export function RunDetailPanel({
         setPRResult({ url: result.url });
         setPRResultMode('link');
         setPendingSyncRunId(run.id);
-        success('PR link generated. Create the PR on GitHub.');
+        // Open GitHub PR creation page immediately
+        window.open(result.url, '_blank');
       } else {
         const result = await prsApi.create(taskId, {
           selected_run_id: run.id,
@@ -146,7 +147,8 @@ export function RunDetailPanel({
         setPRResult({ url: result.url, pr_id: result.pr_id });
         setPRResultMode('created');
         onPRCreated();
-        success('Pull request created successfully!');
+        // Open created PR immediately
+        window.open(result.url, '_blank');
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create PR';
