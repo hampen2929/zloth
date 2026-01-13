@@ -128,22 +128,43 @@ export function RunDetailPanel({
 
     try {
       const title = derivePRTitle();
+      const autoGenerate = preferences?.auto_generate_pr_description ?? false;
 
       if (preferences?.default_pr_creation_mode === 'link') {
-        const result = await prsApi.createLink(taskId, {
-          selected_run_id: run.id,
-          title,
-        });
+        // Link mode: open GitHub PR creation page
+        let result;
+        if (autoGenerate) {
+          // Use auto API to generate title and description with AI
+          result = await prsApi.createLinkAuto(taskId, {
+            selected_run_id: run.id,
+          });
+        } else {
+          // Use regular API with derived title
+          result = await prsApi.createLink(taskId, {
+            selected_run_id: run.id,
+            title,
+          });
+        }
         setPRResult({ url: result.url });
         setPRResultMode('link');
         setPendingSyncRunId(run.id);
         // Open GitHub PR creation page immediately
         window.open(result.url, '_blank');
       } else {
-        const result = await prsApi.create(taskId, {
-          selected_run_id: run.id,
-          title,
-        });
+        // Direct mode: create PR immediately
+        let result;
+        if (autoGenerate) {
+          // Use auto API to generate title and description with AI
+          result = await prsApi.createAuto(taskId, {
+            selected_run_id: run.id,
+          });
+        } else {
+          // Use regular API with derived title
+          result = await prsApi.create(taskId, {
+            selected_run_id: run.id,
+            title,
+          });
+        }
         setPRResult({ url: result.url, pr_id: result.pr_id });
         setPRResultMode('created');
         onPRCreated();

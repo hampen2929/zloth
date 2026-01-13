@@ -522,6 +522,7 @@ export function DefaultsTab() {
   const [branchPrefix, setBranchPrefix] = useState<string>('');
   const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
+  const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -548,6 +549,7 @@ export function DefaultsTab() {
       setBranchPrefix(preferences.default_branch_prefix || '');
       setPrCreationMode(preferences.default_pr_creation_mode || 'link');
       setCodingMode(preferences.default_coding_mode || 'interactive');
+      setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
     }
   }, [preferences]);
 
@@ -617,6 +619,7 @@ export function DefaultsTab() {
         default_branch_prefix: branchPrefix.trim() ? branchPrefix.trim() : null,
         default_pr_creation_mode: prCreationMode,
         default_coding_mode: codingMode,
+        auto_generate_pr_description: autoGeneratePrDescription,
       });
       mutate('preferences');
       success('Default settings saved successfully');
@@ -637,6 +640,7 @@ export function DefaultsTab() {
         default_branch_prefix: null,
         default_pr_creation_mode: null,
         default_coding_mode: null,
+        auto_generate_pr_description: false,
       });
       setSelectedRepo('');
       setSelectedBranch('');
@@ -644,6 +648,7 @@ export function DefaultsTab() {
       setBranchPrefix('');
       setPrCreationMode('create');
       setCodingMode('interactive');
+      setAutoGeneratePrDescription(false);
       mutate('preferences');
       success('Default settings cleared');
     } catch {
@@ -800,6 +805,28 @@ export function DefaultsTab() {
           </select>
           <p className="text-xs text-gray-500">
             Choose whether &ldquo;Create PR&rdquo; creates the PR immediately or opens the GitHub PR creation page.
+          </p>
+        </div>
+
+        {/* Auto-generate PR description */}
+        <div className="space-y-1">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoGeneratePrDescription}
+              onChange={(e) => setAutoGeneratePrDescription(e.target.checked)}
+              className={cn(
+                'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+              )}
+            />
+            <span className="text-sm font-medium text-gray-300">
+              Auto-generate PR description
+            </span>
+          </label>
+          <p className="text-xs text-gray-500 ml-7">
+            If enabled, AI will generate the PR description when creating a PR (slower).
+            If disabled, a simple description is used and you can generate it later with &ldquo;Update PR Desc&rdquo;.
           </p>
         </div>
 
