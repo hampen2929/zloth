@@ -48,6 +48,16 @@ class GitStatus:
         return bool(self.staged or self.modified or self.untracked or self.deleted)
 
 
+@dataclass
+class PullResult:
+    """Result of a git pull operation."""
+
+    success: bool
+    has_conflicts: bool = False
+    conflict_files: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
 class GitService:
     """Service for centralized git operation management.
 
@@ -781,6 +791,170 @@ class GitService:
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _fetch)
+
+    async def fetch_with_auth(
+        self,
+        repo_path: Path,
+        auth_url: str | None = None,
+        remote: str = "origin",
+    ) -> None:
+        """Fetch from remote with authentication support.
+
+        Args:
+            repo_path: Path to the repository.
+            auth_url: Authenticated URL for private repos.
+            remote: Remote name.
+        """
+
+        def _fetch_with_auth() -> None:
+            repo = git.Repo(repo_path)
+
+            if auth_url:
+                try:
+                    original_url = repo.remotes.origin.url
+                except Exception:
+                    original_url = None
+
+                try:
+                    repo.remotes.origin.set_url(auth_url)
+                    repo.remotes[remote].fetch()
+                finally:
+                    if original_url:
+                        repo.remotes.origin.set_url(original_url)
+            else:
+                repo.remotes[remote].fetch()
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _fetch_with_auth)
+
+    async def is_behind_remote(
+        self,
+        repo_path: Path,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> bool:
+        """Check if local branch is behind its remote tracking branch.
+
+        This fetches the latest state from remote and checks if there are
+        commits on origin/<branch> that are not in the local HEAD.
+
+        Args:
+            repo_path: Path to the repository (workspace or worktree).
+            branch: Branch name to check.
+            auth_url: Authenticated URL for private repos.
+
+        Returns:
+            True if origin/<branch> has commits not in local HEAD.
+        """
+        # Fetch latest state from remote
+        await self.fetch_with_auth(repo_path, auth_url=auth_url)
+
+        def _is_behind() -> bool:
+            repo = git.Repo(repo_path)
+            remote_ref = f"origin/{branch}"
+
+            # Check if remote ref exists
+            try:
+                repo.git.show_ref("--verify", f"refs/remotes/{remote_ref}")
+            except git.GitCommandError:
+                # Remote ref doesn't exist, not behind
+                return False
+
+            # Get local HEAD SHA and remote ref SHA
+            try:
+                local_sha = repo.git.rev_parse("HEAD").strip()
+                remote_sha = repo.git.rev_parse(remote_ref).strip()
+            except git.GitCommandError:
+                return False
+
+            if local_sha == remote_sha:
+                return False
+
+            # Check if remote is ahead of local (local is behind)
+            # If remote_sha is NOT an ancestor of local_sha, then local is behind
+            try:
+                repo.git.merge_base("--is-ancestor", remote_sha, local_sha)
+                # remote_sha IS an ancestor of local_sha, so local is NOT behind
+                return False
+            except git.GitCommandError:
+                # remote_sha is NOT an ancestor, so local is behind (or diverged)
+                return True
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _is_behind)
+
+    async def pull(
+        self,
+        repo_path: Path,
+        branch: str | None = None,
+        auth_url: str | None = None,
+    ) -> PullResult:
+        """Pull from remote with conflict detection.
+
+        This method pulls the latest changes from the remote tracking branch.
+        If conflicts occur, they are left in the working directory for resolution.
+
+        Args:
+            repo_path: Path to the repository.
+            branch: Branch to pull (defaults to current branch's upstream).
+            auth_url: Authenticated URL for private repos.
+
+        Returns:
+            PullResult with success status and conflict information.
+        """
+
+        def _pull() -> PullResult:
+            repo = git.Repo(repo_path)
+
+            if auth_url:
+                try:
+                    original_url = repo.remotes.origin.url
+                except Exception:
+                    original_url = None
+            else:
+                original_url = None
+
+            try:
+                if auth_url:
+                    repo.remotes.origin.set_url(auth_url)
+
+                # Determine the branch to pull
+                pull_branch = branch or repo.active_branch.name
+
+                try:
+                    # Try to pull
+                    repo.git.pull("origin", pull_branch)
+                    return PullResult(success=True)
+                except git.GitCommandError as e:
+                    error_str = str(e)
+
+                    # Check for merge conflicts
+                    if "CONFLICT" in error_str or "Automatic merge failed" in error_str:
+                        # Get list of conflicted files
+                        conflict_files: list[str] = []
+                        try:
+                            # Get unmerged files
+                            unmerged = repo.git.diff("--name-only", "--diff-filter=U")
+                            if unmerged:
+                                conflict_files = unmerged.strip().split("\n")
+                        except Exception:
+                            pass
+
+                        return PullResult(
+                            success=False,
+                            has_conflicts=True,
+                            conflict_files=conflict_files,
+                            error="Merge conflicts detected",
+                        )
+
+                    return PullResult(success=False, error=str(e))
+
+            finally:
+                if original_url:
+                    repo.remotes.origin.set_url(original_url)
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _pull)
 
     async def delete_remote_branch(
         self,
