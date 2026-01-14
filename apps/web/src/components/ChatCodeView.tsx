@@ -232,24 +232,57 @@ export function ChatCodeView({
     });
   }, [runs]);
 
+  // Derive PR title from run summary
+  const derivePRTitle = (run: Run): string => {
+    if (run.summary) {
+      const firstLine = run.summary.split('\n')[0].trim();
+      return firstLine.length > 72 ? firstLine.slice(0, 69) + '...' : firstLine;
+    }
+    return 'Update code changes';
+  };
+
   const handleCreatePR = async () => {
     if (!latestSuccessfulRun) return;
 
     setCreatingPR(true);
     try {
+      const title = derivePRTitle(latestSuccessfulRun);
+      const autoGenerate = preferences?.auto_generate_pr_description ?? false;
+
       if (preferences?.default_pr_creation_mode === 'link') {
-        // Use polling-based API to avoid timeout
-        const result = await prsApi.createLinkAutoWithPolling(
-          taskId,
-          { selected_run_id: latestSuccessfulRun.id },
-          { pollInterval: 1000, maxWaitTime: 120000 }
-        );
+        // Link mode: open GitHub PR creation page
+        let result;
+        if (autoGenerate) {
+          // Use polling-based API to generate title and description with AI
+          result = await prsApi.createLinkAutoWithPolling(
+            taskId,
+            { selected_run_id: latestSuccessfulRun.id },
+            { pollInterval: 1000, maxWaitTime: 120000 }
+          );
+        } else {
+          // Use regular API with derived title (no AI generation)
+          result = await prsApi.createLink(taskId, {
+            selected_run_id: latestSuccessfulRun.id,
+            title,
+          });
+        }
         setPRLinkResult({ url: result.url });
         success('PR link generated. Create the PR on GitHub.');
       } else {
-        const result = await prsApi.createAuto(taskId, {
-          selected_run_id: latestSuccessfulRun.id,
-        });
+        // Direct mode: create PR immediately
+        let result;
+        if (autoGenerate) {
+          // Use auto API to generate title and description with AI
+          result = await prsApi.createAuto(taskId, {
+            selected_run_id: latestSuccessfulRun.id,
+          });
+        } else {
+          // Use regular API with derived title (no AI generation)
+          result = await prsApi.create(taskId, {
+            selected_run_id: latestSuccessfulRun.id,
+            title,
+          });
+        }
         setPRResult({ url: result.url, number: result.number, pr_id: result.pr_id });
         onPRCreated();
         success('Pull request created successfully!');
