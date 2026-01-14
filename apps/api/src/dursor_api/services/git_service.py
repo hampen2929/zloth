@@ -657,6 +657,111 @@ class GitService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _amend)
 
+    async def is_merge_in_progress(self, repo_path: Path) -> bool:
+        """Check if a merge is in progress (MERGE_HEAD exists).
+
+        This detects if we're in the middle of a merge operation,
+        typically after a merge conflict has occurred during pull.
+
+        Args:
+            repo_path: Path to the repository or worktree.
+
+        Returns:
+            True if a merge is in progress, False otherwise.
+        """
+
+        def _check() -> bool:
+            try:
+                repo = git.Repo(repo_path)
+                # GitPython provides a method to get the git directory
+                # For worktrees, this correctly resolves to the worktree's git dir
+                git_dir = Path(repo.git_dir)
+                merge_head = git_dir / "MERGE_HEAD"
+                return merge_head.exists()
+            except Exception:
+                return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _check)
+
+    async def has_unresolved_conflicts(self, repo_path: Path) -> bool:
+        """Check if there are unresolved merge conflicts.
+
+        This checks for files that are in an unmerged state (have conflict markers).
+
+        Args:
+            repo_path: Path to the repository or worktree.
+
+        Returns:
+            True if there are unresolved conflicts, False otherwise.
+        """
+
+        def _check() -> bool:
+            try:
+                repo = git.Repo(repo_path)
+                # Get files with unmerged status (conflict markers)
+                unmerged = repo.git.diff("--name-only", "--diff-filter=U")
+                return bool(unmerged.strip())
+            except git.GitCommandError:
+                return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _check)
+
+    async def complete_merge_commit(
+        self,
+        repo_path: Path,
+        message: str | None = None,
+    ) -> str:
+        """Complete a merge commit after conflict resolution.
+
+        This should be called after all merge conflicts have been resolved
+        and changes have been staged. It creates the merge commit that
+        completes the merge operation.
+
+        Args:
+            repo_path: Path to the repository or worktree.
+            message: Optional commit message. If None, uses default merge message.
+
+        Returns:
+            Commit SHA of the merge commit.
+
+        Raises:
+            git.GitCommandError: If there are still unresolved conflicts.
+        """
+
+        def _complete_merge() -> str:
+            repo = git.Repo(repo_path)
+            # Stage all changes (including resolved conflicts)
+            repo.git.add("-A")
+
+            if message:
+                repo.git.commit("-m", message)
+            else:
+                # Use default merge commit message
+                repo.git.commit("--no-edit")
+
+            return str(repo.head.commit.hexsha)
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _complete_merge)
+
+    async def abort_merge(self, repo_path: Path) -> None:
+        """Abort an in-progress merge operation.
+
+        This reverts the working directory to the state before the merge began.
+
+        Args:
+            repo_path: Path to the repository or worktree.
+        """
+
+        def _abort() -> None:
+            repo = git.Repo(repo_path)
+            repo.git.merge("--abort")
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _abort)
+
     # ============================================================
     # Branch Management
     # ============================================================

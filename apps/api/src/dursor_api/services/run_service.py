@@ -694,14 +694,35 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             # 4. Read and remove summary file (before staging)
             summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
 
-            # 5. Stage all changes
+            # 5. Check if we're in a merge state (conflict resolution scenario)
+            is_merge_state = await self.git_service.is_merge_in_progress(worktree_info.path)
+            if is_merge_state:
+                logs.append("Merge state detected (conflict resolution scenario)")
+
+                # Check for unresolved conflicts
+                has_conflicts = await self.git_service.has_unresolved_conflicts(
+                    worktree_info.path
+                )
+                if has_conflicts:
+                    logs.append("ERROR: Unresolved conflicts still present")
+                    await self.run_dao.update_status(
+                        run.id,
+                        RunStatus.FAILED,
+                        error="Unresolved merge conflicts remain after AI resolution attempt",
+                        logs=logs + result.logs,
+                        session_id=result.session_id or resume_session_id,
+                    )
+                    return
+
+            # 6. Stage all changes
             await self.git_service.stage_all(worktree_info.path)
 
-            # 6. Get patch
+            # 7. Get patch
             patch = await self.git_service.get_diff(worktree_info.path, staged=True)
 
-            # Skip commit/push if no changes
-            if not patch.strip():
+            # Skip commit/push if no changes AND not in merge state
+            # (merge state requires completing the merge even if no additional changes)
+            if not patch.strip() and not is_merge_state:
                 logs.append("No changes detected, skipping commit/push")
                 await self.run_dao.update_status(
                     run.id,
@@ -715,28 +736,40 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 return
 
             # Parse diff to get file changes
-            files_changed = self._parse_diff(patch)
-            logs.append(f"Detected {len(files_changed)} changed file(s)")
+            files_changed = self._parse_diff(patch) if patch.strip() else []
+            if files_changed:
+                logs.append(f"Detected {len(files_changed)} changed file(s)")
 
             # Determine final summary (priority: file > CLI output > generated)
             final_summary = (
                 summary_from_file or result.summary or self._generate_summary(files_changed)
             )
 
-            # 7. Commit (automatic)
+            # 8. Commit (automatic)
             commit_message = self._generate_commit_message(run.instruction, final_summary)
             commit_message = await ensure_english_commit_message(
                 commit_message,
                 llm_router=self.llm_router,
                 hint=final_summary or "",
             )
-            commit_sha = await self.git_service.commit(
-                worktree_info.path,
-                message=commit_message,
-            )
-            logs.append(f"Committed: {commit_sha[:8]}")
 
-            # 8. Push (automatic) - only if we have GitHub service configured
+            # Handle merge commit vs normal commit
+            if is_merge_state:
+                # Complete merge commit (conflict resolution)
+                commit_sha = await self.git_service.complete_merge_commit(
+                    worktree_info.path,
+                    message=commit_message,
+                )
+                logs.append(f"Merge commit completed: {commit_sha[:8]}")
+            else:
+                # Normal commit
+                commit_sha = await self.git_service.commit(
+                    worktree_info.path,
+                    message=commit_message,
+                )
+                logs.append(f"Committed: {commit_sha[:8]}")
+
+            # 9. Push (automatic) - only if we have GitHub service configured
             if self.github_service and repo:
                 try:
                     owner, repo_name = self._parse_github_url(repo.repo_url)
@@ -751,7 +784,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     logs.append(f"Push failed (will retry on PR creation): {push_error}")
                     # Continue without failing - push can be retried during PR creation
 
-            # 9. Save results
+            # 10. Save results
             await self.run_dao.update_status(
                 run.id,
                 RunStatus.SUCCEEDED,
