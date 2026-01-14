@@ -675,7 +675,7 @@ class PRService:
                 "```",
                 "",
                 "## Rules for Title",
-                "- Keep it under 72 characters",
+                "- Keep it under 50 characters",
                 "- Use imperative mood (e.g., 'Add feature X' not 'Added feature X')",
                 "- Be specific but concise",
                 "",
@@ -739,9 +739,6 @@ class PRService:
         for i, line in enumerate(lines):
             if line.startswith("TITLE:"):
                 title = line[6:].strip().strip("\"'")
-                # Ensure title is not too long
-                if len(title) > 72:
-                    title = title[:69] + "..."
                 break
 
         # Try to find ---DESCRIPTION--- separator
@@ -797,7 +794,7 @@ DO NOT edit any files. Only output the title text.
 
 ## Rules
 - Output ONLY the title, no quotes or extra text
-- Keep it under 72 characters
+- Keep it under 50 characters
 - Use imperative mood (e.g., "Add feature X" not "Added feature X")
 - Be specific but concise
 """
@@ -809,13 +806,8 @@ DO NOT edit any files. Only output the title text.
                 prompt=prompt,
             )
             if result:
-                # Clean up the response - remove quotes and extra whitespace
                 title = result.strip().strip("\"'")
-                # Take only the first line
                 title = title.split("\n")[0].strip()
-                # Ensure title is not too long
-                if len(title) > 72:
-                    title = title[:69] + "..."
                 return title
             return self._generate_fallback_title(run)
         except Exception:
@@ -824,8 +816,7 @@ DO NOT edit any files. Only output the title text.
     def _generate_fallback_title(self, run: Run) -> str:
         """Generate a fallback title from run summary."""
         if run.summary:
-            summary_title = run.summary.split("\n")[0][:69]
-            return summary_title if len(summary_title) <= 72 else summary_title[:69] + "..."
+            return run.summary.split("\n")[0]
         return "Update code changes"
 
     async def _generate_description_for_new_pr(
@@ -1145,18 +1136,21 @@ IMPORTANT INSTRUCTIONS:
             raise ValueError(f"PR not found after update: {pr_id}")
         return updated_pr
 
-    async def regenerate_description(self, task_id: str, pr_id: str) -> PR:
-        """Regenerate PR description from current diff.
+    async def regenerate_description(
+        self, task_id: str, pr_id: str, *, update_title: bool = True
+    ) -> PR:
+        """Regenerate PR description (and optionally title) from current diff.
 
         This method:
         1. Gets cumulative diff from base branch
         2. Loads pull_request_template if available
-        3. Generates description using LLM
+        3. Generates title (if update_title=True) and description using LLM
         4. Updates PR via GitHub API
 
         Args:
             task_id: Task ID.
             pr_id: PR ID.
+            update_title: If True, also regenerate and update the PR title.
 
         Returns:
             Updated PR object.
@@ -1205,25 +1199,43 @@ IMPORTANT INSTRUCTIONS:
         # Load pull_request_template
         template = await self._load_pr_template(repo_obj)
 
-        # Generate description with LLM
-        new_description = await self._generate_description(
-            diff=cumulative_diff,
-            template=template,
-            task=task,
-            pr=pr,
-            run=latest_run,
-        )
-
-        # Update PR via GitHub API
-        await self.github_service.update_pull_request(
-            owner=owner,
-            repo=repo_name,
-            pr_number=pr.number,
-            body=new_description,
-        )
-
-        # Update database
-        await self.pr_dao.update_body(pr_id, new_description)
+        # Generate title and description with LLM
+        if update_title and latest_run:
+            # Generate both title and description in one call
+            new_title, new_description = await self._generate_title_and_description(
+                diff=cumulative_diff,
+                template=template,
+                task=task,
+                run=latest_run,
+            )
+            # Update PR via GitHub API (both title and body)
+            await self.github_service.update_pull_request(
+                owner=owner,
+                repo=repo_name,
+                pr_number=pr.number,
+                title=new_title,
+                body=new_description,
+            )
+            # Update database
+            await self.pr_dao.update_title_and_body(pr_id, new_title, new_description)
+        else:
+            # Generate description only
+            new_description = await self._generate_description(
+                diff=cumulative_diff,
+                template=template,
+                task=task,
+                pr=pr,
+                run=latest_run,
+            )
+            # Update PR via GitHub API (body only)
+            await self.github_service.update_pull_request(
+                owner=owner,
+                repo=repo_name,
+                pr_number=pr.number,
+                body=new_description,
+            )
+            # Update database
+            await self.pr_dao.update_body(pr_id, new_description)
 
         updated_pr = await self.pr_dao.get(pr_id)
         if not updated_pr:

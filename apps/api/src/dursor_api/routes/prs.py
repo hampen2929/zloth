@@ -197,6 +197,7 @@ async def list_prs(
 async def regenerate_pr_description(
     task_id: str,
     pr_id: str,
+    update_title: bool = True,
     pr_service: PRService = Depends(get_pr_service),
 ) -> PR:
     """Regenerate PR description from current diff.
@@ -204,11 +205,14 @@ async def regenerate_pr_description(
     This endpoint:
     1. Gets cumulative diff from base branch
     2. Loads pull_request_template if available
-    3. Generates description using LLM
+    3. Generates title (optional) and description using LLM
     4. Updates PR via GitHub API
+
+    Args:
+        update_title: If True, also regenerate and update the PR title. Defaults to True.
     """
     try:
-        return await pr_service.regenerate_description(task_id, pr_id)
+        return await pr_service.regenerate_description(task_id, pr_id, update_title=update_title)
     except GitHubPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
