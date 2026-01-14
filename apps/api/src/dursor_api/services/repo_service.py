@@ -129,6 +129,35 @@ class RepoService:
         # Check if already cloned
         existing = await self.find_by_url(repo_url)
         if existing:
+            # Always fetch the latest from remote to ensure we have the most recent state
+            workspace_path = Path(existing.workspace_path)
+            if workspace_path.exists():
+                repo = git.Repo(workspace_path)
+                auth_url = await github_service.clone_url(data.owner, data.repo)
+
+                # Determine which branch to fetch and checkout
+                branch_to_use = data.branch or existing.default_branch or "main"
+
+                try:
+                    # Fetch the branch from origin with auth (shallow clone may not have it)
+                    repo.git.fetch(auth_url, branch_to_use, depth=1)
+                except git.GitCommandError:
+                    # Branch might not exist on remote, ignore fetch errors
+                    pass
+
+                try:
+                    # Force checkout to FETCH_HEAD to ensure we have the latest remote state.
+                    # Using -B to reset the local branch if it already exists.
+                    repo.git.checkout("-B", branch_to_use, "FETCH_HEAD")
+                except git.GitCommandError as e:
+                    # Branch might already be checked out in a worktree, which is fine.
+                    # Git prevents checking out the same branch in multiple places,
+                    # but the branch exists and is available for worktree operations.
+                    if "already checked out at" in str(e):
+                        pass  # Safe to ignore - branch exists in a worktree
+                    else:
+                        raise
+
             # Update selected_branch if a branch is specified
             if data.branch:
                 # Save selected_branch to database for use as default base_ref
@@ -136,28 +165,6 @@ class RepoService:
                 # Update the existing object to reflect the change
                 existing.selected_branch = data.branch
 
-                workspace_path = Path(existing.workspace_path)
-                if workspace_path.exists():
-                    repo = git.Repo(workspace_path)
-                    try:
-                        # Fetch the branch from origin with auth (shallow clone may not have it)
-                        auth_url = await github_service.clone_url(data.owner, data.repo)
-                        repo.git.fetch(auth_url, data.branch, depth=1)
-                    except git.GitCommandError:
-                        # Branch might not exist on remote, ignore fetch errors
-                        pass
-                    try:
-                        # Force checkout to FETCH_HEAD to ensure we have the latest remote state.
-                        # Using -B to reset the local branch if it already exists.
-                        repo.git.checkout("-B", data.branch, "FETCH_HEAD")
-                    except git.GitCommandError as e:
-                        # Branch might already be checked out in a worktree, which is fine.
-                        # Git prevents checking out the same branch in multiple places,
-                        # but the branch exists and is available for worktree operations.
-                        if "already checked out at" in str(e):
-                            pass  # Safe to ignore - branch exists in a worktree
-                        else:
-                            raise
             return existing
 
         # Ensure workspaces directory is writable before cloning
