@@ -144,6 +144,7 @@ class GitService:
         base_branch: str,
         run_id: str,
         branch_prefix: str | None = None,
+        auth_url: str | None = None,
     ) -> WorktreeInfo:
         """Create a new git worktree for the run.
 
@@ -152,6 +153,7 @@ class GitService:
             base_branch: Base branch to create worktree from.
             run_id: Run ID for naming.
             branch_prefix: Optional branch prefix for the new work branch.
+            auth_url: Authenticated URL for fetch (e.g., with token).
 
         Returns:
             WorktreeInfo with path and branch information.
@@ -167,12 +169,28 @@ class GitService:
 
             default_branch = repo.default_branch or "main"
 
-            # Fetch to ensure we have latest refs (best-effort)
+            # Fetch to ensure we have latest refs
+            # Use authenticated URL if provided (required for private repos)
+            original_url: str | None = None
+            if auth_url:
+                try:
+                    original_url = source_repo.remotes.origin.url
+                    source_repo.remotes.origin.set_url(auth_url)
+                except Exception:
+                    pass
+
             try:
                 source_repo.git.fetch("origin", "--prune")
-            except Exception:
-                # Ignore fetch errors (might be offline)
-                pass
+            except Exception as e:
+                # Log fetch errors but continue (might be offline)
+                logger.warning(f"Failed to fetch from origin: {e}")
+            finally:
+                # Restore original URL
+                if original_url:
+                    try:
+                        source_repo.remotes.origin.set_url(original_url)
+                    except Exception:
+                        pass
 
             # Ensure the *source* repo is at the latest state of the default branch
             # before creating a worktree.
@@ -217,7 +235,13 @@ class GitService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _create_worktree)
 
-    async def is_ancestor(self, repo_path: Path, ancestor: str, descendant: str = "HEAD") -> bool:
+    async def is_ancestor(
+        self,
+        repo_path: Path,
+        ancestor: str,
+        descendant: str = "HEAD",
+        auth_url: str | None = None,
+    ) -> bool:
         """Check whether `ancestor` is an ancestor of `descendant`.
 
         This is a thin wrapper around `git merge-base --is-ancestor`.
@@ -226,6 +250,7 @@ class GitService:
             repo_path: Path to a git repo (workspace or worktree).
             ancestor: Git ref expected to be an ancestor (e.g., 'origin/main').
             descendant: Git ref expected to include the ancestor (default: 'HEAD').
+            auth_url: Authenticated URL for fetch (e.g., with token).
 
         Returns:
             True if ancestor is an ancestor of descendant, False otherwise.
@@ -234,11 +259,27 @@ class GitService:
         def _is_ancestor() -> bool:
             repo = git.Repo(repo_path)
 
-            # Best-effort fetch to update origin refs (works for worktrees too).
+            # Fetch to update origin refs (works for worktrees too).
+            # Use authenticated URL if provided (required for private repos)
+            original_url: str | None = None
+            if auth_url:
+                try:
+                    original_url = repo.remotes.origin.url
+                    repo.remotes.origin.set_url(auth_url)
+                except Exception:
+                    pass
+
             try:
                 repo.git.fetch("origin", "--prune")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to fetch from origin in is_ancestor: {e}")
+            finally:
+                # Restore original URL
+                if original_url:
+                    try:
+                        repo.remotes.origin.set_url(original_url)
+                    except Exception:
+                        pass
 
             # If the ancestor ref doesn't exist, we cannot reliably decide.
             try:
@@ -767,17 +808,42 @@ class GitService:
         self,
         repo_path: Path,
         remote: str = "origin",
+        auth_url: str | None = None,
+        prune: bool = False,
     ) -> None:
         """Fetch from remote.
 
         Args:
             repo_path: Path to the repository.
             remote: Remote name.
+            auth_url: Authenticated URL for fetch (e.g., with token).
+            prune: If True, prune deleted remote branches.
         """
 
         def _fetch() -> None:
             repo = git.Repo(repo_path)
-            repo.remotes[remote].fetch()
+
+            if auth_url:
+                # Use authenticated URL temporarily
+                try:
+                    original_url = repo.remotes[remote].url
+                except Exception:
+                    original_url = None
+
+                try:
+                    repo.remotes[remote].set_url(auth_url)
+                    if prune:
+                        repo.git.fetch(remote, "--prune")
+                    else:
+                        repo.git.fetch(remote)
+                finally:
+                    if original_url:
+                        repo.remotes[remote].set_url(original_url)
+            else:
+                if prune:
+                    repo.git.fetch(remote, "--prune")
+                else:
+                    repo.git.fetch(remote)
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _fetch)

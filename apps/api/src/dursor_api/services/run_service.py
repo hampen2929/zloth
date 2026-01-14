@@ -287,6 +287,15 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         """
         from dursor_api.services.git_service import WorktreeInfo
 
+        # Get authenticated URL for git operations (required for private repos)
+        auth_url: str | None = None
+        if self.github_service:
+            try:
+                owner, repo_name = self._parse_github_url(repo.repo_url)
+                auth_url = await self.github_service.get_auth_url(owner, repo_name)
+            except Exception as e:
+                logger.warning(f"Failed to get auth URL for fetch: {e}")
+
         # Get the latest session ID for this task and executor type
         # This enables conversation persistence across multiple runs
         previous_session_id = await self.run_dao.get_latest_session_id(
@@ -306,34 +315,22 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             # Verify worktree is still valid (exists and is a valid git repo)
             worktree_path = Path(existing_run.worktree_path)
             if await self.git_service.is_valid_worktree(worktree_path):
-                # If we're working from the repo's default branch, ensure the existing worktree
-                # still contains the latest origin/<default>. Otherwise, create a fresh worktree
-                # from the latest default to avoid PRs being based on a stale main.
-                should_check_default = (base_ref == repo.default_branch) and bool(
-                    repo.default_branch
+                # Check if the worktree is up-to-date with the remote base branch.
+                # This check is performed for ALL branches (not just default) to ensure
+                # we don't reuse stale worktrees when the remote branch has been updated.
+                remote_ref = f"origin/{base_ref}"
+                up_to_date = await self.git_service.is_ancestor(
+                    repo_path=worktree_path,
+                    ancestor=remote_ref,
+                    descendant="HEAD",
+                    auth_url=auth_url,
                 )
-                if should_check_default:
-                    default_ref = f"origin/{repo.default_branch}"
-                    up_to_date = await self.git_service.is_ancestor(
-                        repo_path=worktree_path,
-                        ancestor=default_ref,
-                        descendant="HEAD",
+                if not up_to_date:
+                    logger.info(
+                        "Existing worktree is behind latest remote; creating a new worktree "
+                        f"(worktree={worktree_path}, remote_ref={remote_ref})"
                     )
-                    if not up_to_date:
-                        logger.info(
-                            "Existing worktree is behind latest default; creating a new worktree "
-                            f"(worktree={worktree_path}, default={default_ref})"
-                        )
-                    else:
-                        worktree_info = WorktreeInfo(
-                            path=worktree_path,
-                            branch_name=existing_run.working_branch or "",
-                            base_branch=existing_run.base_ref or base_ref,
-                            created_at=existing_run.created_at,
-                        )
-                        logger.info(f"Reusing existing worktree: {worktree_path}")
                 else:
-                    # Reuse existing worktree (no default-base freshness check)
                     worktree_info = WorktreeInfo(
                         path=worktree_path,
                         branch_name=existing_run.working_branch or "",
@@ -368,6 +365,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 base_branch=base_ref,
                 run_id=run.id,
                 branch_prefix=branch_prefix,
+                auth_url=auth_url,
             )
 
         # Update run with worktree info
