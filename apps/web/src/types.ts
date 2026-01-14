@@ -286,6 +286,7 @@ export interface UserPreferences {
   default_pr_creation_mode: PRCreationMode;
   default_coding_mode: CodingMode;
   auto_generate_pr_description: boolean;
+  worktrees_dir: string | null;
 }
 
 export interface UserPreferencesSave {
@@ -296,6 +297,7 @@ export interface UserPreferencesSave {
   default_pr_creation_mode?: PRCreationMode | null;
   default_coding_mode?: CodingMode | null;
   auto_generate_pr_description?: boolean | null;
+  worktrees_dir?: string | null;
 }
 
 // Task Breakdown

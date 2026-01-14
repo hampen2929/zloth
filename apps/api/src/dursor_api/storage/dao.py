@@ -956,6 +956,7 @@ class UserPreferencesDAO:
         default_pr_creation_mode: str | None = None,
         default_coding_mode: str | None = None,
         auto_generate_pr_description: bool | None = None,
+        worktrees_dir: str | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
@@ -976,6 +977,7 @@ class UserPreferencesDAO:
                     default_pr_creation_mode = ?,
                     default_coding_mode = ?,
                     auto_generate_pr_description = ?,
+                    worktrees_dir = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
@@ -987,6 +989,7 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_gen,
+                    worktrees_dir,
                     now,
                 ),
             )
@@ -1002,10 +1005,11 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_generate_pr_description,
+                    worktrees_dir,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1015,6 +1019,7 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_gen,
+                    worktrees_dir,
                     now,
                     now,
                 ),
@@ -1030,6 +1035,7 @@ class UserPreferencesDAO:
             default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
             default_coding_mode=CodingMode(default_coding_mode or "interactive"),
             auto_generate_pr_description=auto_generate_pr_description or False,
+            worktrees_dir=worktrees_dir,
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -1055,6 +1061,7 @@ class UserPreferencesDAO:
                 if "auto_generate_pr_description" in row.keys()
                 else False
             ),
+            worktrees_dir=(row["worktrees_dir"] if "worktrees_dir" in row.keys() else None),
         )
 
 

@@ -36,4 +36,5 @@ async def save_preferences(
         ),
         default_coding_mode=(data.default_coding_mode.value if data.default_coding_mode else None),
         auto_generate_pr_description=data.auto_generate_pr_description,
+        worktrees_dir=data.worktrees_dir,
     )

@@ -523,6 +523,7 @@ export function DefaultsTab() {
   const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
+  const [worktreesDir, setWorktreesDir] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -550,6 +551,7 @@ export function DefaultsTab() {
       setPrCreationMode(preferences.default_pr_creation_mode || 'link');
       setCodingMode(preferences.default_coding_mode || 'interactive');
       setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
+      setWorktreesDir(preferences.worktrees_dir || '');
     }
   }, [preferences]);
 
@@ -620,6 +622,7 @@ export function DefaultsTab() {
         default_pr_creation_mode: prCreationMode,
         default_coding_mode: codingMode,
         auto_generate_pr_description: autoGeneratePrDescription,
+        worktrees_dir: worktreesDir.trim() ? worktreesDir.trim() : null,
       });
       mutate('preferences');
       success('Default settings saved successfully');
@@ -641,6 +644,7 @@ export function DefaultsTab() {
         default_pr_creation_mode: null,
         default_coding_mode: null,
         auto_generate_pr_description: false,
+        worktrees_dir: null,
       });
       setSelectedRepo('');
       setSelectedBranch('');
@@ -649,6 +653,7 @@ export function DefaultsTab() {
       setPrCreationMode('create');
       setCodingMode('interactive');
       setAutoGeneratePrDescription(false);
+      setWorktreesDir('');
       mutate('preferences');
       success('Default settings cleared');
     } catch {
@@ -828,6 +833,20 @@ export function DefaultsTab() {
             If enabled, AI will generate the PR description when creating a PR (slower).
             If disabled, a simple description is used and you can generate it later with &ldquo;Update PR Desc&rdquo;.
           </p>
+        </div>
+
+        {/* Advanced Settings */}
+        <div className="border-t border-gray-700 pt-4 mt-4">
+          <h4 className="text-sm font-semibold text-gray-300 mb-3">Advanced Settings</h4>
+
+          {/* Worktrees Directory */}
+          <Input
+            label="Worktrees Directory"
+            value={worktreesDir}
+            onChange={(e) => setWorktreesDir(e.target.value)}
+            placeholder="~/.dursor/worktrees"
+            hint="Directory for git worktrees. Leave blank to use the default (~/.dursor/worktrees). This should be outside the dursor installation directory to avoid CLAUDE.md conflicts."
+          />
         </div>
 
         {/* Action buttons */}

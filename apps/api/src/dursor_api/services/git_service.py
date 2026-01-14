@@ -56,11 +56,18 @@ class GitService:
     files, while dursor manages all git operations through this service.
     """
 
-    def __init__(self, workspaces_dir: Path | None = None):
+    def __init__(
+        self,
+        workspaces_dir: Path | None = None,
+        worktrees_dir: Path | None = None,
+    ):
         """Initialize GitService.
 
         Args:
             workspaces_dir: Base directory for workspaces. Defaults to settings.
+            worktrees_dir: Base directory for worktrees. Defaults to settings.
+                           Separate from workspaces_dir to avoid inheriting
+                           parent directory's CLAUDE.md when CLI agents run.
         """
         if workspaces_dir:
             self.workspaces_dir = workspaces_dir
@@ -68,8 +75,32 @@ class GitService:
             self.workspaces_dir = settings.workspaces_dir
         else:
             raise ValueError("workspaces_dir must be provided or set in settings")
-        self.worktrees_dir = self.workspaces_dir / "worktrees"
+
+        if worktrees_dir:
+            self.worktrees_dir = worktrees_dir
+        elif settings.worktrees_dir:
+            self.worktrees_dir = settings.worktrees_dir
+        else:
+            # Fallback to old behavior if not configured
+            self.worktrees_dir = self.workspaces_dir / "worktrees"
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
+
+    def set_worktrees_dir(self, worktrees_dir: str | Path | None) -> None:
+        """Update the worktrees directory.
+
+        This allows dynamic configuration from UserPreferences.
+
+        Args:
+            worktrees_dir: New worktrees directory path. If None or empty, keeps current value.
+        """
+        if not worktrees_dir:
+            return
+
+        new_path = Path(worktrees_dir).expanduser()
+        if new_path != self.worktrees_dir:
+            self.worktrees_dir = new_path
+            self.worktrees_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Updated worktrees_dir to: {self.worktrees_dir}")
 
     # ============================================================
     # Worktree Management
