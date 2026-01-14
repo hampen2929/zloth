@@ -675,7 +675,7 @@ class PRService:
                 "```",
                 "",
                 "## Rules for Title",
-                "- Keep it under 72 characters",
+                "- Keep it under 50 characters",
                 "- Use imperative mood (e.g., 'Add feature X' not 'Added feature X')",
                 "- Be specific but concise",
                 "",
@@ -739,9 +739,9 @@ class PRService:
         for i, line in enumerate(lines):
             if line.startswith("TITLE:"):
                 title = line[6:].strip().strip("\"'")
-                # Ensure title is not too long
-                if len(title) > 72:
-                    title = title[:69] + "..."
+                # Ensure title is not too long (50 chars max)
+                if len(title) > 50:
+                    title = title[:47] + "..."
                 break
 
         # Try to find ---DESCRIPTION--- separator
@@ -797,7 +797,7 @@ DO NOT edit any files. Only output the title text.
 
 ## Rules
 - Output ONLY the title, no quotes or extra text
-- Keep it under 72 characters
+- Keep it under 50 characters
 - Use imperative mood (e.g., "Add feature X" not "Added feature X")
 - Be specific but concise
 """
@@ -813,9 +813,9 @@ DO NOT edit any files. Only output the title text.
                 title = result.strip().strip("\"'")
                 # Take only the first line
                 title = title.split("\n")[0].strip()
-                # Ensure title is not too long
-                if len(title) > 72:
-                    title = title[:69] + "..."
+                # Ensure title is not too long (50 chars max)
+                if len(title) > 50:
+                    title = title[:47] + "..."
                 return title
             return self._generate_fallback_title(run)
         except Exception:
@@ -824,8 +824,8 @@ DO NOT edit any files. Only output the title text.
     def _generate_fallback_title(self, run: Run) -> str:
         """Generate a fallback title from run summary."""
         if run.summary:
-            summary_title = run.summary.split("\n")[0][:69]
-            return summary_title if len(summary_title) <= 72 else summary_title[:69] + "..."
+            summary_title = run.summary.split("\n")[0][:47]
+            return summary_title if len(summary_title) <= 50 else summary_title[:47] + "..."
         return "Update code changes"
 
     async def _generate_description_for_new_pr(
