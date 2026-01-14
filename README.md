@@ -6,7 +6,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/pulls)
 
-> BYO API Key / Multi-model Parallel Execution / Conversation-driven PR Development
+> BYO API Key | Multi-model Parallel Execution | Conversation-driven PR Development
 
 **dursor** is a self-hostable cloud coding agent that lets you:
 - Use your own API keys (OpenAI, Anthropic, Google)
