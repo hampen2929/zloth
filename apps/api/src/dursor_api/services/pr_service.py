@@ -739,7 +739,6 @@ class PRService:
         for i, line in enumerate(lines):
             if line.startswith("TITLE:"):
                 title = line[6:].strip().strip("\"'")
-                # Ensure title is not too long (50 chars max)
                 if len(title) > 50:
                     title = title[:47] + "..."
                 break
@@ -809,11 +808,8 @@ DO NOT edit any files. Only output the title text.
                 prompt=prompt,
             )
             if result:
-                # Clean up the response - remove quotes and extra whitespace
                 title = result.strip().strip("\"'")
-                # Take only the first line
                 title = title.split("\n")[0].strip()
-                # Ensure title is not too long (50 chars max)
                 if len(title) > 50:
                     title = title[:47] + "..."
                 return title
