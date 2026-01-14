@@ -1145,18 +1145,21 @@ IMPORTANT INSTRUCTIONS:
             raise ValueError(f"PR not found after update: {pr_id}")
         return updated_pr
 
-    async def regenerate_description(self, task_id: str, pr_id: str) -> PR:
-        """Regenerate PR description from current diff.
+    async def regenerate_description(
+        self, task_id: str, pr_id: str, *, update_title: bool = True
+    ) -> PR:
+        """Regenerate PR description (and optionally title) from current diff.
 
         This method:
         1. Gets cumulative diff from base branch
         2. Loads pull_request_template if available
-        3. Generates description using LLM
+        3. Generates title (if update_title=True) and description using LLM
         4. Updates PR via GitHub API
 
         Args:
             task_id: Task ID.
             pr_id: PR ID.
+            update_title: If True, also regenerate and update the PR title.
 
         Returns:
             Updated PR object.
@@ -1205,25 +1208,43 @@ IMPORTANT INSTRUCTIONS:
         # Load pull_request_template
         template = await self._load_pr_template(repo_obj)
 
-        # Generate description with LLM
-        new_description = await self._generate_description(
-            diff=cumulative_diff,
-            template=template,
-            task=task,
-            pr=pr,
-            run=latest_run,
-        )
-
-        # Update PR via GitHub API
-        await self.github_service.update_pull_request(
-            owner=owner,
-            repo=repo_name,
-            pr_number=pr.number,
-            body=new_description,
-        )
-
-        # Update database
-        await self.pr_dao.update_body(pr_id, new_description)
+        # Generate title and description with LLM
+        if update_title and latest_run:
+            # Generate both title and description in one call
+            new_title, new_description = await self._generate_title_and_description(
+                diff=cumulative_diff,
+                template=template,
+                task=task,
+                run=latest_run,
+            )
+            # Update PR via GitHub API (both title and body)
+            await self.github_service.update_pull_request(
+                owner=owner,
+                repo=repo_name,
+                pr_number=pr.number,
+                title=new_title,
+                body=new_description,
+            )
+            # Update database
+            await self.pr_dao.update_title_and_body(pr_id, new_title, new_description)
+        else:
+            # Generate description only
+            new_description = await self._generate_description(
+                diff=cumulative_diff,
+                template=template,
+                task=task,
+                pr=pr,
+                run=latest_run,
+            )
+            # Update PR via GitHub API (body only)
+            await self.github_service.update_pull_request(
+                owner=owner,
+                repo=repo_name,
+                pr_number=pr.number,
+                body=new_description,
+            )
+            # Update database
+            await self.pr_dao.update_body(pr_id, new_description)
 
         updated_pr = await self.pr_dao.get(pr_id)
         if not updated_pr:

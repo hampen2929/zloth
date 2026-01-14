@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { prsApi } from '@/lib/api';
-import type { PR } from '@/types';
+import useSWR from 'swr';
+import { prsApi, preferencesApi } from '@/lib/api';
+import type { PR, UserPreferences } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { cn } from '@/lib/utils';
@@ -30,11 +31,13 @@ export function PRDetailPanel({
   const [regenerating, setRegenerating] = useState(false);
   const [currentPR, setCurrentPR] = useState(pr);
   const { success, error } = useToast();
+  const { data: preferences } = useSWR<UserPreferences>('preferences', preferencesApi.get);
 
   const handleRegenerateDescription = async () => {
     setRegenerating(true);
     try {
-      const updatedPR = await prsApi.regenerateDescription(taskId, pr.id);
+      const updateTitle = preferences?.update_pr_title_on_regenerate ?? true;
+      const updatedPR = await prsApi.regenerateDescription(taskId, pr.id, updateTitle);
       setCurrentPR(updatedPR);
       success('PR description regenerated successfully!');
       onUpdate?.();

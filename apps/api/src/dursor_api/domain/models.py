@@ -564,6 +564,7 @@ class UserPreferences(BaseModel):
     default_pr_creation_mode: PRCreationMode = PRCreationMode.LINK
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
     auto_generate_pr_description: bool = False
+    update_pr_title_on_regenerate: bool = True  # Update PR title when regenerating description
     worktrees_dir: str | None = None  # Custom worktrees directory path
 
 
@@ -577,6 +578,7 @@ class UserPreferencesSave(BaseModel):
     default_pr_creation_mode: PRCreationMode | None = None
     default_coding_mode: CodingMode | None = None
     auto_generate_pr_description: bool | None = None
+    update_pr_title_on_regenerate: bool | None = None
     worktrees_dir: str | None = None  # Custom worktrees directory path
 
 

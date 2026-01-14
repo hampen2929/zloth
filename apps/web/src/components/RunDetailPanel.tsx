@@ -184,7 +184,8 @@ export function RunDetailPanel({
 
     setUpdatingDesc(true);
     try {
-      await prsApi.regenerateDescription(taskId, prResult.pr_id);
+      const updateTitle = preferences?.update_pr_title_on_regenerate ?? true;
+      await prsApi.regenerateDescription(taskId, prResult.pr_id, updateTitle);
       success('PR description updated successfully!');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update PR description';
