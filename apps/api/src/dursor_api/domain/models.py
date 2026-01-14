@@ -1,6 +1,7 @@
 """Pydantic domain models for dursor API."""
 
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -281,6 +282,23 @@ class PRUpdate(BaseModel):
 
     selected_run_id: str = Field(..., description="ID of the run to apply")
     message: str | None = Field(None, description="Commit message")
+
+
+class PRRegenerateMode(str, Enum):
+    """Mode for PR regeneration."""
+
+    BOTH = "both"
+    DESCRIPTION = "description"
+    TITLE = "title"
+
+
+class PRRegenerateRequest(BaseModel):
+    """Request for regenerating PR title and/or description."""
+
+    update_mode: PRRegenerateMode = Field(
+        default=PRRegenerateMode.BOTH,
+        description="What to update: 'both', 'description' only, or 'title' only",
+    )
 
 
 class PRSummary(BaseModel):

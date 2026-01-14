@@ -898,6 +898,22 @@ class PRDAO:
         )
         await self.db.connection.commit()
 
+    async def update_title(self, id: str, title: str) -> None:
+        """Update PR's title."""
+        await self.db.connection.execute(
+            "UPDATE prs SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_title_and_body(self, id: str, title: str, body: str) -> None:
+        """Update PR's title and body/description."""
+        await self.db.connection.execute(
+            "UPDATE prs SET title = ?, body = ?, updated_at = ? WHERE id = ?",
+            (title, body, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
     async def update_status(self, id: str, status: str) -> None:
         """Update PR status (open/merged/closed)."""
         await self.db.connection.execute(

@@ -202,6 +202,12 @@ export interface PRUpdate {
   message?: string;
 }
 
+export type PRRegenerateMode = 'both' | 'description' | 'title';
+
+export interface PRRegenerateRequest {
+  update_mode: PRRegenerateMode;
+}
+
 export interface PRCreated {
   pr_id: string;
   url: string;

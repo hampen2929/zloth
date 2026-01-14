@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
 import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi, ciChecksApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
+import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review, CICheck, PRRegenerateMode } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -19,6 +19,7 @@ import {
   ArrowTopRightOnSquareIcon,
   ClipboardDocumentIcon,
   CodeBracketSquareIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { ReviewButton } from './ReviewButton';
 import { ReviewResultCard } from './ReviewResultCard';
@@ -295,15 +296,20 @@ export function ChatCodeView({
     }
   };
 
-  const handleUpdatePRDesc = async () => {
+  const handleUpdatePR = async (mode: PRRegenerateMode) => {
     if (!prResult?.pr_id) return;
 
     setUpdatingDesc(true);
     try {
-      await prsApi.regenerateDescription(taskId, prResult.pr_id);
-      success('PR description updated successfully!');
+      await prsApi.regenerateDescription(taskId, prResult.pr_id, mode);
+      const modeLabels: Record<PRRegenerateMode, string> = {
+        both: 'PR title and description',
+        description: 'PR description',
+        title: 'PR title',
+      };
+      success(`${modeLabels[mode]} updated successfully!`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update PR description';
+      const message = err instanceof Error ? err.message : 'Failed to update PR';
       error(message);
     } finally {
       setUpdatingDesc(false);
@@ -548,7 +554,7 @@ export function ChatCodeView({
           checkingCI={checkingCI}
           onCopyBranch={() => copy(latestRunForSelectedExecutor.working_branch!, 'Branch name')}
           onCreatePR={handleCreatePR}
-          onUpdatePRDesc={handleUpdatePRDesc}
+          onUpdatePR={handleUpdatePR}
           onCheckCI={handleCheckCI}
           onReviewCreated={() => {
             mutateReviews();
@@ -672,7 +678,7 @@ interface SessionHeaderProps {
   checkingCI: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
-  onUpdatePRDesc: () => void;
+  onUpdatePR: (mode: PRRegenerateMode) => void;
   onCheckCI: () => void;
   onReviewCreated: () => void;
   onReviewError: (message: string) => void;
@@ -690,11 +696,30 @@ function SessionHeader({
   checkingCI,
   onCopyBranch,
   onCreatePR,
-  onUpdatePRDesc,
+  onUpdatePR,
   onCheckCI,
   onReviewCreated,
   onReviewError,
 }: SessionHeaderProps) {
+  const [updateDropdownOpen, setUpdateDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setUpdateDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleUpdateOption = (mode: PRRegenerateMode) => {
+    setUpdateDropdownOpen(false);
+    onUpdatePR(mode);
+  };
+
   return (
     <div className="flex items-center justify-end gap-3 px-4 py-2 border-b border-gray-800 bg-gray-900/50">
       <button
@@ -733,15 +758,44 @@ function SessionHeader({
           </a>
           {prResult.pr_id && (
             <>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onUpdatePRDesc}
-                disabled={updatingDesc}
-                isLoading={updatingDesc}
-              >
-                Update PR Desc
-              </Button>
+              {/* Update PR Dropdown */}
+              <div className="relative" ref={dropdownRef}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setUpdateDropdownOpen(!updateDropdownOpen)}
+                  disabled={updatingDesc}
+                  isLoading={updatingDesc}
+                  className="flex items-center gap-1"
+                >
+                  Update PR
+                  <ChevronDownIcon className="w-3.5 h-3.5" />
+                </Button>
+                {updateDropdownOpen && (
+                  <div className="absolute right-0 mt-1 w-36 rounded-md bg-gray-800 border border-gray-700 shadow-lg z-50">
+                    <div className="py-1">
+                      <button
+                        onClick={() => handleUpdateOption('both')}
+                        className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                      >
+                        Both
+                      </button>
+                      <button
+                        onClick={() => handleUpdateOption('description')}
+                        className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                      >
+                        Description
+                      </button>
+                      <button
+                        onClick={() => handleUpdateOption('title')}
+                        className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                      >
+                        Title
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <Button
                 variant="secondary"
                 size="sm"

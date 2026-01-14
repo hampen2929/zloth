@@ -29,6 +29,7 @@ import type {
   PRCreateLink,
   PRLinkJob,
   PRLinkJobResult,
+  PRRegenerateMode,
   PRSyncResult,
   PRUpdate,
   PRUpdated,
@@ -360,9 +361,10 @@ export const prsApi = {
 
   list: (taskId: string) => fetchApi<PR[]>(`/tasks/${taskId}/prs`),
 
-  regenerateDescription: (taskId: string, prId: string) =>
+  regenerateDescription: (taskId: string, prId: string, updateMode?: PRRegenerateMode) =>
     fetchApi<PR>(`/tasks/${taskId}/prs/${prId}/regenerate-description`, {
       method: 'POST',
+      body: updateMode ? JSON.stringify({ update_mode: updateMode }) : undefined,
     }),
 };
 

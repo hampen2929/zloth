@@ -26,6 +26,7 @@ from dursor_api.domain.models import (
     PRCreateLink,
     PRLinkJob,
     PRLinkJobResult,
+    PRRegenerateMode,
     PRSyncResult,
     PRUpdate,
     Repo,
@@ -1145,22 +1146,32 @@ IMPORTANT INSTRUCTIONS:
             raise ValueError(f"PR not found after update: {pr_id}")
         return updated_pr
 
-    async def regenerate_description(self, task_id: str, pr_id: str) -> PR:
-        """Regenerate PR description from current diff.
+    async def regenerate_description(
+        self,
+        task_id: str,
+        pr_id: str,
+        update_mode: PRRegenerateMode | None = None,
+    ) -> PR:
+        """Regenerate PR title and/or description from current diff.
 
         This method:
         1. Gets cumulative diff from base branch
         2. Loads pull_request_template if available
-        3. Generates description using LLM
+        3. Generates title and/or description using LLM
         4. Updates PR via GitHub API
 
         Args:
             task_id: Task ID.
             pr_id: PR ID.
+            update_mode: What to update - 'both', 'description', or 'title'.
+                        Defaults to 'both' if None.
 
         Returns:
             Updated PR object.
         """
+        if update_mode is None:
+            update_mode = PRRegenerateMode.BOTH
+
         # Get PR
         pr = await self.pr_dao.get(pr_id)
         if not pr or pr.task_id != task_id:
@@ -1205,25 +1216,60 @@ IMPORTANT INSTRUCTIONS:
         # Load pull_request_template
         template = await self._load_pr_template(repo_obj)
 
-        # Generate description with LLM
-        new_description = await self._generate_description(
-            diff=cumulative_diff,
-            template=template,
-            task=task,
-            pr=pr,
-            run=latest_run,
-        )
+        # Generate content based on update_mode
+        new_title: str | None = None
+        new_description: str | None = None
+
+        if update_mode == PRRegenerateMode.BOTH:
+            # Generate both title and description together
+            if latest_run:
+                new_title, new_description = await self._generate_title_and_description(
+                    diff=cumulative_diff,
+                    template=template,
+                    task=task,
+                    run=latest_run,
+                )
+            else:
+                # No run available, use fallback
+                new_title = "Update code changes"
+                new_description = self._generate_fallback_description(cumulative_diff, pr, template)
+        elif update_mode == PRRegenerateMode.TITLE:
+            # Generate only title
+            if latest_run:
+                new_title = await self._generate_title(
+                    diff=cumulative_diff,
+                    task=task,
+                    run=latest_run,
+                )
+            else:
+                # No run available, use fallback
+                new_title = "Update code changes"
+        else:  # PRRegenerateMode.DESCRIPTION
+            # Generate only description
+            new_description = await self._generate_description(
+                diff=cumulative_diff,
+                template=template,
+                task=task,
+                pr=pr,
+                run=latest_run,
+            )
 
         # Update PR via GitHub API
         await self.github_service.update_pull_request(
             owner=owner,
             repo=repo_name,
             pr_number=pr.number,
+            title=new_title,
             body=new_description,
         )
 
-        # Update database
-        await self.pr_dao.update_body(pr_id, new_description)
+        # Update database based on what was updated
+        if update_mode == PRRegenerateMode.BOTH and new_title and new_description:
+            await self.pr_dao.update_title_and_body(pr_id, new_title, new_description)
+        elif update_mode == PRRegenerateMode.TITLE and new_title:
+            await self.pr_dao.update_title(pr_id, new_title)
+        elif update_mode == PRRegenerateMode.DESCRIPTION and new_description:
+            await self.pr_dao.update_body(pr_id, new_description)
 
         updated_pr = await self.pr_dao.get(pr_id)
         if not updated_pr:

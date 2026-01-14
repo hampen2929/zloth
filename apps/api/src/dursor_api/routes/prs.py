@@ -15,6 +15,8 @@ from dursor_api.domain.models import (
     PRCreateLink,
     PRLinkJob,
     PRLinkJobResult,
+    PRRegenerateMode,
+    PRRegenerateRequest,
     PRSyncRequest,
     PRSyncResult,
     PRUpdate,
@@ -197,18 +199,23 @@ async def list_prs(
 async def regenerate_pr_description(
     task_id: str,
     pr_id: str,
+    data: PRRegenerateRequest | None = None,
     pr_service: PRService = Depends(get_pr_service),
 ) -> PR:
-    """Regenerate PR description from current diff.
+    """Regenerate PR title and/or description from current diff.
 
     This endpoint:
     1. Gets cumulative diff from base branch
     2. Loads pull_request_template if available
-    3. Generates description using LLM
+    3. Generates title and/or description using LLM
     4. Updates PR via GitHub API
+
+    Args:
+        update_mode: What to update - 'both' (default), 'description', or 'title'
     """
     try:
-        return await pr_service.regenerate_description(task_id, pr_id)
+        update_mode = data.update_mode if data else PRRegenerateMode.BOTH
+        return await pr_service.regenerate_description(task_id, pr_id, update_mode=update_mode)
     except GitHubPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
