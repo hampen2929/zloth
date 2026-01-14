@@ -147,12 +147,9 @@ class RepoService:
                         # Branch might not exist on remote, ignore fetch errors
                         pass
                     try:
-                        # Checkout the branch (try remote tracking branch if local doesn't exist)
-                        try:
-                            repo.git.checkout(data.branch)
-                        except git.GitCommandError:
-                            # Try checking out from FETCH_HEAD
-                            repo.git.checkout("-b", data.branch, "FETCH_HEAD")
+                        # Force checkout to FETCH_HEAD to ensure we have the latest remote state.
+                        # Using -B to reset the local branch if it already exists.
+                        repo.git.checkout("-B", data.branch, "FETCH_HEAD")
                     except git.GitCommandError as e:
                         # Branch might already be checked out in a worktree, which is fine.
                         # Git prevents checking out the same branch in multiple places,
