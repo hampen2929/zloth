@@ -574,10 +574,69 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         executor, executor_name = executor_map[executor_type]
 
+        # Track if we need to add conflict resolution instructions
+        conflict_instruction: str | None = None
+
         try:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
             logger.info(f"[{run.id[:8]}] Starting {executor_name} run")
+
+            # 0. Sync with remote (pull latest changes from remote branch)
+            # This handles the case where the PR branch was updated on GitHub
+            # (e.g., via "Update branch" button) and we need to incorporate those changes.
+            if self.github_service and repo:
+                try:
+                    owner, repo_name = self._parse_github_url(repo.repo_url)
+                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
+
+                    # Check if we're behind remote
+                    is_behind = await self.git_service.is_behind_remote(
+                        worktree_info.path,
+                        worktree_info.branch_name,
+                        auth_url=auth_url,
+                    )
+
+                    if is_behind:
+                        logger.info(
+                            f"[{run.id[:8]}] Local branch is behind remote, "
+                            "pulling latest changes..."
+                        )
+                        logs.append("Detected remote updates, pulling latest changes...")
+
+                        pull_result = await self.git_service.pull(
+                            worktree_info.path,
+                            branch=worktree_info.branch_name,
+                            auth_url=auth_url,
+                        )
+
+                        if pull_result.success:
+                            logs.append("Successfully pulled latest changes from remote")
+                            logger.info(f"[{run.id[:8]}] Successfully pulled remote changes")
+                        elif pull_result.has_conflicts:
+                            # Conflicts detected - add resolution instructions for AI
+                            conflict_files_str = ", ".join(pull_result.conflict_files)
+                            logs.append(
+                                f"Merge conflicts detected in: {conflict_files_str}. "
+                                "AI will be asked to resolve them."
+                            )
+                            logger.warning(
+                                f"[{run.id[:8]}] Merge conflicts detected: "
+                                f"{pull_result.conflict_files}"
+                            )
+                            conflict_instruction = self._build_conflict_resolution_instruction(
+                                pull_result.conflict_files
+                            )
+                        else:
+                            logs.append(f"Pull failed: {pull_result.error}")
+                            logger.warning(f"[{run.id[:8]}] Pull failed: {pull_result.error}")
+                    else:
+                        logger.info(f"[{run.id[:8]}] Branch is up to date with remote")
+
+                except Exception as sync_error:
+                    # Log but don't fail - we can still proceed with the run
+                    logs.append(f"Remote sync warning: {sync_error}")
+                    logger.warning(f"[{run.id[:8]}] Remote sync failed: {sync_error}")
 
             # 1. Record pre-execution status
             pre_status = await self.git_service.get_status(worktree_info.path)
@@ -590,9 +649,18 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
             # 2. Build instruction with constraints
             constraints = AgentConstraints()
-            instruction_with_constraints = (
-                f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
-            )
+
+            # Include conflict resolution instruction if conflicts were detected
+            if conflict_instruction:
+                instruction_with_constraints = (
+                    f"{constraints.to_prompt()}\n\n"
+                    f"{conflict_instruction}\n\n"
+                    f"## Task\n{run.instruction}"
+                )
+            else:
+                instruction_with_constraints = (
+                    f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
+                )
             logger.info(
                 f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars"
             )
@@ -860,6 +928,42 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             )
 
         return files
+
+    def _build_conflict_resolution_instruction(self, conflict_files: builtins.list[str]) -> str:
+        """Build instruction for AI to resolve merge conflicts.
+
+        Args:
+            conflict_files: List of files with merge conflicts.
+
+        Returns:
+            Instruction string for conflict resolution.
+        """
+        files_list = "\n".join(f"- {f}" for f in conflict_files)
+        return f"""## IMPORTANT: Merge Conflict Resolution Required
+
+The following files have merge conflicts that MUST be resolved before proceeding with the task:
+
+{files_list}
+
+### Instructions for Conflict Resolution:
+1. Open each conflicted file listed above
+2. Look for conflict markers: `<<<<<<<`, `=======`, and `>>>>>>>`
+3. Understand both versions of the conflicting code
+4. Resolve each conflict by keeping the correct code (you may combine both versions if appropriate)
+5. Remove ALL conflict markers completely
+6. Ensure the resolved code is syntactically correct and functional
+
+### Conflict Marker Format:
+```
+<<<<<<< HEAD
+(your local changes)
+=======
+(incoming changes from remote)
+>>>>>>> branch-name
+```
+
+After resolving ALL conflicts, proceed with the original task below.
+"""
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
         """Parse GitHub URL to extract owner and repo name.
