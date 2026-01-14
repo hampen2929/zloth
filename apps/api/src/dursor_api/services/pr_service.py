@@ -739,8 +739,6 @@ class PRService:
         for i, line in enumerate(lines):
             if line.startswith("TITLE:"):
                 title = line[6:].strip().strip("\"'")
-                if len(title) > 50:
-                    title = title[:47] + "..."
                 break
 
         # Try to find ---DESCRIPTION--- separator
@@ -810,8 +808,6 @@ DO NOT edit any files. Only output the title text.
             if result:
                 title = result.strip().strip("\"'")
                 title = title.split("\n")[0].strip()
-                if len(title) > 50:
-                    title = title[:47] + "..."
                 return title
             return self._generate_fallback_title(run)
         except Exception:
@@ -820,8 +816,7 @@ DO NOT edit any files. Only output the title text.
     def _generate_fallback_title(self, run: Run) -> str:
         """Generate a fallback title from run summary."""
         if run.summary:
-            summary_title = run.summary.split("\n")[0][:47]
-            return summary_title if len(summary_title) <= 50 else summary_title[:47] + "..."
+            return run.summary.split("\n")[0]
         return "Update code changes"
 
     async def _generate_description_for_new_pr(
