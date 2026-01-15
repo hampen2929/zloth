@@ -183,24 +183,27 @@ class PRService:
 
         For CLI runs, we usually have a worktree and can push from it.
         If the push fails due to permission issues, raise a friendly error.
+        Uses push_with_retry to handle cases where remote has new commits.
         """
         if not run.worktree_path or not run.working_branch:
             return
-        try:
-            auth_url = await self.github_service.get_auth_url(owner, repo)
-            await self.git_service.push(
-                Path(run.worktree_path),
-                branch=run.working_branch,
-                auth_url=auth_url,
-            )
-        except Exception as e:
-            if "403" in str(e) or "Write access" in str(e):
+
+        auth_url = await self.github_service.get_auth_url(owner, repo)
+        push_result = await self.git_service.push_with_retry(
+            Path(run.worktree_path),
+            branch=run.working_branch,
+            auth_url=auth_url,
+        )
+
+        if not push_result.success:
+            error_str = push_result.error or ""
+            if "403" in error_str or "Write access" in error_str:
                 raise GitHubPermissionError(
                     f"GitHub App lacks write access to {owner}/{repo}. "
                     "Please ensure the GitHub App has 'Contents' permission "
                     "set to 'Read and write' and is installed on this repository."
-                ) from e
-            raise
+                )
+            raise RuntimeError(f"Failed to push branch: {push_result.error}")
 
     def _build_github_compare_url(
         self,
