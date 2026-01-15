@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException
 
 from dursor_api.dependencies import get_message_dao, get_pr_dao, get_run_dao, get_task_dao
-from dursor_api.domain.enums import CodingMode
+from dursor_api.domain.enums import CodingMode, TaskBaseKanbanStatus, TaskKanbanStatus
 from dursor_api.domain.models import (
     AgenticStartRequest,
     AgenticStartResponse,
@@ -22,6 +22,39 @@ from dursor_api.domain.models import (
     TaskDetail,
 )
 from dursor_api.storage.dao import PRDAO, MessageDAO, RunDAO, TaskDAO
+
+
+def _compute_kanban_status(
+    base_status: str,
+    run_count: int,
+    running_count: int,
+    completed_count: int,
+    latest_pr_status: str | None,
+) -> TaskKanbanStatus:
+    """Compute final kanban status.
+
+    Dynamic computation overrides base status, except for archived.
+    This logic mirrors KanbanService._compute_kanban_status.
+    """
+    # 1. Archived status takes priority - user explicitly archived this task
+    if base_status == TaskBaseKanbanStatus.ARCHIVED.value:
+        return TaskKanbanStatus.ARCHIVED
+
+    # 2. PR is merged -> Done (highest priority for active tasks)
+    if latest_pr_status == "merged":
+        return TaskKanbanStatus.DONE
+
+    # 3. Run is running -> InProgress
+    if running_count > 0:
+        return TaskKanbanStatus.IN_PROGRESS
+
+    # 4. Runs exist and all completed -> InReview
+    if run_count > 0 and completed_count == run_count:
+        return TaskKanbanStatus.IN_REVIEW
+
+    # 5. Use base status (backlog/todo)
+    return TaskKanbanStatus(base_status)
+
 
 if TYPE_CHECKING:
     from dursor_api.services.agentic_orchestrator import AgenticOrchestrator
@@ -47,8 +80,39 @@ async def list_tasks(
     repo_id: str | None = None,
     task_dao: TaskDAO = Depends(get_task_dao),
 ) -> list[Task]:
-    """List tasks, optionally filtered by repo."""
-    return await task_dao.list(repo_id=repo_id)
+    """List tasks, optionally filtered by repo.
+
+    Returns tasks with computed kanban_status based on run/PR state:
+    - in_progress: if any run is currently running
+    - in_review: if all runs are completed
+    - done: if PR is merged
+    - backlog/todo/archived: base status from DB
+    """
+    tasks_with_aggregates = await task_dao.list_with_aggregates(repo_id=repo_id)
+
+    result: list[Task] = []
+    for task_data in tasks_with_aggregates:
+        computed_status = _compute_kanban_status(
+            base_status=task_data["kanban_status"],
+            run_count=task_data["run_count"],
+            running_count=task_data["running_count"],
+            completed_count=task_data["completed_count"],
+            latest_pr_status=task_data["latest_pr_status"],
+        )
+
+        result.append(
+            Task(
+                id=task_data["id"],
+                repo_id=task_data["repo_id"],
+                title=task_data["title"],
+                coding_mode=task_data["coding_mode"],
+                kanban_status=computed_status.value,
+                created_at=task_data["created_at"],
+                updated_at=task_data["updated_at"],
+            )
+        )
+
+    return result
 
 
 @router.get("/{task_id}", response_model=TaskDetail)
