@@ -906,6 +906,14 @@ class PRDAO:
         )
         await self.db.connection.commit()
 
+    async def update_title(self, id: str, title: str) -> None:
+        """Update PR's title only."""
+        await self.db.connection.execute(
+            "UPDATE prs SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
     async def update_status(self, id: str, status: str) -> None:
         """Update PR status (open/merged/closed)."""
         await self.db.connection.execute(
@@ -964,15 +972,11 @@ class UserPreferencesDAO:
         default_pr_creation_mode: str | None = None,
         default_coding_mode: str | None = None,
         auto_generate_pr_description: bool | None = None,
-        update_pr_title_on_regenerate: bool | None = None,
         worktrees_dir: str | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
         auto_gen = 1 if auto_generate_pr_description else 0
-        update_title = (
-            1 if update_pr_title_on_regenerate is None or update_pr_title_on_regenerate else 0
-        )
 
         # Try to update first
         cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")
@@ -989,7 +993,6 @@ class UserPreferencesDAO:
                     default_pr_creation_mode = ?,
                     default_coding_mode = ?,
                     auto_generate_pr_description = ?,
-                    update_pr_title_on_regenerate = ?,
                     worktrees_dir = ?,
                     updated_at = ?
                 WHERE id = 1
@@ -1002,7 +1005,6 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_gen,
-                    update_title,
                     worktrees_dir,
                     now,
                 ),
@@ -1019,12 +1021,11 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_generate_pr_description,
-                    update_pr_title_on_regenerate,
                     worktrees_dir,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1034,7 +1035,6 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_gen,
-                    update_title,
                     worktrees_dir,
                     now,
                     now,
@@ -1051,9 +1051,6 @@ class UserPreferencesDAO:
             default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
             default_coding_mode=CodingMode(default_coding_mode or "interactive"),
             auto_generate_pr_description=auto_generate_pr_description or False,
-            update_pr_title_on_regenerate=update_pr_title_on_regenerate
-            if update_pr_title_on_regenerate is not None
-            else True,
             worktrees_dir=worktrees_dir,
         )
 
@@ -1079,11 +1076,6 @@ class UserPreferencesDAO:
                 row["auto_generate_pr_description"]
                 if "auto_generate_pr_description" in row.keys()
                 else False
-            ),
-            update_pr_title_on_regenerate=bool(
-                row["update_pr_title_on_regenerate"]
-                if "update_pr_title_on_regenerate" in row.keys()
-                else True
             ),
             worktrees_dir=(row["worktrees_dir"] if "worktrees_dir" in row.keys() else None),
         )

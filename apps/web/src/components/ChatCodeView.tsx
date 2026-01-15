@@ -19,6 +19,7 @@ import {
   ArrowTopRightOnSquareIcon,
   ClipboardDocumentIcon,
   CodeBracketSquareIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { ReviewButton } from './ReviewButton';
 import { ReviewResultCard } from './ReviewResultCard';
@@ -295,16 +296,16 @@ export function ChatCodeView({
     }
   };
 
-  const handleUpdatePRDesc = async () => {
+  const handleUpdatePRDesc = async (mode: 'both' | 'description' | 'title' = 'both') => {
     if (!prResult?.pr_id) return;
 
     setUpdatingDesc(true);
     try {
-      const updateTitle = preferences?.update_pr_title_on_regenerate ?? true;
-      await prsApi.regenerateDescription(taskId, prResult.pr_id, updateTitle);
-      success('PR description updated successfully!');
+      await prsApi.regenerateDescription(taskId, prResult.pr_id, mode);
+      const modeLabel = mode === 'both' ? 'title and description' : mode;
+      success(`PR ${modeLabel} updated successfully!`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update PR description';
+      const message = err instanceof Error ? err.message : 'Failed to update PR';
       error(message);
     } finally {
       setUpdatingDesc(false);
@@ -673,11 +674,17 @@ interface SessionHeaderProps {
   checkingCI: boolean;
   onCopyBranch: () => void;
   onCreatePR: () => void;
-  onUpdatePRDesc: () => void;
+  onUpdatePRDesc: (mode: 'both' | 'description' | 'title') => void;
   onCheckCI: () => void;
   onReviewCreated: () => void;
   onReviewError: (message: string) => void;
 }
+
+const UPDATE_PR_OPTIONS: { id: 'both' | 'description' | 'title'; label: string; description: string }[] = [
+  { id: 'both', label: 'Both', description: 'Update title and description' },
+  { id: 'description', label: 'Description', description: 'Update description only' },
+  { id: 'title', label: 'Title', description: 'Update title only' },
+];
 
 function SessionHeader({
   sessionBranch,
@@ -696,6 +703,26 @@ function SessionHeader({
   onReviewCreated,
   onReviewError,
 }: SessionHeaderProps) {
+  const [isUpdateDropdownOpen, setIsUpdateDropdownOpen] = useState(false);
+  const updateDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (updateDropdownRef.current && !updateDropdownRef.current.contains(event.target as Node)) {
+        setIsUpdateDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleUpdatePR = (mode: 'both' | 'description' | 'title') => {
+    setIsUpdateDropdownOpen(false);
+    onUpdatePRDesc(mode);
+  };
+
   return (
     <div className="flex items-center justify-end gap-3 px-4 py-2 border-b border-gray-800 bg-gray-900/50">
       <button
@@ -734,15 +761,48 @@ function SessionHeader({
           </a>
           {prResult.pr_id && (
             <>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onUpdatePRDesc}
-                disabled={updatingDesc}
-                isLoading={updatingDesc}
-              >
-                Update PR Desc
-              </Button>
+              <div className="relative" ref={updateDropdownRef}>
+                <div className="flex">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleUpdatePR('both')}
+                    disabled={updatingDesc}
+                    isLoading={updatingDesc}
+                    className="rounded-r-none border-r-0"
+                  >
+                    Update PR
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setIsUpdateDropdownOpen(!isUpdateDropdownOpen)}
+                    disabled={updatingDesc}
+                    className="px-2 rounded-l-none"
+                  >
+                    <ChevronDownIcon className={cn('w-4 h-4 transition-transform', isUpdateDropdownOpen && 'rotate-180')} />
+                  </Button>
+                </div>
+
+                {/* Dropdown menu */}
+                {isUpdateDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1">
+                    <div className="px-3 py-2 border-b border-gray-700">
+                      <p className="text-xs text-gray-400 font-medium">Update PR</p>
+                    </div>
+                    {UPDATE_PR_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => handleUpdatePR(option.id)}
+                        className="w-full flex flex-col items-start px-3 py-2 text-sm transition-colors text-gray-300 hover:bg-gray-700"
+                      >
+                        <span className="font-medium">{option.label}</span>
+                        <span className="text-xs text-gray-500">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <Button
                 variant="secondary"
                 size="sm"

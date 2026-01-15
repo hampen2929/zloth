@@ -107,6 +107,17 @@ class PRStatus(str, Enum):
     CLOSED = "closed"
 
 
+class PRUpdateMode(str, Enum):
+    """Mode for PR regeneration update.
+
+    Controls what gets updated when regenerating PR content.
+    """
+
+    BOTH = "both"  # Update both title and description
+    DESCRIPTION = "description"  # Update description only
+    TITLE = "title"  # Update title only
+
+
 class ReviewSeverity(str, Enum):
     """Review feedback severity level."""
 

@@ -523,7 +523,6 @@ export function DefaultsTab() {
   const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
-  const [updatePrTitleOnRegenerate, setUpdatePrTitleOnRegenerate] = useState<boolean>(true);
   const [worktreesDir, setWorktreesDir] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -552,7 +551,6 @@ export function DefaultsTab() {
       setPrCreationMode(preferences.default_pr_creation_mode || 'link');
       setCodingMode(preferences.default_coding_mode || 'interactive');
       setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
-      setUpdatePrTitleOnRegenerate(preferences.update_pr_title_on_regenerate ?? true);
       setWorktreesDir(preferences.worktrees_dir || '');
     }
   }, [preferences]);
@@ -624,7 +622,6 @@ export function DefaultsTab() {
         default_pr_creation_mode: prCreationMode,
         default_coding_mode: codingMode,
         auto_generate_pr_description: autoGeneratePrDescription,
-        update_pr_title_on_regenerate: updatePrTitleOnRegenerate,
         worktrees_dir: worktreesDir.trim() ? worktreesDir.trim() : null,
       });
       mutate('preferences');
@@ -834,28 +831,7 @@ export function DefaultsTab() {
           </label>
           <p className="text-xs text-gray-500 ml-7">
             If enabled, AI will generate the PR description when creating a PR (slower).
-            If disabled, a simple description is used and you can generate it later with &ldquo;Update PR Desc&rdquo;.
-          </p>
-        </div>
-
-        {/* Update PR title on regenerate */}
-        <div className="space-y-1">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={updatePrTitleOnRegenerate}
-              onChange={(e) => setUpdatePrTitleOnRegenerate(e.target.checked)}
-              className={cn(
-                'w-4 h-4 rounded border-gray-600 bg-gray-800',
-                'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
-              )}
-            />
-            <span className="text-sm font-medium text-gray-300">
-              Update PR title on regenerate
-            </span>
-          </label>
-          <p className="text-xs text-gray-500 ml-7">
-            If enabled, AI will also regenerate the PR title when using &ldquo;Update PR Desc&rdquo;.
+            If disabled, a simple description is used and you can generate it later with &ldquo;Update PR&rdquo;.
           </p>
         </div>
 
