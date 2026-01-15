@@ -89,6 +89,32 @@ class Database:
             )
             await conn.commit()
 
+        # Migration: Add default_coding_mode column if it doesn't exist
+        if "default_coding_mode" not in pref_column_names:
+            await conn.execute("ALTER TABLE user_preferences ADD COLUMN default_coding_mode TEXT")
+            await conn.commit()
+
+        # Migration: Add auto_generate_pr_description column if it doesn't exist
+        if "auto_generate_pr_description" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences "
+                "ADD COLUMN auto_generate_pr_description INTEGER DEFAULT 0"
+            )
+            await conn.commit()
+
+        # Migration: Add update_pr_title_on_regenerate column if it doesn't exist
+        if "update_pr_title_on_regenerate" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences "
+                "ADD COLUMN update_pr_title_on_regenerate INTEGER DEFAULT 1"
+            )
+            await conn.commit()
+
+        # Migration: Add worktrees_dir column if it doesn't exist
+        if "worktrees_dir" not in pref_column_names:
+            await conn.execute("ALTER TABLE user_preferences ADD COLUMN worktrees_dir TEXT")
+            await conn.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""
