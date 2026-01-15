@@ -1,70 +1,70 @@
-# Azure Hosting Design for dursor
+# dursor Azure ホスティング設計書
 
-This document describes the architecture design for hosting dursor on Microsoft Azure.
+本ドキュメントは dursor を Microsoft Azure 上にホスティングするためのアーキテクチャ設計を記載します。
 
-## Executive Summary
+## エグゼクティブサマリー
 
-dursor is currently designed as a single-instance, self-hosted application with SQLite persistence and in-memory state management. To deploy on Azure at scale, we need to convert stateful components to distributed alternatives, implement proper authentication, and leverage Azure-native services for reliability and scalability.
+dursor は現在、SQLite による永続化とインメモリ状態管理を持つ単一インスタンス・セルフホスト型アプリケーションとして設計されています。Azure 上でスケーラブルにデプロイするには、ステートフルなコンポーネントを分散システム向けに置き換え、適切な認証を実装し、Azure ネイティブサービスを活用する必要があります。
 
-## Current Architecture Limitations
+## 現状アーキテクチャの課題
 
-| Component | Current State | Cloud Issue |
-|-----------|--------------|-------------|
-| Database | SQLite (file-based) | No horizontal scaling, single-point-of-failure |
-| Task Queue | In-memory asyncio.Task | Lost on restart, no distribution |
-| Git Workspaces | Local filesystem | Not shareable across instances |
-| Token Cache | In-memory dict | Lost on restart |
-| Background Jobs | asyncio Tasks | Not persistent, no failover |
-| Authentication | None | No multi-tenant support |
+| コンポーネント | 現状 | クラウド移行時の課題 |
+|--------------|------|---------------------|
+| データベース | SQLite（ファイルベース） | 水平スケーリング不可、単一障害点 |
+| タスクキュー | インメモリ asyncio.Task | 再起動で消失、分散不可 |
+| Git ワークスペース | ローカルファイルシステム | インスタンス間で共有不可 |
+| トークンキャッシュ | インメモリ dict | 再起動で消失 |
+| バックグラウンドジョブ | asyncio Tasks | 永続化なし、フェイルオーバー不可 |
+| 認証 | なし | マルチテナント非対応 |
 
-## Proposed Azure Architecture
+## 提案する Azure アーキテクチャ
 
 ```mermaid
 flowchart TB
-    subgraph Internet
-        Users[Users/Browsers]
+    subgraph Internet["インターネット"]
+        Users[ユーザー/ブラウザ]
         GitHub[GitHub API]
-        LLM[LLM Providers<br/>OpenAI/Anthropic/Google]
+        LLM[LLM プロバイダー<br/>OpenAI/Anthropic/Google]
     end
 
     subgraph Azure["Azure Cloud"]
         subgraph FrontDoor["Azure Front Door"]
             WAF[Web Application Firewall]
-            CDN[CDN for Static Assets]
+            CDN[CDN（静的アセット用）]
         end
 
         subgraph AppService["Azure Container Apps"]
-            subgraph APIPool["API Pool (Auto-scale)"]
-                API1[API Instance 1]
-                API2[API Instance 2]
-                APIx[API Instance N]
+            subgraph APIPool["API プール（オートスケール）"]
+                API1[API インスタンス 1]
+                API2[API インスタンス 2]
+                APIx[API インスタンス N]
             end
 
-            subgraph WebPool["Web Pool (Auto-scale)"]
-                Web1[Web Instance 1]
-                Web2[Web Instance 2]
+            subgraph WebPool["Web プール（オートスケール）"]
+                Web1[Web インスタンス 1]
+                Web2[Web インスタンス 2]
             end
 
-            subgraph Workers["Worker Pool (Auto-scale)"]
+            subgraph Workers["Worker プール（オートスケール）"]
                 Worker1[Celery Worker 1]
                 Worker2[Celery Worker 2]
                 WorkerN[Celery Worker N]
             end
         end
 
-        subgraph Data["Data Layer"]
+        subgraph Data["データ層"]
             PostgreSQL[(Azure Database<br/>for PostgreSQL)]
             Redis[(Azure Cache<br/>for Redis)]
             BlobStorage[(Azure Blob<br/>Storage)]
         end
 
-        subgraph Security["Security"]
+        subgraph Security["セキュリティ"]
             KeyVault[Azure Key Vault]
             EntraID[Microsoft Entra ID]
             ManagedIdentity[Managed Identity]
         end
 
-        subgraph Monitoring["Monitoring"]
+        subgraph Monitoring["監視"]
             AppInsights[Application Insights]
             LogAnalytics[Log Analytics]
             Alerts[Azure Alerts]
@@ -100,35 +100,35 @@ flowchart TB
     WebPool --> AppInsights
 ```
 
-## Component Design
+## コンポーネント設計
 
-### 1. Compute Layer
+### 1. コンピュート層
 
 #### Azure Container Apps
 
-Recommended over Azure App Service for:
-- Native container support
-- Built-in auto-scaling with KEDA
-- Simplified microservices deployment
-- Cost-effective scale-to-zero capability
+Azure App Service より推奨される理由：
+- ネイティブコンテナサポート
+- KEDA による組み込みオートスケーリング
+- マイクロサービスデプロイの簡素化
+- コスト効率の良い scale-to-zero 機能
 
 ```mermaid
 flowchart LR
-    subgraph ContainerApps["Azure Container Apps Environment"]
-        subgraph API["API Service"]
+    subgraph ContainerApps["Azure Container Apps 環境"]
+        subgraph API["API サービス"]
             direction TB
-            A1[Replica 1]
-            A2[Replica 2]
-            An[Replica N]
+            A1[レプリカ 1]
+            A2[レプリカ 2]
+            An[レプリカ N]
         end
 
-        subgraph Web["Web Service"]
+        subgraph Web["Web サービス"]
             direction TB
-            W1[Replica 1]
-            W2[Replica 2]
+            W1[レプリカ 1]
+            W2[レプリカ 2]
         end
 
-        subgraph Worker["Worker Service"]
+        subgraph Worker["Worker サービス"]
             direction TB
             WK1[Worker 1]
             WK2[Worker 2]
@@ -142,78 +142,78 @@ flowchart LR
     Worker <--> PostgreSQL
 ```
 
-**Configuration:**
+**構成:**
 
-| Service | Min Replicas | Max Replicas | CPU | Memory | Scale Trigger |
-|---------|-------------|--------------|-----|--------|---------------|
-| API | 2 | 10 | 0.5 | 1Gi | HTTP requests |
-| Web | 2 | 5 | 0.25 | 512Mi | HTTP requests |
-| Worker | 1 | 20 | 1.0 | 2Gi | Redis queue length |
+| サービス | 最小レプリカ | 最大レプリカ | CPU | メモリ | スケールトリガー |
+|---------|------------|------------|-----|--------|----------------|
+| API | 2 | 10 | 0.5 | 1Gi | HTTP リクエスト |
+| Web | 2 | 5 | 0.25 | 512Mi | HTTP リクエスト |
+| Worker | 1 | 20 | 1.0 | 2Gi | Redis キュー長 |
 
-### 2. Database Layer
+### 2. データベース層
 
 #### Azure Database for PostgreSQL - Flexible Server
 
-Replace SQLite with PostgreSQL for:
-- ACID compliance with horizontal read replicas
-- Connection pooling (PgBouncer built-in)
-- High availability with automatic failover
-- Point-in-time restore
+SQLite を PostgreSQL に置き換える理由：
+- 水平読み取りレプリカによる ACID 準拠
+- コネクションプーリング（PgBouncer 組み込み）
+- 自動フェイルオーバーによる高可用性
+- ポイントインタイムリストア
 
-**Schema Migration:**
+**スキーママイグレーション:**
 
 ```sql
--- Key changes from SQLite to PostgreSQL
+-- SQLite から PostgreSQL への主な変更点
 
--- Use SERIAL instead of INTEGER PRIMARY KEY
+-- INTEGER PRIMARY KEY の代わりに SERIAL を使用
 CREATE TABLE tasks (
-    id SERIAL PRIMARY KEY,  -- was: INTEGER PRIMARY KEY
+    id SERIAL PRIMARY KEY,  -- 旧: INTEGER PRIMARY KEY
     ...
 );
 
--- Use JSONB instead of TEXT for JSON columns
+-- TEXT の代わりに JSONB を使用（JSON カラム）
 ALTER TABLE runs
     ALTER COLUMN files_changed TYPE JSONB USING files_changed::JSONB,
     ALTER COLUMN logs TYPE JSONB USING logs::JSONB;
 
--- Add connection pooling support
--- Configure PgBouncer in Azure Portal
+-- コネクションプーリングサポートの追加
+-- Azure Portal で PgBouncer を設定
 ```
 
-**Configuration:**
+**構成:**
 
-| Setting | Development | Production |
-|---------|-------------|------------|
+| 設定 | 開発環境 | 本番環境 |
+|-----|---------|---------|
 | SKU | Burstable B1ms | General Purpose D4s_v3 |
-| Storage | 32 GB | 256 GB |
-| Backup Retention | 7 days | 35 days |
-| High Availability | Disabled | Zone-redundant |
-| Read Replicas | 0 | 2 |
+| ストレージ | 32 GB | 256 GB |
+| バックアップ保持期間 | 7 日 | 35 日 |
+| 高可用性 | 無効 | ゾーン冗長 |
+| 読み取りレプリカ | 0 | 2 |
 
-### 3. Caching Layer
+### 3. キャッシュ層
 
 #### Azure Cache for Redis
 
-Replace in-memory caching with Redis for:
-- Distributed session/token storage
-- Task queue backend (Celery broker)
-- Pub/sub for real-time updates
-- Rate limiting
+インメモリキャッシュを Redis に置き換える理由：
+- 分散セッション/トークンストレージ
+- タスクキューバックエンド（Celery ブローカー）
+- リアルタイム更新のための Pub/Sub
+- レート制限
 
-**Usage Pattern:**
+**使用パターン:**
 
 ```mermaid
 flowchart LR
-    subgraph API["API Instances"]
-        A1[Instance 1]
-        A2[Instance 2]
+    subgraph API["API インスタンス"]
+        A1[インスタンス 1]
+        A2[インスタンス 2]
     end
 
     subgraph Redis["Azure Cache for Redis"]
-        Cache[Token Cache]
-        Queue[Celery Queue]
-        PubSub[Pub/Sub Channel]
-        RateLimit[Rate Limit Counters]
+        Cache[トークンキャッシュ]
+        Queue[Celery キュー]
+        PubSub[Pub/Sub チャンネル]
+        RateLimit[レート制限カウンター]
     end
 
     A1 --> Cache
@@ -224,101 +224,377 @@ flowchart LR
     A2 --> PubSub
 ```
 
-**Configuration:**
+**構成:**
 
-| Setting | Development | Production |
-|---------|-------------|------------|
+| 設定 | 開発環境 | 本番環境 |
+|-----|---------|---------|
 | SKU | Basic C0 | Premium P1 |
-| Memory | 250 MB | 6 GB |
-| Clustering | Disabled | Enabled (3 shards) |
-| Geo-replication | No | Yes |
+| メモリ | 250 MB | 6 GB |
+| クラスタリング | 無効 | 有効（3 シャード） |
+| Geo レプリケーション | なし | あり |
 
-### 4. Storage Layer
+### 4. ストレージ層
 
 #### Azure Blob Storage
 
-Replace local filesystem for git workspaces with:
-- Blob storage for repository archives
-- Azure Files (SMB/NFS) for worktree mounts if needed
-- Lifecycle management for cleanup
+ローカルファイルシステムを以下で置き換え：
+- リポジトリアーカイブ用の Blob Storage
+- worktree マウント用の Azure Files（SMB/NFS）（必要に応じて）
+- クリーンアップのためのライフサイクル管理
 
-**Storage Strategy:**
+**ストレージ戦略:**
 
 ```mermaid
 flowchart TB
     subgraph BlobStorage["Azure Blob Storage"]
-        subgraph Containers["Containers"]
+        subgraph Containers["コンテナ"]
             Workspaces[workspaces/]
             Artifacts[artifacts/]
             Temp[temp/]
         end
 
-        subgraph Lifecycle["Lifecycle Management"]
-            Hot[Hot Tier<br/>Active repos]
-            Cool[Cool Tier<br/>Inactive 30+ days]
-            Archive[Archive Tier<br/>Inactive 90+ days]
-            Delete[Delete<br/>After 365 days]
+        subgraph Lifecycle["ライフサイクル管理"]
+            Hot[Hot 層<br/>アクティブなリポジトリ]
+            Cool[Cool 層<br/>30日以上非アクティブ]
+            Archive[Archive 層<br/>90日以上非アクティブ]
+            Delete[削除<br/>365日後]
         end
     end
 
     Workspaces --> Hot
-    Hot -->|30 days| Cool
-    Cool -->|90 days| Archive
-    Temp -->|7 days| Delete
+    Hot -->|30日| Cool
+    Cool -->|90日| Archive
+    Temp -->|7日| Delete
 ```
 
-**Container Structure:**
+**コンテナ構造:**
 
 ```
 dursor-storage/
 ├── workspaces/
 │   └── {repo_uuid}/
-│       └── repo.tar.gz          # Compressed repository
+│       └── repo.tar.gz          # 圧縮されたリポジトリ
 ├── artifacts/
 │   └── {run_id}/
-│       └── patch.diff           # Generated patches
+│       └── patch.diff           # 生成されたパッチ
 └── temp/
     └── {run_id}/
-        └── worktree/            # Temporary worktree (Azure Files mount)
+        └── worktree/            # 一時的な worktree（Azure Files マウント）
 ```
 
-### 5. Task Queue Architecture
+### 5. 長時間実行タスクの非同期通信アーキテクチャ
 
-#### Celery + Redis
+Claude Code や Codex などの AI エージェントは実行に数分〜数十分かかるため、特別な非同期通信設計が必要です。
 
-Replace in-memory asyncio queue with Celery for:
-- Persistent task queue
-- Distributed worker scaling
-- Task retry and dead-letter handling
-- Task result backend
+#### 課題
+
+| 課題 | 説明 |
+|-----|------|
+| 実行時間 | Claude Code/Codex は 5〜30 分以上かかることがある |
+| HTTP タイムアウト | Azure Front Door のデフォルトタイムアウトは 30 秒 |
+| コネクション維持 | 長時間の HTTP 接続は不安定 |
+| スケールアウト | 実行中にインスタンスが変わる可能性 |
+
+#### 解決策: Celery + Redis Pub/Sub + SSE
+
+**Container Apps は長時間実行タスクに対応可能です。** ただし、以下の設計パターンを採用する必要があります：
 
 ```mermaid
 sequenceDiagram
-    participant API as API Server
-    participant Redis as Redis Broker
+    participant Browser as ブラウザ
+    participant API as API サーバー
+    participant Redis as Redis
+    participant Worker as Celery Worker
+    participant Claude as Claude Code CLI
+
+    Note over Browser,Claude: フェーズ1: タスク投入
+
+    Browser->>API: POST /v1/tasks/{id}/runs
+    API->>Redis: タスクをキューに投入
+    API->>API: DB に run 作成（status: queued）
+    API-->>Browser: 202 Accepted + run_id
+
+    Note over Browser,Claude: フェーズ2: SSE 接続確立
+
+    Browser->>API: GET /v1/runs/{id}/stream (SSE)
+    API->>Redis: SUBSCRIBE run:{run_id}:events
+    API-->>Browser: SSE 接続確立
+
+    Note over Browser,Claude: フェーズ3: 長時間実行（5〜30分）
+
+    Worker->>Redis: タスク取得
+    Worker->>Worker: DB 更新（status: running）
+    Worker->>Redis: PUBLISH 進捗イベント
+    Redis-->>API: 進捗イベント
+    API-->>Browser: SSE: {"type": "progress", "message": "..."}
+
+    Worker->>Claude: エージェント実行開始
+
+    loop 実行中（数分〜数十分）
+        Claude-->>Worker: 中間出力
+        Worker->>Redis: PUBLISH 進捗イベント
+        Redis-->>API: 進捗イベント
+        API-->>Browser: SSE: {"type": "log", "data": "..."}
+    end
+
+    Claude-->>Worker: 完了 + パッチ
+    Worker->>Worker: DB 更新（status: completed, patch）
+    Worker->>Redis: PUBLISH 完了イベント
+    Redis-->>API: 完了イベント
+    API-->>Browser: SSE: {"type": "completed", "patch": "..."}
+```
+
+#### Azure Container Apps での SSE 設定
+
+**重要:** Azure Container Apps は SSE（Server-Sent Events）をネイティブでサポートしています。
+
+```yaml
+# Container Apps Ingress 設定
+ingress:
+  external: true
+  targetPort: 8000
+  transport: http
+  # SSE 用の設定
+  clientRequestTimeout: 3600  # 1時間（SSE 接続用）
+```
+
+**Azure Front Door 設定:**
+
+```bicep
+// SSE 対応のための Front Door 設定
+resource frontDoorRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2023-05-01' = {
+  properties: {
+    originGroup: {
+      id: originGroup.id
+    }
+    // SSE 用のタイムアウト延長
+    forwardingProtocol: 'HttpOnly'
+    // レスポンスタイムアウト: 最大 240 秒
+    // ただし SSE は chunked なので実質無制限
+  }
+}
+```
+
+#### 代替案: WebSocket
+
+SSE が不安定な場合は WebSocket を検討：
+
+```mermaid
+flowchart LR
+    subgraph Browser["ブラウザ"]
+        WS[WebSocket クライアント]
+    end
+
+    subgraph Azure["Azure"]
+        subgraph SignalR["Azure SignalR Service"]
+            Hub[SignalR Hub]
+        end
+
+        subgraph API["API サーバー"]
+            Endpoint[/ws/runs/{id}]
+        end
+
+        subgraph Worker["Worker"]
+            Agent[エージェント実行]
+        end
+    end
+
+    WS <-->|WebSocket| Hub
+    Hub <--> Endpoint
+    Agent -->|進捗通知| Hub
+```
+
+**Azure SignalR Service の利点:**
+- マネージドな WebSocket インフラ
+- 自動スケーリング
+- 接続の永続化と再接続処理
+- Container Apps との統合が容易
+
+#### 推奨パターン: ハイブリッドアプローチ
+
+```python
+# routes/runs.py - 長時間実行タスクの SSE エンドポイント
+
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+import redis.asyncio as redis
+import json
+
+router = APIRouter()
+
+@router.get("/v1/runs/{run_id}/stream")
+async def stream_run_events(run_id: str, request: Request):
+    """
+    長時間実行タスクのリアルタイムストリーミング
+
+    - Redis Pub/Sub でイベントを購読
+    - SSE 形式でクライアントに配信
+    - クライアント切断を検知して購読解除
+    """
+    async def event_generator():
+        redis_client = redis.from_url("rediss://...")
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(f"run:{run_id}:events")
+
+        try:
+            # 初期状態を送信
+            run = await get_run(run_id)
+            yield f"data: {json.dumps({'type': 'initial', 'status': run.status})}\n\n"
+
+            # イベントストリーム
+            async for message in pubsub.listen():
+                if await request.is_disconnected():
+                    break
+
+                if message["type"] == "message":
+                    event_data = json.loads(message["data"])
+                    yield f"data: {json.dumps(event_data)}\n\n"
+
+                    # 完了イベントで終了
+                    if event_data.get("type") in ["completed", "failed", "cancelled"]:
+                        break
+        finally:
+            await pubsub.unsubscribe(f"run:{run_id}:events")
+            await redis_client.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # nginx バッファリング無効化
+        }
+    )
+```
+
+#### 接続断対応とリカバリー
+
+長時間実行中に接続が切れた場合の対応：
+
+```mermaid
+sequenceDiagram
+    participant Browser as ブラウザ
+    participant API as API
+    participant DB as PostgreSQL
+
+    Note over Browser,DB: 接続断からの復旧
+
+    Browser->>API: GET /v1/runs/{id}/stream?last_event_id=xxx
+    API->>DB: run 状態取得
+
+    alt 実行中
+        API->>DB: last_event_id 以降のログ取得
+        API-->>Browser: 過去イベント再送 + ストリーム再開
+    else 完了済み
+        API-->>Browser: 完了イベント送信
+    end
+```
+
+**実装のポイント:**
+
+```python
+# services/run_service.py
+
+class RunService:
+    async def get_events_since(self, run_id: str, last_event_id: str | None) -> list[dict]:
+        """
+        指定イベント以降のログを取得（SSE 再接続用）
+        """
+        run = await self.run_dao.get(run_id)
+        if not run:
+            raise ValueError(f"Run not found: {run_id}")
+
+        # DB に保存されたログから last_event_id 以降を抽出
+        logs = json.loads(run.logs or "[]")
+
+        if last_event_id:
+            # last_event_id 以降のログを返す
+            found = False
+            result = []
+            for log in logs:
+                if found:
+                    result.append(log)
+                if log.get("event_id") == last_event_id:
+                    found = True
+            return result
+
+        return logs
+```
+
+#### Container Apps の制約と対策
+
+| 制約 | 値 | 対策 |
+|-----|-----|------|
+| HTTP リクエストタイムアウト | 最大 240 秒 | SSE/WebSocket を使用 |
+| アイドルタイムアウト | 4 分 | Keep-alive ping を送信 |
+| インスタンス再起動 | 随時発生 | Redis で状態を永続化 |
+| スケールイン | キュー空で発生 | 最小レプリカを 1 以上に |
+
+**Keep-alive 実装:**
+
+```python
+async def event_generator():
+    last_ping = time.time()
+
+    async for message in pubsub.listen():
+        # 30 秒ごとに ping を送信
+        if time.time() - last_ping > 30:
+            yield f": ping\n\n"  # SSE コメント（keep-alive）
+            last_ping = time.time()
+
+        # 通常のイベント処理
+        if message["type"] == "message":
+            yield f"data: {json.dumps(message['data'])}\n\n"
+```
+
+#### アーキテクチャ比較
+
+| パターン | 長所 | 短所 | 推奨シナリオ |
+|---------|------|------|------------|
+| **SSE + Redis Pub/Sub** | シンプル、標準的、低コスト | 単方向のみ | ほとんどのケースで推奨 |
+| **WebSocket + SignalR** | 双方向通信、高信頼性 | 追加コスト、複雑性 | インタラクティブ操作が必要な場合 |
+| **ポーリング** | 最もシンプル | 遅延、リソース消費 | フォールバック用 |
+
+**結論:** Container Apps は長時間実行タスクの非同期通信に対応可能です。SSE + Redis Pub/Sub パターンを採用し、適切な keep-alive とリカバリー機構を実装することで、数十分のエージェント実行でも安定した通信が可能です。
+
+### 6. タスクキューアーキテクチャ
+
+#### Celery + Redis
+
+インメモリ asyncio キューを Celery に置き換える理由：
+- 永続的なタスクキュー
+- 分散ワーカースケーリング
+- タスクリトライとデッドレター処理
+- タスク結果バックエンド
+
+```mermaid
+sequenceDiagram
+    participant API as API サーバー
+    participant Redis as Redis ブローカー
     participant Worker as Celery Worker
     participant DB as PostgreSQL
     participant GitHub as GitHub API
-    participant LLM as LLM Provider
+    participant LLM as LLM プロバイダー
 
-    API->>Redis: Enqueue run task
-    API->>DB: Update run status (queued)
-    API-->>User: Return run ID
+    API->>Redis: run タスクをキューに投入
+    API->>DB: run ステータス更新（queued）
+    API-->>User: run ID を返却
 
-    Worker->>Redis: Fetch task
-    Worker->>DB: Update status (running)
-    Worker->>GitHub: Clone/fetch repo
-    Worker->>LLM: Execute agent
-    LLM-->>Worker: Patch result
-    Worker->>DB: Store result
-    Worker->>Redis: Publish completion event
+    Worker->>Redis: タスク取得
+    Worker->>DB: ステータス更新（running）
+    Worker->>GitHub: リポジトリ clone/fetch
+    Worker->>LLM: エージェント実行
+    LLM-->>Worker: パッチ結果
+    Worker->>DB: 結果保存
+    Worker->>Redis: 完了イベント発行
 
-    API->>Redis: Subscribe to events
-    Redis-->>API: Completion notification
-    API-->>User: SSE update
+    API->>Redis: イベント購読
+    Redis-->>API: 完了通知
+    API-->>User: SSE 更新
 ```
 
-**Celery Configuration:**
+**Celery 設定:**
 
 ```python
 # celery_config.py
@@ -339,6 +615,9 @@ app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
+    # 長時間実行タスク用の設定
+    task_time_limit=3600,      # ハードリミット: 1時間
+    task_soft_time_limit=3000, # ソフトリミット: 50分
     task_routes={
         'dursor.tasks.run_agent': {'queue': 'agent'},
         'dursor.tasks.poll_ci': {'queue': 'polling'},
@@ -347,49 +626,104 @@ app.conf.update(
 )
 ```
 
-### 6. Security Architecture
+**長時間タスクの実装例:**
+
+```python
+# tasks/agent_tasks.py
+from celery import shared_task
+import redis.asyncio as redis
+
+@shared_task(bind=True, max_retries=3)
+def run_agent_task(self, run_id: str, workspace_path: str, instruction: str):
+    """
+    Claude Code/Codex エージェントを実行する長時間タスク
+
+    - 実行時間: 5〜30分
+    - Redis Pub/Sub で進捗を配信
+    - DB に結果を保存
+    """
+    redis_client = redis.from_url("rediss://...")
+
+    try:
+        # 進捗通知
+        async def publish_progress(message: str):
+            await redis_client.publish(
+                f"run:{run_id}:events",
+                json.dumps({"type": "progress", "message": message})
+            )
+
+        # エージェント実行
+        executor = ClaudeCodeExecutor(...)
+        result = await executor.execute(
+            workspace_path=workspace_path,
+            instruction=instruction,
+            progress_callback=publish_progress,
+        )
+
+        # 完了通知
+        await redis_client.publish(
+            f"run:{run_id}:events",
+            json.dumps({
+                "type": "completed",
+                "patch": result.patch,
+                "summary": result.summary,
+            })
+        )
+
+        return {"status": "completed", "run_id": run_id}
+
+    except Exception as e:
+        # エラー通知
+        await redis_client.publish(
+            f"run:{run_id}:events",
+            json.dumps({"type": "failed", "error": str(e)})
+        )
+        raise self.retry(exc=e, countdown=60)
+```
+
+### 7. セキュリティアーキテクチャ
 
 #### Microsoft Entra ID (Azure AD)
 
-Implement authentication/authorization:
+認証・認可の実装：
 
 ```mermaid
 flowchart LR
-    User[User] --> EntraID[Microsoft Entra ID]
-    EntraID --> Token[JWT Token]
+    User[ユーザー] --> EntraID[Microsoft Entra ID]
+    EntraID --> Token[JWT トークン]
     Token --> API[dursor API]
-    API --> RBAC{RBAC Check}
-    RBAC -->|Authorized| Resource[Resource]
-    RBAC -->|Denied| Error[403 Forbidden]
+    API --> RBAC{RBAC チェック}
+    RBAC -->|認可| Resource[リソース]
+    RBAC -->|拒否| Error[403 Forbidden]
 ```
 
-**Authentication Flow:**
+**認証フロー:**
 
-1. User authenticates via Microsoft Entra ID
-2. Receives JWT token with claims
-3. API validates token on each request
-4. RBAC determines resource access
+1. ユーザーが Microsoft Entra ID で認証
+2. クレーム付き JWT トークンを受け取る
+3. API が各リクエストでトークンを検証
+4. RBAC がリソースアクセスを決定
 
-**Role Definitions:**
+**ロール定義:**
 
-| Role | Permissions |
-|------|-------------|
-| Admin | Full access, manage users, configure GitHub App |
-| Developer | Create tasks, run agents, create PRs |
-| Viewer | Read-only access to tasks and PRs |
+| ロール | 権限 |
+|-------|------|
+| Admin | フルアクセス、ユーザー管理、GitHub App 設定 |
+| Developer | タスク作成、エージェント実行、PR 作成 |
+| Viewer | タスクと PR の読み取り専用アクセス |
 
 #### Azure Key Vault
 
-Store sensitive configuration:
+機密設定の保存：
 
-| Secret | Purpose |
-|--------|---------|
-| `dursor-encryption-key` | API key encryption |
-| `github-app-private-key` | GitHub App authentication |
-| `postgresql-connection-string` | Database connection |
-| `redis-connection-string` | Cache connection |
+| シークレット | 用途 |
+|-------------|------|
+| `dursor-encryption-key` | API キー暗号化 |
+| `github-app-private-key` | GitHub App 認証 |
+| `postgresql-connection-string` | データベース接続 |
+| `redis-connection-string` | キャッシュ接続 |
 
-**Access Pattern:**
+**アクセスパターン:**
 
 ```python
 from azure.identity import DefaultAzureCredential
@@ -404,38 +738,38 @@ client = SecretClient(
 encryption_key = client.get_secret("dursor-encryption-key").value
 ```
 
-### 7. Networking Architecture
+### 8. ネットワークアーキテクチャ
 
 ```mermaid
 flowchart TB
-    subgraph Internet
-        Users[Users]
+    subgraph Internet["インターネット"]
+        Users[ユーザー]
         GitHub[GitHub]
         LLM[LLM APIs]
     end
 
     subgraph Azure["Azure"]
-        subgraph PublicZone["Public Zone"]
+        subgraph PublicZone["パブリックゾーン"]
             FrontDoor[Azure Front Door]
         end
 
         subgraph VNet["Virtual Network (10.0.0.0/16)"]
-            subgraph AppSubnet["App Subnet (10.0.1.0/24)"]
+            subgraph AppSubnet["App サブネット (10.0.1.0/24)"]
                 ContainerApps[Container Apps]
             end
 
-            subgraph DataSubnet["Data Subnet (10.0.2.0/24)"]
+            subgraph DataSubnet["Data サブネット (10.0.2.0/24)"]
                 PostgreSQL[(PostgreSQL)]
                 Redis[(Redis)]
             end
 
-            subgraph PrivateEndpoints["Private Endpoints"]
+            subgraph PrivateEndpoints["プライベートエンドポイント"]
                 BlobPE[Blob Storage PE]
                 KeyVaultPE[Key Vault PE]
             end
         end
 
-        subgraph Storage["Storage"]
+        subgraph Storage["ストレージ"]
             BlobStorage[(Blob Storage)]
             KeyVault[(Key Vault)]
         end
@@ -451,36 +785,36 @@ flowchart TB
     ContainerApps --> LLM
 ```
 
-**Network Security:**
+**ネットワークセキュリティ:**
 
-- Private endpoints for all Azure PaaS services
-- Network Security Groups (NSG) restricting traffic
-- Azure Front Door with WAF for DDoS protection
-- Service tags for GitHub and LLM provider IPs
+- すべての Azure PaaS サービスにプライベートエンドポイント
+- トラフィックを制限するネットワークセキュリティグループ（NSG）
+- DDoS 対策のための Azure Front Door + WAF
+- GitHub と LLM プロバイダー IP 用のサービスタグ
 
-### 8. Monitoring and Observability
+### 9. 監視とオブザーバビリティ
 
 #### Application Insights
 
 ```mermaid
 flowchart LR
-    subgraph Apps["Applications"]
-        API[API Service]
-        Web[Web Service]
-        Worker[Worker Service]
+    subgraph Apps["アプリケーション"]
+        API[API サービス]
+        Web[Web サービス]
+        Worker[Worker サービス]
     end
 
     subgraph AppInsights["Application Insights"]
-        Traces[Distributed Traces]
-        Metrics[Metrics]
-        Logs[Logs]
-        Availability[Availability Tests]
+        Traces[分散トレース]
+        Metrics[メトリクス]
+        Logs[ログ]
+        Availability[可用性テスト]
     end
 
-    subgraph Alerts["Alerting"]
-        ErrorRate[Error Rate > 1%]
+    subgraph Alerts["アラート"]
+        ErrorRate[エラー率 > 1%]
         Latency[P95 > 2s]
-        QueueDepth[Queue > 100]
+        QueueDepth[キュー > 100]
     end
 
     API --> Traces
@@ -495,52 +829,53 @@ flowchart LR
     Logs --> Alerts
 ```
 
-**Key Metrics:**
+**主要メトリクス:**
 
-| Metric | Warning | Critical |
-|--------|---------|----------|
-| API Error Rate | > 1% | > 5% |
-| API P95 Latency | > 2s | > 5s |
-| Worker Queue Depth | > 50 | > 200 |
-| Database Connections | > 80% | > 95% |
-| Redis Memory | > 70% | > 90% |
+| メトリクス | 警告 | クリティカル |
+|-----------|------|------------|
+| API エラー率 | > 1% | > 5% |
+| API P95 レイテンシ | > 2s | > 5s |
+| Worker キュー深度 | > 50 | > 200 |
+| データベース接続数 | > 80% | > 95% |
+| Redis メモリ | > 70% | > 90% |
+| エージェント実行時間 | > 30分 | > 60分 |
 
-### 9. Disaster Recovery
+### 10. 災害復旧
 
-**Recovery Objectives:**
+**復旧目標:**
 
-| Tier | RTO | RPO | Strategy |
-|------|-----|-----|----------|
-| Development | 4 hours | 24 hours | Single region, daily backups |
-| Production | 15 minutes | 5 minutes | Multi-region, continuous replication |
+| ティア | RTO | RPO | 戦略 |
+|-------|-----|-----|------|
+| 開発 | 4 時間 | 24 時間 | 単一リージョン、日次バックアップ |
+| 本番 | 15 分 | 5 分 | マルチリージョン、継続的レプリケーション |
 
-**Backup Strategy:**
+**バックアップ戦略:**
 
 ```mermaid
 flowchart LR
-    subgraph Primary["Japan East (Primary)"]
+    subgraph Primary["東日本（プライマリ）"]
         DB1[(PostgreSQL)]
         Redis1[(Redis)]
         Blob1[(Blob Storage)]
     end
 
-    subgraph Secondary["Japan West (Secondary)"]
-        DB2[(PostgreSQL<br/>Read Replica)]
-        Redis2[(Redis<br/>Geo-replica)]
+    subgraph Secondary["西日本（セカンダリ）"]
+        DB2[(PostgreSQL<br/>読み取りレプリカ)]
+        Redis2[(Redis<br/>Geo レプリカ)]
         Blob2[(Blob Storage<br/>GRS)]
     end
 
-    DB1 -->|Async Replication| DB2
-    Redis1 -->|Geo-replication| Redis2
+    DB1 -->|非同期レプリケーション| DB2
+    Redis1 -->|Geo レプリケーション| Redis2
     Blob1 -->|GRS| Blob2
 ```
 
-## Environment Configuration
+## 環境設定
 
-### Development Environment
+### 開発環境
 
 ```yaml
-# Container Apps - Development
+# Container Apps - 開発
 api:
   minReplicas: 1
   maxReplicas: 2
@@ -562,21 +897,21 @@ worker:
     cpu: 0.5
     memory: 1Gi
 
-# Database - Development
+# Database - 開発
 postgresql:
   sku: Burstable_B1ms
   storage: 32GB
   haEnabled: false
 
-# Cache - Development
+# Cache - 開発
 redis:
   sku: Basic_C0
 ```
 
-### Production Environment
+### 本番環境
 
 ```yaml
-# Container Apps - Production
+# Container Apps - 本番
 api:
   minReplicas: 2
   maxReplicas: 10
@@ -598,26 +933,26 @@ worker:
     cpu: 1.0
     memory: 2Gi
 
-# Database - Production
+# Database - 本番
 postgresql:
   sku: GeneralPurpose_D4s_v3
   storage: 256GB
   haEnabled: true
   readReplicas: 2
 
-# Cache - Production
+# Cache - 本番
 redis:
   sku: Premium_P1
   clustering: true
   geoReplication: true
 ```
 
-## Cost Estimation
+## コスト見積もり
 
-### Monthly Cost (JPY)
+### 月額コスト（円）
 
-| Resource | Development | Production |
-|----------|-------------|------------|
+| リソース | 開発 | 本番 |
+|---------|------|------|
 | Container Apps (API) | ¥5,000 | ¥30,000 |
 | Container Apps (Web) | ¥3,000 | ¥15,000 |
 | Container Apps (Worker) | ¥8,000 | ¥50,000 |
@@ -627,108 +962,108 @@ redis:
 | Azure Front Door | ¥5,000 | ¥20,000 |
 | Key Vault | ¥500 | ¥2,000 |
 | Application Insights | ¥2,000 | ¥15,000 |
-| **Total** | **¥31,500** | **¥247,000** |
+| **合計** | **¥31,500** | **¥247,000** |
 
-*Note: Estimates based on moderate usage. Actual costs vary by usage.*
+*注: 中程度の使用量に基づく見積もり。実際のコストは使用量により変動します。*
 
-## Migration Plan
+## マイグレーション計画
 
-### Phase 1: Database Migration
+### フェーズ 1: データベースマイグレーション
 
 ```mermaid
 gantt
-    title Phase 1: Database Migration
+    title フェーズ 1: データベースマイグレーション
     dateFormat  YYYY-MM-DD
-    section Preparation
-    Set up PostgreSQL           :p1, 2024-01-01, 3d
-    Create migration scripts    :p2, after p1, 5d
-    Test migration locally      :p3, after p2, 3d
-    section Execution
-    Deploy to Azure (dev)       :e1, after p3, 2d
-    Validate data integrity     :e2, after e1, 2d
-    Performance testing         :e3, after e2, 3d
-    section Cutover
-    Final migration             :c1, after e3, 1d
-    Verify production           :c2, after c1, 2d
+    section 準備
+    PostgreSQL セットアップ        :p1, 2024-01-01, 3d
+    マイグレーションスクリプト作成  :p2, after p1, 5d
+    ローカルでテスト               :p3, after p2, 3d
+    section 実行
+    Azure（開発）にデプロイ        :e1, after p3, 2d
+    データ整合性検証              :e2, after e1, 2d
+    パフォーマンステスト           :e3, after e2, 3d
+    section カットオーバー
+    最終マイグレーション           :c1, after e3, 1d
+    本番検証                      :c2, after c1, 2d
 ```
 
-### Phase 2: Queue Migration
+### フェーズ 2: キューマイグレーション
 
 ```mermaid
 gantt
-    title Phase 2: Queue Migration
+    title フェーズ 2: キューマイグレーション
     dateFormat  YYYY-MM-DD
-    section Development
-    Implement Celery tasks      :d1, 2024-01-15, 5d
-    Add Redis integration       :d2, after d1, 3d
-    Update worker containers    :d3, after d2, 3d
-    section Testing
-    Integration testing         :t1, after d3, 5d
-    Load testing               :t2, after t1, 3d
-    section Deployment
-    Deploy to Azure            :dep1, after t2, 2d
-    Monitor and optimize       :dep2, after dep1, 5d
+    section 開発
+    Celery タスク実装             :d1, 2024-01-15, 5d
+    Redis 統合                   :d2, after d1, 3d
+    Worker コンテナ更新           :d3, after d2, 3d
+    section テスト
+    統合テスト                    :t1, after d3, 5d
+    負荷テスト                    :t2, after t1, 3d
+    section デプロイ
+    Azure にデプロイ              :dep1, after t2, 2d
+    監視と最適化                  :dep2, after dep1, 5d
 ```
 
-### Phase 3: Storage Migration
+### フェーズ 3: ストレージマイグレーション
 
 ```mermaid
 gantt
-    title Phase 3: Storage Migration
+    title フェーズ 3: ストレージマイグレーション
     dateFormat  YYYY-MM-DD
-    section Development
-    Implement Blob Storage SDK  :d1, 2024-02-01, 5d
-    Update workspace service    :d2, after d1, 5d
-    Add lifecycle policies      :d3, after d2, 2d
-    section Testing
-    Test with large repos       :t1, after d3, 5d
-    Performance optimization    :t2, after t1, 3d
-    section Deployment
-    Deploy and migrate data     :dep1, after t2, 3d
+    section 開発
+    Blob Storage SDK 実装         :d1, 2024-02-01, 5d
+    ワークスペースサービス更新     :d2, after d1, 5d
+    ライフサイクルポリシー追加     :d3, after d2, 2d
+    section テスト
+    大規模リポジトリでテスト       :t1, after d3, 5d
+    パフォーマンス最適化          :t2, after t1, 3d
+    section デプロイ
+    デプロイとデータ移行           :dep1, after t2, 3d
 ```
 
-### Phase 4: Security Implementation
+### フェーズ 4: セキュリティ実装
 
 ```mermaid
 gantt
-    title Phase 4: Security Implementation
+    title フェーズ 4: セキュリティ実装
     dateFormat  YYYY-MM-DD
-    section Development
-    Entra ID integration        :d1, 2024-02-15, 7d
-    RBAC implementation         :d2, after d1, 5d
-    Key Vault integration       :d3, after d2, 3d
-    section Testing
-    Security testing            :t1, after d3, 5d
-    Penetration testing         :t2, after t1, 5d
-    section Deployment
-    Deploy to production        :dep1, after t2, 2d
+    section 開発
+    Entra ID 統合                 :d1, 2024-02-15, 7d
+    RBAC 実装                     :d2, after d1, 5d
+    Key Vault 統合                :d3, after d2, 3d
+    section テスト
+    セキュリティテスト            :t1, after d3, 5d
+    ペネトレーションテスト         :t2, after t1, 5d
+    section デプロイ
+    本番デプロイ                  :dep1, after t2, 2d
 ```
 
 ## Infrastructure as Code
 
-### Bicep Template Structure
+### Bicep テンプレート構造
 
 ```
 infra/
-├── main.bicep                 # Main deployment
+├── main.bicep                 # メインデプロイ
 ├── modules/
-│   ├── container-apps.bicep   # Container Apps Environment
+│   ├── container-apps.bicep   # Container Apps 環境
 │   ├── postgresql.bicep       # PostgreSQL Flexible Server
 │   ├── redis.bicep           # Azure Cache for Redis
-│   ├── storage.bicep         # Blob Storage Account
+│   ├── storage.bicep         # Blob Storage アカウント
 │   ├── keyvault.bicep        # Key Vault
 │   ├── frontdoor.bicep       # Front Door + WAF
 │   ├── monitoring.bicep      # Application Insights
 │   └── networking.bicep      # VNet + NSG
 ├── parameters/
-│   ├── dev.bicepparam        # Development parameters
-│   └── prod.bicepparam       # Production parameters
+│   ├── dev.bicepparam        # 開発パラメータ
+│   └── prod.bicepparam       # 本番パラメータ
 └── scripts/
-    ├── deploy.sh             # Deployment script
-    └── migrate-db.sh         # Database migration
+    ├── deploy.sh             # デプロイスクリプト
+    └── migrate-db.sh         # データベースマイグレーション
 ```
 
-### Sample Bicep (Container Apps)
+### サンプル Bicep（Container Apps）
 
 ```bicep
 // modules/container-apps.bicep
@@ -758,6 +1093,8 @@ resource apiApp 'Microsoft.App/containerApps@2023-05-01' = {
       ingress: {
         external: true
         targetPort: 8000
+        // SSE 用のタイムアウト設定
+        clientRequestTimeout: 3600
       }
       secrets: [
         {
@@ -801,16 +1138,73 @@ resource apiApp 'Microsoft.App/containerApps@2023-05-01' = {
     }
   }
 }
+
+resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: '${environmentName}-worker'
+  location: location
+  properties: {
+    managedEnvironmentId: containerAppEnvironment.id
+    configuration: {
+      // Worker は外部 ingress 不要
+      secrets: [
+        {
+          name: 'redis-connection-string'
+          keyVaultUrl: 'https://${keyVault.name}.vault.azure.net/secrets/redis-connection-string'
+          identity: managedIdentity.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'worker'
+          image: 'dursor.azurecr.io/worker:${workerImageTag}'
+          resources: {
+            cpu: json('1.0')
+            memory: '2Gi'
+          }
+          env: [
+            {
+              name: 'CELERY_BROKER_URL'
+              secretRef: 'redis-connection-string'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 20
+        rules: [
+          {
+            name: 'queue-scaling'
+            custom: {
+              type: 'redis'
+              metadata: {
+                listName: 'celery'
+                listLength: '10'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
 ```
 
-## Conclusion
+## まとめ
 
-This design provides a scalable, secure, and cost-effective Azure deployment for dursor. Key benefits:
+本設計は、dursor の Azure デプロイにおいてスケーラブル、セキュア、かつコスト効率の良いアーキテクチャを提供します。
 
-1. **Scalability**: Auto-scaling Container Apps with Celery workers handle variable load
-2. **Reliability**: Multi-AZ PostgreSQL and Redis with automatic failover
-3. **Security**: Entra ID authentication, Key Vault secrets, private endpoints
-4. **Observability**: Full Application Insights integration with alerting
-5. **Cost Efficiency**: Scale-to-zero capabilities minimize development costs
+**主なポイント:**
 
-The migration can be executed incrementally, starting with database migration and progressively adding distributed components.
+1. **スケーラビリティ**: Celery ワーカーを持つオートスケーリング Container Apps が変動負荷に対応
+2. **信頼性**: 自動フェイルオーバーを持つマルチ AZ PostgreSQL と Redis
+3. **セキュリティ**: Entra ID 認証、Key Vault シークレット、プライベートエンドポイント
+4. **オブザーバビリティ**: アラート付きの完全な Application Insights 統合
+5. **コスト効率**: scale-to-zero 機能により開発コストを最小化
+6. **長時間実行タスク対応**: SSE + Redis Pub/Sub により、数十分のエージェント実行でも安定した非同期通信が可能
+
+**Container Apps は長時間実行タスクの非同期通信に適しています。** SSE と Redis Pub/Sub を組み合わせることで、Claude Code や Codex の長時間実行（5〜30分）を適切にハンドリングできます。追加の複雑性が必要な場合は、Azure SignalR Service による WebSocket 対応も選択肢となります。
+
+マイグレーションはデータベースマイグレーションから開始し、段階的に分散コンポーネントを追加していくことで実行できます。
