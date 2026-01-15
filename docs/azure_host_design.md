@@ -500,6 +500,810 @@ flowchart TB
 2. **Durable Functions でオーケストレーション**: 状態管理・リトライの組み込みサポート
 3. **ACI でエージェント実行**: 分離環境、秒単位課金、長時間実行対応
 
+---
+
+### フロントエンドへの Entra ID 認証
+
+フロントエンド（Next.js）に Microsoft Entra ID（旧 Azure AD）認証を追加する場合の設計です。
+
+#### 認証アーキテクチャの選択肢
+
+```mermaid
+flowchart TB
+    subgraph Options["認証実装の選択肢"]
+        subgraph Option1["Option 1: Container Apps 組み込み認証"]
+            CA_EasyAuth[Easy Auth]
+            CA_App[Container Apps]
+            CA_EasyAuth --> CA_App
+        end
+
+        subgraph Option2["Option 2: Next.js + NextAuth.js"]
+            NextAuth[NextAuth.js]
+            MSAL[MSAL.js]
+            Next_App[Next.js App]
+            NextAuth --> MSAL
+            MSAL --> Next_App
+        end
+
+        subgraph Option3["Option 3: Azure Front Door + WAF"]
+            FD[Front Door]
+            FD_Auth[認証ポリシー]
+            FD_Backend[Backend]
+            FD --> FD_Auth
+            FD_Auth --> FD_Backend
+        end
+    end
+```
+
+#### 比較表: 認証実装方式
+
+| 観点 | Container Apps Easy Auth | NextAuth.js + MSAL | Front Door + 認証 |
+|-----|-------------------------|-------------------|------------------|
+| **実装コスト** | ◎ 最小（設定のみ） | ○ 中（コード実装） | ○ 中（設定） |
+| **カスタマイズ性** | △ 限定的 | ◎ 高い | △ 限定的 |
+| **トークン制御** | △ 自動管理 | ◎ 完全制御 | △ 自動管理 |
+| **API 連携** | ○ ヘッダー転送 | ◎ 柔軟 | ○ ヘッダー転送 |
+| **SSR 対応** | △ 制限あり | ◎ 完全対応 | ○ 対応 |
+| **ログアウト制御** | ○ 標準 | ◎ カスタム可 | ○ 標準 |
+| **多要素認証** | ◎ Entra ID 側 | ◎ Entra ID 側 | ◎ Entra ID 側 |
+
+#### 推奨: Option 2 - NextAuth.js + MSAL
+
+**理由:**
+1. Next.js App Router との完全な統合
+2. API 呼び出し時のトークン制御が柔軟
+3. SSE/WebSocket 接続時のトークン更新が容易
+4. カスタムログイン画面の実装可能
+
+#### 認証フロー詳細
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant Browser as ブラウザ
+    participant Next as Next.js Frontend
+    participant Entra as Microsoft Entra ID
+    participant API as FastAPI Backend
+
+    Note over User,API: 初回ログイン
+
+    User->>Browser: アプリにアクセス
+    Browser->>Next: GET /
+    Next->>Next: セッション確認（なし）
+    Next-->>Browser: ログインページへリダイレクト
+
+    Browser->>Next: GET /auth/signin
+    Next->>Entra: 認証リクエスト（PKCE）
+    Entra-->>Browser: ログイン画面
+
+    User->>Entra: 資格情報入力
+    Entra->>Entra: MFA 検証（設定時）
+    Entra-->>Browser: 認可コード + リダイレクト
+
+    Browser->>Next: GET /api/auth/callback/azure-ad?code=xxx
+    Next->>Entra: トークンリクエスト（認可コード）
+    Entra-->>Next: Access Token + Refresh Token + ID Token
+
+    Next->>Next: セッション作成（暗号化 Cookie）
+    Next-->>Browser: ホームページへリダイレクト + Set-Cookie
+
+    Note over User,API: API 呼び出し
+
+    Browser->>Next: ページ表示
+    Next->>Next: セッションから Access Token 取得
+    Next->>API: GET /v1/tasks（Authorization: Bearer xxx）
+    API->>API: トークン検証
+    API-->>Next: タスク一覧
+    Next-->>Browser: レンダリング結果
+
+    Note over User,API: トークン更新
+
+    Browser->>Next: API 呼び出し
+    Next->>Next: Access Token 期限切れ検出
+    Next->>Entra: Refresh Token でトークン更新
+    Entra-->>Next: 新しい Access Token
+    Next->>API: 新しいトークンで API 呼び出し
+```
+
+#### 実装例: NextAuth.js 設定
+
+```typescript
+// app/api/auth/[...nextauth]/route.ts
+import NextAuth from "next-auth";
+import AzureADProvider from "next-auth/providers/azure-ad";
+
+const handler = NextAuth({
+  providers: [
+    AzureADProvider({
+      clientId: process.env.AZURE_AD_CLIENT_ID!,
+      clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
+      tenantId: process.env.AZURE_AD_TENANT_ID!,
+      authorization: {
+        params: {
+          scope: "openid profile email api://dursor-api/.default",
+        },
+      },
+    }),
+  ],
+  callbacks: {
+    async jwt({ token, account }) {
+      // 初回ログイン時に Access Token を保存
+      if (account) {
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
+        token.expiresAt = account.expires_at;
+      }
+
+      // トークン期限切れ時は更新
+      if (Date.now() < (token.expiresAt as number) * 1000) {
+        return token;
+      }
+
+      return await refreshAccessToken(token);
+    },
+    async session({ session, token }) {
+      session.accessToken = token.accessToken;
+      return session;
+    },
+  },
+  pages: {
+    signIn: "/auth/signin",
+    error: "/auth/error",
+  },
+});
+
+export { handler as GET, handler as POST };
+```
+
+```typescript
+// lib/api.ts - API クライアント
+import { getSession } from "next-auth/react";
+
+export async function apiClient(endpoint: string, options: RequestInit = {}) {
+  const session = await getSession();
+
+  if (!session?.accessToken) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      ...options.headers,
+      Authorization: `Bearer ${session.accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (response.status === 401) {
+    // トークン無効 → 再ログイン
+    window.location.href = "/auth/signin";
+    throw new Error("Token expired");
+  }
+
+  return response;
+}
+```
+
+#### API 側のトークン検証
+
+```python
+# middleware/auth.py
+from fastapi import HTTPException, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+from jwt import PyJWKClient
+
+security = HTTPBearer()
+
+# Entra ID の公開鍵を取得
+jwks_client = PyJWKClient(
+    f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
+)
+
+async def verify_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> dict:
+    """Entra ID トークンを検証"""
+    token = credentials.credentials
+
+    try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=f"api://{CLIENT_ID}",
+            issuer=f"https://sts.windows.net/{TENANT_ID}/",
+        )
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+
+# ルートでの使用
+@router.post("/v1/tasks")
+async def create_task(
+    request: CreateTaskRequest,
+    user: dict = Depends(verify_token),  # 認証必須
+):
+    user_id = user["oid"]  # Entra ID のユーザー ID
+    # ...
+```
+
+---
+
+### エンドツーエンド データフロー詳細
+
+UI から指示を出し、Coding Agent が実行し、結果が UI に反映されるまでの完全なデータフローです。
+
+#### 全体フロー概要
+
+```mermaid
+flowchart TB
+    subgraph UI["UI Layer"]
+        Browser[ブラウザ]
+        React[React State]
+        SSE_Client[SSE Client]
+    end
+
+    subgraph API["API Layer"]
+        FastAPI[FastAPI]
+        SSE_Server[SSE Endpoint]
+        DB_Writer[DB Writer]
+    end
+
+    subgraph Orchestration["Orchestration Layer"]
+        DF[Durable Functions]
+        Queue[(Azure Storage Queue)]
+    end
+
+    subgraph Execution["Execution Layer"]
+        ACI[Azure Container Instances]
+        Claude[Claude Code CLI]
+        Git[Git Operations]
+    end
+
+    subgraph Data["Data Layer"]
+        PostgreSQL[(PostgreSQL)]
+        Redis[(Redis Pub/Sub)]
+        Blob[(Blob Storage)]
+    end
+
+    Browser -->|1. POST /runs| FastAPI
+    FastAPI -->|2. Enqueue| DF
+    FastAPI -->|3. Create Run| PostgreSQL
+    FastAPI -->|4. 202 Accepted| Browser
+
+    Browser -->|5. SSE Connect| SSE_Server
+    SSE_Server -->|6. Subscribe| Redis
+
+    DF -->|7. Start| ACI
+    ACI -->|8. Clone| Blob
+    ACI -->|9. Execute| Claude
+
+    Claude -->|10. Progress| ACI
+    ACI -->|11. Publish| Redis
+    Redis -->|12. Notify| SSE_Server
+    SSE_Server -->|13. Event| Browser
+
+    Claude -->|14. Complete| ACI
+    ACI -->|15. Patch| Blob
+    ACI -->|16. Update| PostgreSQL
+    ACI -->|17. Publish Complete| Redis
+
+    Browser -->|18. Receive| React
+```
+
+#### フェーズ別詳細シーケンス
+
+##### フェーズ 1: 指示の送信（UI → API）
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant UI as React UI
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant DF as Durable Functions
+
+    User->>UI: タスク指示を入力
+    User->>UI: 「実行」ボタンクリック
+
+    UI->>UI: バリデーション
+    UI->>UI: ローディング状態に更新
+
+    UI->>API: POST /v1/tasks/123/runs
+    Note right of UI: Headers: Authorization: Bearer xxx<br/>Body: instruction, model_ids[]
+
+    API->>API: トークン検証
+    API->>API: リクエストバリデーション
+
+    API->>DB: INSERT INTO runs
+    Note right of API: status: queued<br/>task_id, model_id, instruction
+
+    DB-->>API: run_id: abc-123
+
+    API->>DF: POST /api/orchestrators/start
+    Note right of API: Body: run_id, workspace_path, instruction
+
+    DF-->>API: instance_id: orch-456
+
+    API->>DB: UPDATE runs SET orchestrator_id
+    API-->>UI: 202 Accepted
+    Note left of API: Response: run_id, status: queued
+
+    UI->>UI: 状態更新（queued）
+    UI->>UI: SSE 接続開始
+```
+
+**データ構造（この時点）:**
+
+```json
+// POST /v1/tasks/123/runs Request
+{
+  "instruction": "Add unit tests for the UserService class",
+  "model_ids": ["model-claude-1", "model-gpt4-2"],
+  "options": {
+    "enable_review": true,
+    "auto_commit": false
+  }
+}
+
+// Response
+{
+  "runs": [
+    {
+      "id": "run-abc-123",
+      "task_id": "task-123",
+      "model_id": "model-claude-1",
+      "status": "queued",
+      "created_at": "2024-01-15T10:00:00Z"
+    },
+    {
+      "id": "run-def-456",
+      "task_id": "task-123",
+      "model_id": "model-gpt4-2",
+      "status": "queued",
+      "created_at": "2024-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+##### フェーズ 2: SSE 接続確立（UI ↔ API）
+
+```mermaid
+sequenceDiagram
+    participant UI as React UI
+    participant SSE as SSE Client
+    participant API as FastAPI
+    participant Redis as Redis Pub/Sub
+
+    UI->>SSE: new EventSource(/v1/runs/abc-123/stream)
+
+    SSE->>API: GET /v1/runs/abc-123/stream
+    Note right of SSE: Headers: Authorization: Bearer xxx<br/>Accept: text/event-stream
+
+    API->>API: トークン検証
+    API->>Redis: SUBSCRIBE run:abc-123:events
+
+    API-->>SSE: HTTP 200 OK
+    Note left of API: Headers: Content-Type: text/event-stream<br/>Cache-Control: no-cache<br/>Connection: keep-alive
+
+    API-->>SSE: data: {"type":"connected","run_id":"abc-123"}
+
+    SSE->>UI: onopen event
+    UI->>UI: 接続状態を更新
+
+    loop Keep-alive（30秒ごと）
+        API-->>SSE: : ping
+    end
+```
+
+**SSE イベント形式:**
+
+```
+// 接続確立
+data: {"type":"connected","run_id":"abc-123","status":"queued"}
+
+// ping（コメント形式、クライアントには通知されない）
+: ping
+
+// 進捗イベント
+data: {"type":"progress","message":"Cloning repository...","timestamp":"2024-01-15T10:00:05Z"}
+
+// ログイベント
+data: {"type":"log","level":"info","message":"Analyzing codebase...","timestamp":"2024-01-15T10:00:10Z"}
+
+// ステータス変更
+data: {"type":"status","status":"running","timestamp":"2024-01-15T10:00:03Z"}
+
+// 完了イベント
+data: {"type":"completed","status":"completed","patch":"...(diff)...","summary":"Added 5 test files","timestamp":"2024-01-15T10:15:00Z"}
+```
+
+##### フェーズ 3: オーケストレーション実行
+
+```mermaid
+sequenceDiagram
+    participant DF as Durable Functions
+    participant Storage as Azure Storage
+    participant ACI as Container Instances
+    participant Blob as Blob Storage
+    participant Redis as Redis
+    participant DB as PostgreSQL
+
+    Note over DF: Orchestrator 開始
+
+    DF->>Storage: 状態保存（開始）
+    DF->>Redis: PUBLISH status:running
+
+    DF->>DF: Activity: PrepareWorkspace
+    DF->>Blob: リポジトリ取得/展開
+    Blob-->>DF: workspace_path
+
+    DF->>Storage: チェックポイント
+
+    DF->>ACI: Activity: ExecuteAgent
+    Note right of DF: Container Group 作成<br/>Image: dursor-agent:latest<br/>CPU: 2, Memory: 4GB
+
+    ACI->>ACI: コンテナ起動（数秒）
+
+    rect rgb(200, 230, 200)
+        Note over ACI: 長時間実行フェーズ（5-30分）
+
+        ACI->>ACI: Git clone/checkout
+        ACI->>Redis: PUBLISH progress
+
+        ACI->>ACI: Claude Code CLI 実行
+        Note right of ACI: claude --print -p "instruction"
+
+        loop CLI 実行中
+            ACI->>ACI: stdout/stderr 監視
+            ACI->>Redis: PUBLISH log
+            ACI->>DB: UPDATE runs.logs（定期）
+        end
+
+        ACI->>ACI: CLI 完了
+        ACI->>ACI: git diff でパッチ生成
+    end
+
+    ACI-->>DF: AgentResult（patch, summary）
+
+    DF->>Storage: チェックポイント
+
+    alt レビュー有効時
+        DF->>ACI: Activity: ExecuteReview
+        ACI-->>DF: ReviewResult
+    end
+
+    DF->>DB: UPDATE runs（完了）
+    DF->>Blob: パッチ保存
+    DF->>Redis: PUBLISH completed
+    DF->>Storage: 状態保存（完了）
+```
+
+**Durable Functions の状態遷移:**
+
+```json
+// Azure Storage に保存される Orchestrator 状態
+{
+  "instanceId": "orch-456",
+  "input": {
+    "run_id": "abc-123",
+    "workspace_path": "/workspaces/repo-xyz",
+    "instruction": "Add unit tests..."
+  },
+  "history": [
+    {"type": "OrchestratorStarted", "timestamp": "2024-01-15T10:00:00Z"},
+    {"type": "TaskScheduled", "name": "PrepareWorkspace"},
+    {"type": "TaskCompleted", "result": {"workspace_path": "..."}},
+    {"type": "TaskScheduled", "name": "ExecuteAgent"},
+    // ... チェックポイントごとに追記
+  ],
+  "output": null,
+  "status": "Running"
+}
+```
+
+##### フェーズ 4: リアルタイム進捗通知
+
+```mermaid
+sequenceDiagram
+    participant ACI as Container (Agent)
+    participant Redis as Redis Pub/Sub
+    participant API as FastAPI (SSE)
+    participant UI as React UI
+
+    rect rgb(230, 230, 250)
+        Note over ACI,UI: Agent 実行中の進捗通知
+
+        ACI->>ACI: コード解析中...
+        ACI->>Redis: PUBLISH run:abc-123:events
+        Note right of ACI: {"type":"log","message":"Analyzing UserService.ts..."}
+
+        Redis-->>API: Message received
+        API->>API: JSON シリアライズ
+        API-->>UI: data: {"type":"log",...}
+
+        UI->>UI: state.logs.push(event)
+        UI->>UI: Re-render（ログ表示更新）
+    end
+
+    rect rgb(250, 230, 230)
+        Note over ACI,UI: ファイル編集中
+
+        ACI->>ACI: テストファイル生成中...
+        ACI->>Redis: PUBLISH run:abc-123:events
+        Note right of ACI: {"type":"progress","message":"Creating test file 1/5..."}
+
+        Redis-->>API: Message received
+        API-->>UI: data: {"type":"progress",...}
+
+        UI->>UI: state.progress = event
+        UI->>UI: Re-render（プログレスバー更新）
+    end
+
+    rect rgb(230, 250, 230)
+        Note over ACI,UI: 完了通知
+
+        ACI->>ACI: パッチ生成完了
+        ACI->>Redis: PUBLISH run:abc-123:events
+        Note right of ACI: {"type":"completed","patch":"...","summary":"..."}
+
+        Redis-->>API: Message received
+        API-->>UI: data: {"type":"completed",...}
+
+        UI->>UI: state.status = "completed"
+        UI->>UI: state.patch = event.patch
+        UI->>UI: Re-render（差分ビュー表示）
+        UI->>UI: SSE 接続クローズ
+    end
+```
+
+##### フェーズ 5: UI への結果反映
+
+```mermaid
+sequenceDiagram
+    participant SSE as SSE Client
+    participant UI as React UI
+    participant Store as State Store
+    participant DiffView as Diff Viewer
+
+    SSE->>UI: onmessage: completed event
+
+    UI->>UI: イベントパース
+    UI->>Store: dispatch(runCompleted)
+    Note right of Store: {<br/>  type: "RUN_COMPLETED",<br/>  payload: {<br/>    run_id, status,<br/>    patch, summary,<br/>    files_changed<br/>  }<br/>}
+
+    Store->>Store: reducer で状態更新
+    Note right of Store: state.runs[run_id] = {<br/>  status: "completed",<br/>  patch: "...",<br/>  ...<br/>}
+
+    Store-->>UI: 状態変更通知
+
+    UI->>UI: 条件付きレンダリング
+    UI->>DiffView: patch props 渡し
+
+    DiffView->>DiffView: Unified diff パース
+    DiffView->>DiffView: シンタックスハイライト
+    DiffView-->>UI: 差分表示コンポーネント
+
+    UI->>UI: 完了通知トースト表示
+    UI->>UI: ローディング状態解除
+```
+
+#### 完全なデータフロー図
+
+```mermaid
+flowchart TB
+    subgraph Phase1["フェーズ1: 指示送信"]
+        U1[ユーザー入力] --> V1[バリデーション]
+        V1 --> P1[POST /runs]
+        P1 --> Q1[Queue に追加]
+        Q1 --> R1[202 Accepted]
+    end
+
+    subgraph Phase2["フェーズ2: SSE 接続"]
+        R1 --> SSE1[SSE 接続開始]
+        SSE1 --> SUB1[Redis Subscribe]
+        SUB1 --> WAIT1[イベント待機]
+    end
+
+    subgraph Phase3["フェーズ3: 実行"]
+        Q1 --> DF1[Orchestrator 開始]
+        DF1 --> ACI1[ACI 起動]
+        ACI1 --> CLONE1[リポジトリ準備]
+        CLONE1 --> EXEC1[Agent 実行]
+    end
+
+    subgraph Phase4["フェーズ4: 進捗通知"]
+        EXEC1 --> PUB1[Redis Publish]
+        PUB1 --> WAIT1
+        WAIT1 --> EVT1[SSE Event 送信]
+        EVT1 --> UI1[UI 更新]
+        UI1 --> WAIT1
+    end
+
+    subgraph Phase5["フェーズ5: 完了"]
+        EXEC1 --> DONE1[実行完了]
+        DONE1 --> PATCH1[パッチ生成]
+        PATCH1 --> SAVE1[DB 保存]
+        SAVE1 --> PUB2[完了イベント Publish]
+        PUB2 --> EVT2[SSE 完了通知]
+        EVT2 --> UI2[差分表示]
+        UI2 --> CLOSE1[SSE 切断]
+    end
+```
+
+#### 各層間のデータ構造
+
+```typescript
+// UI → API: 実行リクエスト
+interface CreateRunRequest {
+  instruction: string;
+  model_ids: string[];
+  options?: {
+    enable_review?: boolean;
+    auto_commit?: boolean;
+    timeout_minutes?: number;
+  };
+}
+
+// API → Orchestrator: 実行パラメータ
+interface OrchestratorInput {
+  run_id: string;
+  task_id: string;
+  workspace_path: string;
+  instruction: string;
+  model_id: string;
+  provider: "anthropic" | "openai" | "google";
+  constraints: {
+    forbidden_paths: string[];
+    max_file_size: number;
+  };
+}
+
+// Orchestrator → Agent: 実行コマンド
+interface AgentCommand {
+  workspace_path: string;
+  instruction: string;
+  context?: {
+    files_to_focus?: string[];
+    previous_patches?: string[];
+  };
+}
+
+// Agent → Orchestrator: 実行結果
+interface AgentResult {
+  status: "completed" | "failed" | "timeout";
+  patch: string;           // Unified diff
+  summary: string;         // 人間向けサマリー
+  files_changed: string[]; // 変更ファイル一覧
+  logs: string[];          // 実行ログ
+  warnings: string[];      // 警告
+  execution_time_ms: number;
+}
+
+// Redis Pub/Sub: イベント形式
+type RunEvent =
+  | { type: "status"; status: RunStatus; timestamp: string }
+  | { type: "progress"; message: string; percent?: number; timestamp: string }
+  | { type: "log"; level: "info" | "warn" | "error"; message: string; timestamp: string }
+  | { type: "completed"; status: "completed"; patch: string; summary: string; timestamp: string }
+  | { type: "failed"; status: "failed"; error: string; timestamp: string };
+
+// SSE → UI: イベント（JSON 文字列として送信）
+// data: {"type":"progress","message":"Analyzing...","timestamp":"..."}
+```
+
+#### エラーハンドリングとリカバリー
+
+```mermaid
+sequenceDiagram
+    participant UI as React UI
+    participant SSE as SSE Client
+    participant API as FastAPI
+    participant DF as Durable Functions
+
+    rect rgb(250, 200, 200)
+        Note over UI,DF: SSE 接続断のリカバリー
+
+        SSE->>SSE: 接続断検出
+        SSE->>UI: onerror event
+
+        UI->>UI: 再接続待機（exponential backoff）
+        UI->>SSE: 再接続試行
+
+        SSE->>API: GET /runs/abc-123/stream?last_event_id=evt-100
+        API->>API: last_event_id 以降のイベント取得
+        API-->>SSE: 過去イベント再送 + ストリーム再開
+    end
+
+    rect rgb(250, 230, 200)
+        Note over UI,DF: Agent 実行エラー
+
+        DF->>DF: Agent タイムアウト/エラー
+        DF->>DF: リトライ判定
+
+        alt リトライ可能
+            DF->>DF: 再実行（最大3回）
+        else リトライ不可
+            DF->>API: エラー通知
+            API->>UI: SSE: {"type":"failed","error":"..."}
+            UI->>UI: エラー表示
+        end
+    end
+
+    rect rgb(200, 200, 250)
+        Note over UI,DF: ユーザーによるキャンセル
+
+        UI->>API: POST /runs/abc-123/cancel
+        API->>DF: TerminateAsync
+        DF->>DF: ACI 停止
+        DF->>API: キャンセル完了
+        API->>UI: SSE: {"type":"cancelled"}
+        UI->>UI: キャンセル状態表示
+    end
+```
+
+#### 複数モデル並列実行時のフロー
+
+```mermaid
+flowchart TB
+    subgraph Request["リクエスト"]
+        REQ[POST /runs<br/>model_ids: Claude, GPT-4]
+    end
+
+    subgraph Orchestration["Durable Functions"]
+        ORCH[Orchestrator]
+        FAN_OUT[Fan-out]
+        ACT1[Activity: Claude]
+        ACT2[Activity: GPT-4]
+        FAN_IN[Fan-in]
+    end
+
+    subgraph Execution["並列実行"]
+        ACI1[ACI 1: Claude Code]
+        ACI2[ACI 2: GPT-4]
+    end
+
+    subgraph Events["イベントストリーム"]
+        SSE1[SSE: run-1]
+        SSE2[SSE: run-2]
+    end
+
+    subgraph UI["UI 表示"]
+        PANEL1[Run Panel 1]
+        PANEL2[Run Panel 2]
+    end
+
+    REQ --> ORCH
+    ORCH --> FAN_OUT
+    FAN_OUT --> ACT1
+    FAN_OUT --> ACT2
+    ACT1 --> ACI1
+    ACT2 --> ACI2
+    ACI1 --> FAN_IN
+    ACI2 --> FAN_IN
+
+    ACI1 -.->|進捗| SSE1
+    ACI2 -.->|進捗| SSE2
+    SSE1 --> PANEL1
+    SSE2 --> PANEL2
+```
+
+#### パフォーマンス最適化ポイント
+
+| ポイント | 最適化手法 |
+|---------|----------|
+| **SSE 接続数** | ブラウザタブごとに 1 接続、複数 run は同一接続で多重化 |
+| **イベント頻度** | デバウンス（100ms）、バッチ送信 |
+| **DB 書き込み** | ログは定期バッチ更新（5秒ごと） |
+| **Redis メッセージ** | TTL 設定（1時間）、古いメッセージ自動削除 |
+| **ACI 起動** | ウォームプール（Premium）で起動時間短縮 |
+
 ## 提案する Azure アーキテクチャ
 
 ```mermaid
