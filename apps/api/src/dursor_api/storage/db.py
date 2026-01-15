@@ -115,6 +115,14 @@ class Database:
             await conn.execute("ALTER TABLE user_preferences ADD COLUMN worktrees_dir TEXT")
             await conn.commit()
 
+        # Migration: Add enable_gating_status column if it doesn't exist
+        if "enable_gating_status" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences "
+                "ADD COLUMN enable_gating_status INTEGER DEFAULT 0"
+            )
+            await conn.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""
