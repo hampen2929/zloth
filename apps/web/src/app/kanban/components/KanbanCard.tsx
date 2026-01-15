@@ -183,10 +183,22 @@ export function KanbanCard({
 
       case 'in_progress':
         return (
-          <span className="text-xs text-yellow-400 flex items-center gap-1">
-            <SpinnerIcon className="w-3 h-3" />
-            Running...
-          </span>
+          <div className="flex gap-2">
+            <span className="text-xs text-yellow-400 flex items-center gap-1">
+              <SpinnerIcon className="w-3 h-3" />
+              Running...
+            </span>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onArchive(task.id);
+              }}
+              className="text-xs text-gray-400 hover:text-gray-300 transition-colors"
+            >
+              Archive
+            </button>
+          </div>
         );
 
       case 'in_review':
