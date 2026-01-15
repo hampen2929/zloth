@@ -9,6 +9,7 @@ import {
   EyeIcon,
   CheckCircleIcon,
   ArchiveBoxIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +52,13 @@ const COLUMN_CONFIG: Record<
     bgColor: 'bg-yellow-900/20',
     icon: CogIcon,
     description: 'AI is working on it',
+  },
+  gating: {
+    label: 'Gating',
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-900/20',
+    icon: ClockIcon,
+    description: 'Waiting for CI completion',
   },
   in_review: {
     label: 'In Review',
