@@ -582,11 +582,15 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
             logger.info(f"[{run.id[:8]}] Starting {executor_name} run")
 
+            # Publish initial progress log so frontend can see activity
+            await self._log_output(run.id, f"Starting {executor_name} execution...")
+
             # 0. Sync with remote (pull latest changes from remote branch)
             # This handles the case where the PR branch was updated on GitHub
             # (e.g., via "Update branch" button) and we need to incorporate those changes.
             if self.github_service and repo:
                 try:
+                    await self._log_output(run.id, "Checking for remote updates...")
                     owner, repo_name = self._parse_github_url(repo.repo_url)
                     auth_url = await self.github_service.get_auth_url(owner, repo_name)
 
@@ -667,6 +671,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
             # 3. Execute the CLI (file editing only)
             logger.info(f"[{run.id[:8]}] Executing CLI...")
+            await self._log_output(run.id, f"Launching {executor_name} CLI...")
             attempt_session_id = resume_session_id
             result = await executor.execute(
                 worktree_path=worktree_info.path,

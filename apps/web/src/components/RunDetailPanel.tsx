@@ -441,7 +441,7 @@ export function RunDetailPanel({
             {activeTab === 'logs' ? (
               <StreamingLogs
                 runId={run.id}
-                isRunning={false}
+                isRunning={true}
                 initialLogs={run.logs}
               />
             ) : (
