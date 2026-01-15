@@ -7,6 +7,12 @@ Welcome to the dursor documentation. This guide will help you understand, develo
 ### For Users
 
 - [README](../README.md) - Project overview and quick start guide
+- [Troubleshooting](./troubleshooting.md) - Solutions for common issues
+
+### For Operators
+
+- [Deployment Guide](./deployment.md) - Production deployment instructions
+- [Database Schema](./database.md) - SQLite schema reference
 
 ### For Developers
 
@@ -14,6 +20,7 @@ Welcome to the dursor documentation. This guide will help you understand, develo
 - [API Reference](./api.md) - Complete REST API documentation
 - [Development Guide](./development.md) - Environment setup and development workflow
 - [Agent System](./agents.md) - Agent architecture and LLM integration
+- [Database Schema](./database.md) - Data model and table reference
 
 ### For Contributors
 
