@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from dursor_api.dependencies import get_ci_check_service, get_pr_service
+from dursor_api.domain.enums import PRUpdateMode
 from dursor_api.domain.models import (
     PR,
     CICheck,
@@ -197,22 +198,22 @@ async def list_prs(
 async def regenerate_pr_description(
     task_id: str,
     pr_id: str,
-    update_title: bool = True,
+    mode: PRUpdateMode = PRUpdateMode.BOTH,
     pr_service: PRService = Depends(get_pr_service),
 ) -> PR:
-    """Regenerate PR description from current diff.
+    """Regenerate PR description and/or title from current diff.
 
     This endpoint:
     1. Gets cumulative diff from base branch
     2. Loads pull_request_template if available
-    3. Generates title (optional) and description using LLM
+    3. Generates title and/or description using LLM based on mode
     4. Updates PR via GitHub API
 
     Args:
-        update_title: If True, also regenerate and update the PR title. Defaults to True.
+        mode: What to update - "both", "description", or "title". Defaults to "both".
     """
     try:
-        return await pr_service.regenerate_description(task_id, pr_id, update_title=update_title)
+        return await pr_service.regenerate_description(task_id, pr_id, mode=mode)
     except GitHubPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:

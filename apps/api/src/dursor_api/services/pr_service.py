@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode, urlparse
 
 from dursor_api.config import settings
-from dursor_api.domain.enums import ExecutorType
+from dursor_api.domain.enums import ExecutorType, PRUpdateMode
 from dursor_api.domain.models import (
     PR,
     PRCreate,
@@ -712,7 +712,7 @@ class PRService:
                 # Parse the output
                 title, description = self._parse_title_and_description(result)
                 if title and description:
-                    return title, description
+                    return self._truncate_title(title), description
             logger.warning("Failed to parse title/description, using fallback")
         except Exception as e:
             logger.warning(f"Failed to generate title/description: {e}")
@@ -808,7 +808,7 @@ DO NOT edit any files. Only output the title text.
             if result:
                 title = result.strip().strip("\"'")
                 title = title.split("\n")[0].strip()
-                return title
+                return self._truncate_title(title)
             return self._generate_fallback_title(run)
         except Exception:
             return self._generate_fallback_title(run)
@@ -816,8 +816,26 @@ DO NOT edit any files. Only output the title text.
     def _generate_fallback_title(self, run: Run) -> str:
         """Generate a fallback title from run summary."""
         if run.summary:
-            return run.summary.split("\n")[0]
+            title = run.summary.split("\n")[0]
+            return self._truncate_title(title)
         return "Update code changes"
+
+    def _truncate_title(self, title: str, max_length: int = 50) -> str:
+        """Truncate title to max_length characters.
+
+        If the title exceeds max_length, it truncates and adds '...' suffix.
+
+        Args:
+            title: The title to truncate.
+            max_length: Maximum allowed length (default 50).
+
+        Returns:
+            Truncated title string.
+        """
+        if len(title) <= max_length:
+            return title
+        # Truncate and add ellipsis, ensuring total length is max_length
+        return title[: max_length - 3].rstrip() + "..."
 
     async def _generate_description_for_new_pr(
         self,
@@ -1137,20 +1155,20 @@ IMPORTANT INSTRUCTIONS:
         return updated_pr
 
     async def regenerate_description(
-        self, task_id: str, pr_id: str, *, update_title: bool = True
+        self, task_id: str, pr_id: str, *, mode: PRUpdateMode = PRUpdateMode.BOTH
     ) -> PR:
-        """Regenerate PR description (and optionally title) from current diff.
+        """Regenerate PR description and/or title from current diff.
 
         This method:
         1. Gets cumulative diff from base branch
         2. Loads pull_request_template if available
-        3. Generates title (if update_title=True) and description using LLM
+        3. Generates title and/or description using LLM based on mode
         4. Updates PR via GitHub API
 
         Args:
             task_id: Task ID.
             pr_id: PR ID.
-            update_title: If True, also regenerate and update the PR title.
+            mode: What to update - BOTH, DESCRIPTION, or TITLE.
 
         Returns:
             Updated PR object.
@@ -1199,8 +1217,8 @@ IMPORTANT INSTRUCTIONS:
         # Load pull_request_template
         template = await self._load_pr_template(repo_obj)
 
-        # Generate title and description with LLM
-        if update_title and latest_run:
+        # Generate and update based on mode
+        if mode == PRUpdateMode.BOTH and latest_run:
             # Generate both title and description in one call
             new_title, new_description = await self._generate_title_and_description(
                 diff=cumulative_diff,
@@ -1218,8 +1236,24 @@ IMPORTANT INSTRUCTIONS:
             )
             # Update database
             await self.pr_dao.update_title_and_body(pr_id, new_title, new_description)
+        elif mode == PRUpdateMode.TITLE and latest_run:
+            # Generate title only
+            new_title = await self._generate_title(
+                diff=cumulative_diff,
+                task=task,
+                run=latest_run,
+            )
+            # Update PR via GitHub API (title only)
+            await self.github_service.update_pull_request(
+                owner=owner,
+                repo=repo_name,
+                pr_number=pr.number,
+                title=new_title,
+            )
+            # Update database
+            await self.pr_dao.update_title(pr_id, new_title)
         else:
-            # Generate description only
+            # Generate description only (mode == DESCRIPTION or no latest_run)
             new_description = await self._generate_description(
                 diff=cumulative_diff,
                 template=template,

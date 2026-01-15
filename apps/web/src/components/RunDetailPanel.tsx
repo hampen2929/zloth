@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import { prsApi, preferencesApi } from '@/lib/api';
-import type { Run } from '@/types';
+import type { Run, PRUpdateMode } from '@/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { StreamingLogs } from '@/components/StreamingLogs';
 import { ProgressDisplay } from '@/components/ProgressDisplay';
@@ -29,7 +29,14 @@ import {
   MagnifyingGlassIcon,
   DocumentMagnifyingGlassIcon,
   SparklesIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
+
+const UPDATE_PR_OPTIONS: { id: PRUpdateMode; label: string; description: string }[] = [
+  { id: 'both', label: 'Both', description: 'Update title and description' },
+  { id: 'description', label: 'Description', description: 'Update description only' },
+  { id: 'title', label: 'Title', description: 'Update title only' },
+];
 import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-utils';
 import type { SummaryType } from '@/types';
 import { getErrorDisplay, type ErrorAction } from '@/lib/error-handling';
@@ -75,7 +82,9 @@ export function RunDetailPanel({
   const [prResult, setPRResult] = useState<{ url: string; pr_id?: string } | null>(null);
   const [prResultMode, setPRResultMode] = useState<'created' | 'link' | null>(null);
   const [updatingDesc, setUpdatingDesc] = useState(false);
+  const [isUpdateDropdownOpen, setIsUpdateDropdownOpen] = useState(false);
   const [pendingSyncRunId, setPendingSyncRunId] = useState<string | null>(null);
+  const updateDropdownRef = useRef<HTMLDivElement>(null);
 
   // Update tab when run changes or status changes
   useEffect(() => {
@@ -84,6 +93,18 @@ export function RunDetailPanel({
   const { success, error } = useToast();
 
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (updateDropdownRef.current && !updateDropdownRef.current.contains(event.target as Node)) {
+        setIsUpdateDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // If a PR was created manually (link mode), poll sync until found, then switch to the PR URL.
   useEffect(() => {
@@ -179,16 +200,16 @@ export function RunDetailPanel({
     }
   };
 
-  const handleUpdatePRDesc = async () => {
+  const handleUpdatePRDesc = async (mode: PRUpdateMode = 'both') => {
     if (!prResult?.pr_id) return;
 
     setUpdatingDesc(true);
     try {
-      const updateTitle = preferences?.update_pr_title_on_regenerate ?? true;
-      await prsApi.regenerateDescription(taskId, prResult.pr_id, updateTitle);
-      success('PR description updated successfully!');
+      await prsApi.regenerateDescription(taskId, prResult.pr_id, mode);
+      const modeLabel = mode === 'both' ? 'title and description' : mode;
+      success(`PR ${modeLabel} updated successfully!`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update PR description';
+      const message = err instanceof Error ? err.message : 'Failed to update PR';
       error(message);
     } finally {
       setUpdatingDesc(false);
@@ -313,14 +334,54 @@ export function RunDetailPanel({
                     View PR
                     <ArrowTopRightOnSquareIcon className="w-4 h-4" />
                   </a>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleUpdatePRDesc}
-                    isLoading={updatingDesc}
-                  >
-                    Update PR Desc
-                  </Button>
+                  <div className="relative" ref={updateDropdownRef}>
+                    <div className="flex">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setIsUpdateDropdownOpen(false);
+                          handleUpdatePRDesc('both');
+                        }}
+                        disabled={updatingDesc}
+                        isLoading={updatingDesc}
+                        className="rounded-r-none border-r-0"
+                      >
+                        Update PR
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setIsUpdateDropdownOpen(!isUpdateDropdownOpen)}
+                        disabled={updatingDesc}
+                        className="px-2 rounded-l-none"
+                      >
+                        <ChevronDownIcon className={cn('w-4 h-4 transition-transform', isUpdateDropdownOpen && 'rotate-180')} />
+                      </Button>
+                    </div>
+
+                    {/* Dropdown menu */}
+                    {isUpdateDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1">
+                        <div className="px-3 py-2 border-b border-gray-700">
+                          <p className="text-xs text-gray-400 font-medium">Update PR</p>
+                        </div>
+                        {UPDATE_PR_OPTIONS.map((option) => (
+                          <button
+                            key={option.id}
+                            onClick={() => {
+                              setIsUpdateDropdownOpen(false);
+                              handleUpdatePRDesc(option.id);
+                            }}
+                            className="w-full flex flex-col items-start px-3 py-2 text-sm transition-colors text-gray-300 hover:bg-gray-700"
+                          >
+                            <span className="font-medium">{option.label}</span>
+                            <span className="text-xs text-gray-500">{option.description}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>

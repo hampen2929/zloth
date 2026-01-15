@@ -360,8 +360,8 @@ export const prsApi = {
 
   list: (taskId: string) => fetchApi<PR[]>(`/tasks/${taskId}/prs`),
 
-  regenerateDescription: (taskId: string, prId: string, updateTitle: boolean = true) =>
-    fetchApi<PR>(`/tasks/${taskId}/prs/${prId}/regenerate-description?update_title=${updateTitle}`, {
+  regenerateDescription: (taskId: string, prId: string, mode: 'both' | 'description' | 'title' = 'both') =>
+    fetchApi<PR>(`/tasks/${taskId}/prs/${prId}/regenerate-description?mode=${mode}`, {
       method: 'POST',
     }),
 };

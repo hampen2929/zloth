@@ -9,6 +9,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 export type ExecutorType = 'patch_agent' | 'claude_code' | 'codex_cli' | 'gemini_cli';
 export type PRCreationMode = 'create' | 'link';
 export type CodingMode = 'interactive' | 'semi_auto' | 'full_auto';
+export type PRUpdateMode = 'both' | 'description' | 'title';
 
 // Model Profile
 export interface ModelProfile {
@@ -286,7 +287,6 @@ export interface UserPreferences {
   default_pr_creation_mode: PRCreationMode;
   default_coding_mode: CodingMode;
   auto_generate_pr_description: boolean;
-  update_pr_title_on_regenerate: boolean;
   worktrees_dir: string | null;
 }
 
@@ -298,7 +298,6 @@ export interface UserPreferencesSave {
   default_pr_creation_mode?: PRCreationMode | null;
   default_coding_mode?: CodingMode | null;
   auto_generate_pr_description?: boolean | null;
-  update_pr_title_on_regenerate?: boolean | null;
   worktrees_dir?: string | null;
 }
 
