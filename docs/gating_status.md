@@ -2,7 +2,7 @@
 
 ## 概要
 
-「Gating」ステータスは、PR作成後にCI完了を待機しているタスクを表す新しいKanbanステータスです。このステータスにより、CIパイプラインでブロックされているタスクを追跡できます。
+「Gating」ステータスは、PR作成/更新後にCI完了を待機しているタスクを表す新しいKanbanステータスです。このステータスにより、CIパイプラインでブロックされているタスクを追跡できます。
 
 ## ステータスフロー
 
@@ -11,10 +11,10 @@ stateDiagram-v2
     [*] --> Backlog
     Backlog --> ToDo: 手動移動
     ToDo --> InProgress: Run開始
-    InProgress --> InReview: 全Run完了
+    InProgress --> InReview: 全Run完了 (PRなし)
+    InProgress --> Gating: 全Run完了 (PRあり、CI待機中)
     InReview --> Gating: PR作成 (CI待機中)
     Gating --> InReview: CI完了 (成功/失敗)
-    Gating --> Done: PRマージ
     InReview --> Done: PRマージ
 
     Backlog --> Archived: 手動アーカイブ
@@ -22,6 +22,51 @@ stateDiagram-v2
     InReview --> Archived: 手動アーカイブ
     Archived --> Backlog: アーカイブ解除
 ```
+
+**注意**: Gating → Done への直接遷移はありません。CI完了後は必ず InReview に戻り、そこからマージして Done になります。
+
+## 具体的なシナリオ
+
+### シナリオ1: PRなしでAI実行完了
+
+```
+InProgress → InReview
+```
+
+PRが開いていない状態でAIが実行完了した場合、タスクは InReview に移動します。
+
+### シナリオ2: PR作成後、AI実行完了
+
+```
+InProgress → Gating (CI待機中) → InReview
+```
+
+PRが既に開いている状態でAIが実行完了すると：
+1. 全Runが完了
+2. PRがオープンでCIがpending → **Gating** に移動
+3. 「Check CI」でCI完了を確認 → **InReview** に移動
+
+### シナリオ3: AI実行完了後、PR作成
+
+```
+InProgress → InReview → Gating (CI待機中) → InReview
+```
+
+PRがない状態でAIが実行完了し、その後PRを作成：
+1. 全Runが完了 → **InReview** に移動
+2. PR作成（CIが開始） → **Gating** に移動
+3. 「Check CI」でCI完了を確認 → **InReview** に移動
+
+### シナリオ4: PR更新（追加コミット後）
+
+```
+InReview → InProgress → Gating (CI待機中) → InReview
+```
+
+既存PRに対して追加のAI実行を行った場合：
+1. InReview状態から新しいRunを開始 → **InProgress** に移動
+2. 全Runが完了、PRがオープンでCIがpending → **Gating** に移動
+3. 「Check CI」でCI完了を確認 → **InReview** に移動
 
 ## ステータス計算の優先順位
 
@@ -48,7 +93,7 @@ Gatingステータスは**デフォルトで無効**です。以下から有効�
 
 無効時：
 - Gating列はKanbanボードに表示されない
-- タスクはPRマージ時にIn ReviewからDoneに直接移動
+- タスクはCI状態に関係なく InReview に留まる
 
 ## データベーススキーマ
 
@@ -150,12 +195,23 @@ CIチェックのステータス：
 
 ## ユーザーワークフロー
 
+### 基本フロー
+
 1. Settings > Defaults で「Enable Gating status」を有効化
 2. タスクを作成し、AIエグゼキュータで実行
 3. 完了したRunからPRを作成
 4. タスクは自動的に「Gating」列に移動
 5. 「Check CI」ボタンでCIステータスをポーリング
-6. CI完了時、タスクは「In Review」に移動（マージ済みなら「Done」）
+6. CI完了時、タスクは「In Review」に移動
+7. PRをマージすると「Done」に移動
+
+### PR更新フロー
+
+1. InReview状態のタスクで追加の指示を送信
+2. AIが実行中 → InProgress
+3. 実行完了、PRにコミットがプッシュされる
+4. CIが再実行 → Gating
+5. CI完了 → InReview
 
 ## APIエンドポイント
 
