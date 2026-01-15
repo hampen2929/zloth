@@ -679,17 +679,26 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 on_output=lambda line: self._log_output(run.id, line),
                 resume_session_id=attempt_session_id,
             )
+            # Session error patterns that should trigger a retry without session continuation
+            session_error_patterns = [
+                "already in use",
+                "in use",
+                "no conversation found",
+                "not found",
+                "invalid session",
+                "session expired",
+            ]
+            error_lower = result.error.lower() if result.error else ""
             if (
                 not result.success
                 and attempt_session_id
                 and result.error
-                and ("session" in result.error.lower())
-                and ("already in use" in result.error.lower() or "in use" in result.error.lower())
+                and ("session" in error_lower)
+                and any(pattern in error_lower for pattern in session_error_patterns)
             ):
                 # Retry once without session continuation if the CLI rejects the session.
                 logs.append(
-                    "Session continuation failed (session already in use). "
-                    "Retrying without session_id."
+                    f"Session continuation failed ({result.error}). Retrying without session_id."
                 )
                 result = await executor.execute(
                     worktree_path=worktree_info.path,
