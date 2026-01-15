@@ -300,6 +300,7 @@ class TaskDAO:
         - completed_count: runs with status in (succeeded, failed, canceled)
         - pr_count: total PRs
         - latest_pr_status: most recent PR status
+        - latest_ci_status: most recent CI check status for tasks with open PRs
         """
         query = """
             SELECT
@@ -308,7 +309,9 @@ class TaskDAO:
                 COALESCE(r.running_count, 0) as running_count,
                 COALESCE(r.completed_count, 0) as completed_count,
                 COALESCE(p.pr_count, 0) as pr_count,
-                p.latest_pr_status
+                p.latest_pr_status,
+                p.latest_pr_id,
+                ci.latest_ci_status
             FROM tasks t
             LEFT JOIN (
                 SELECT
@@ -326,10 +329,23 @@ class TaskDAO:
                     task_id,
                     COUNT(*) as pr_count,
                     (SELECT status FROM prs WHERE task_id = p2.task_id
-                        ORDER BY created_at DESC LIMIT 1) as latest_pr_status
+                        ORDER BY created_at DESC LIMIT 1) as latest_pr_status,
+                    (SELECT id FROM prs WHERE task_id = p2.task_id
+                        ORDER BY created_at DESC LIMIT 1) as latest_pr_id
                 FROM prs p2
                 GROUP BY task_id
             ) p ON t.id = p.task_id
+            LEFT JOIN (
+                SELECT
+                    pr_id,
+                    status as latest_ci_status
+                FROM ci_checks c1
+                WHERE c1.created_at = (
+                    SELECT MAX(c2.created_at)
+                    FROM ci_checks c2
+                    WHERE c2.pr_id = c1.pr_id
+                )
+            ) ci ON p.latest_pr_id = ci.pr_id
         """
         params: list[Any] = []
 
@@ -352,6 +368,10 @@ class TaskDAO:
                 if "coding_mode" in row.keys() and row["coding_mode"]
                 else "interactive"
             )
+            # Handle latest_ci_status - may not exist in older DBs
+            latest_ci_status = (
+                row["latest_ci_status"] if "latest_ci_status" in row.keys() else None
+            )
             result.append(
                 {
                     "id": row["id"],
@@ -366,6 +386,7 @@ class TaskDAO:
                     "completed_count": row["completed_count"],
                     "pr_count": row["pr_count"],
                     "latest_pr_status": row["latest_pr_status"],
+                    "latest_ci_status": latest_ci_status,
                 }
             )
         return result
@@ -973,10 +994,12 @@ class UserPreferencesDAO:
         default_coding_mode: str | None = None,
         auto_generate_pr_description: bool | None = None,
         worktrees_dir: str | None = None,
+        enable_gating_status: bool | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
         auto_gen = 1 if auto_generate_pr_description else 0
+        gating_status = 1 if enable_gating_status else 0
 
         # Try to update first
         cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")
@@ -994,6 +1017,7 @@ class UserPreferencesDAO:
                     default_coding_mode = ?,
                     auto_generate_pr_description = ?,
                     worktrees_dir = ?,
+                    enable_gating_status = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
@@ -1006,6 +1030,7 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_gen,
                     worktrees_dir,
+                    gating_status,
                     now,
                 ),
             )
@@ -1022,10 +1047,11 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_generate_pr_description,
                     worktrees_dir,
+                    enable_gating_status,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1036,6 +1062,7 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_gen,
                     worktrees_dir,
+                    gating_status,
                     now,
                     now,
                 ),
@@ -1052,6 +1079,7 @@ class UserPreferencesDAO:
             default_coding_mode=CodingMode(default_coding_mode or "interactive"),
             auto_generate_pr_description=auto_generate_pr_description or False,
             worktrees_dir=worktrees_dir,
+            enable_gating_status=enable_gating_status or False,
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -1078,6 +1106,11 @@ class UserPreferencesDAO:
                 else False
             ),
             worktrees_dir=(row["worktrees_dir"] if "worktrees_dir" in row.keys() else None),
+            enable_gating_status=bool(
+                row["enable_gating_status"]
+                if "enable_gating_status" in row.keys()
+                else False
+            ),
         )
 
 

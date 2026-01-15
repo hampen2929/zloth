@@ -1,10 +1,15 @@
 """Pull Request routes."""
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import get_ci_check_service, get_pr_service
+from dursor_api.dependencies import (
+    get_ci_check_service,
+    get_pr_service,
+    get_user_preferences_dao,
+)
 from dursor_api.domain.enums import PRUpdateMode
 from dursor_api.domain.models import (
     PR,
@@ -23,8 +28,30 @@ from dursor_api.domain.models import (
 )
 from dursor_api.services.ci_check_service import CICheckService
 from dursor_api.services.pr_service import GitHubPermissionError, PRService
+from dursor_api.storage.dao import UserPreferencesDAO
 
 logger = logging.getLogger(__name__)
+
+
+async def _trigger_ci_check_if_gating_enabled(
+    task_id: str,
+    pr_id: str,
+    ci_check_service: CICheckService,
+    user_preferences_dao: UserPreferencesDAO,
+) -> None:
+    """Trigger CI check in background if gating status is enabled.
+
+    This is called after PR creation/update to automatically start CI status tracking.
+    Runs in background to avoid blocking the response.
+    """
+    try:
+        preferences = await user_preferences_dao.get()
+        if preferences and preferences.enable_gating_status:
+            logger.info(f"Triggering CI check for PR {pr_id} (gating enabled)")
+            await ci_check_service.check_ci(task_id, pr_id)
+    except Exception as e:
+        # Log but don't fail - CI check is best effort
+        logger.warning(f"Failed to trigger CI check for PR {pr_id}: {e}")
 
 router = APIRouter(tags=["prs"])
 
@@ -34,10 +61,18 @@ async def create_pr(
     task_id: str,
     data: PRCreate,
     pr_service: PRService = Depends(get_pr_service),
+    ci_check_service: CICheckService = Depends(get_ci_check_service),
+    user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
 ) -> PRCreated:
     """Create a Pull Request from a run."""
     try:
         pr = await pr_service.create(task_id, data)
+        # Trigger CI check in background if gating is enabled
+        asyncio.create_task(
+            _trigger_ci_check_if_gating_enabled(
+                task_id, pr.id, ci_check_service, user_preferences_dao
+            )
+        )
         return PRCreated(
             pr_id=pr.id,
             url=pr.url,
@@ -55,6 +90,8 @@ async def create_pr_auto(
     task_id: str,
     data: PRCreateAuto,
     pr_service: PRService = Depends(get_pr_service),
+    ci_check_service: CICheckService = Depends(get_ci_check_service),
+    user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
 ) -> PRCreated:
     """Create a Pull Request with AI-generated title and description.
 
@@ -63,6 +100,12 @@ async def create_pr_auto(
     """
     try:
         pr = await pr_service.create_auto(task_id, data)
+        # Trigger CI check in background if gating is enabled
+        asyncio.create_task(
+            _trigger_ci_check_if_gating_enabled(
+                task_id, pr.id, ci_check_service, user_preferences_dao
+            )
+        )
         return PRCreated(
             pr_id=pr.id,
             url=pr.url,
@@ -142,10 +185,20 @@ async def sync_manual_pr(
     task_id: str,
     data: PRSyncRequest,
     pr_service: PRService = Depends(get_pr_service),
+    ci_check_service: CICheckService = Depends(get_ci_check_service),
+    user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
 ) -> PRSyncResult:
     """Sync a manually created PR (created via the GitHub compare UI)."""
     try:
-        return await pr_service.sync_manual_pr(task_id, data.selected_run_id)
+        result = await pr_service.sync_manual_pr(task_id, data.selected_run_id)
+        # Trigger CI check in background if gating is enabled and PR was found
+        if result.found and result.pr:
+            asyncio.create_task(
+                _trigger_ci_check_if_gating_enabled(
+                    task_id, result.pr.pr_id, ci_check_service, user_preferences_dao
+                )
+            )
+        return result
     except GitHubPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
@@ -158,10 +211,18 @@ async def update_pr(
     pr_id: str,
     data: PRUpdate,
     pr_service: PRService = Depends(get_pr_service),
+    ci_check_service: CICheckService = Depends(get_ci_check_service),
+    user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
 ) -> PRUpdated:
     """Update a Pull Request with a new run."""
     try:
         pr = await pr_service.update(task_id, pr_id, data)
+        # Trigger CI check in background if gating is enabled
+        asyncio.create_task(
+            _trigger_ci_check_if_gating_enabled(
+                task_id, pr_id, ci_check_service, user_preferences_dao
+            )
+        )
         return PRUpdated(
             url=pr.url,
             latest_commit=pr.latest_commit,

@@ -523,6 +523,7 @@ export function DefaultsTab() {
   const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
+  const [enableGatingStatus, setEnableGatingStatus] = useState<boolean>(false);
   const [worktreesDir, setWorktreesDir] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -551,6 +552,7 @@ export function DefaultsTab() {
       setPrCreationMode(preferences.default_pr_creation_mode || 'link');
       setCodingMode(preferences.default_coding_mode || 'interactive');
       setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
+      setEnableGatingStatus(preferences.enable_gating_status || false);
       setWorktreesDir(preferences.worktrees_dir || '');
     }
   }, [preferences]);
@@ -622,6 +624,7 @@ export function DefaultsTab() {
         default_pr_creation_mode: prCreationMode,
         default_coding_mode: codingMode,
         auto_generate_pr_description: autoGeneratePrDescription,
+        enable_gating_status: enableGatingStatus,
         worktrees_dir: worktreesDir.trim() ? worktreesDir.trim() : null,
       });
       mutate('preferences');
@@ -644,6 +647,7 @@ export function DefaultsTab() {
         default_pr_creation_mode: null,
         default_coding_mode: null,
         auto_generate_pr_description: false,
+        enable_gating_status: false,
         worktrees_dir: null,
       });
       setSelectedRepo('');
@@ -653,6 +657,7 @@ export function DefaultsTab() {
       setPrCreationMode('create');
       setCodingMode('interactive');
       setAutoGeneratePrDescription(false);
+      setEnableGatingStatus(false);
       setWorktreesDir('');
       mutate('preferences');
       success('Default settings cleared');
@@ -832,6 +837,28 @@ export function DefaultsTab() {
           <p className="text-xs text-gray-500 ml-7">
             If enabled, AI will generate the PR description when creating a PR (slower).
             If disabled, a simple description is used and you can generate it later with &ldquo;Update PR&rdquo;.
+          </p>
+        </div>
+
+        {/* Enable Gating status */}
+        <div className="space-y-1">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enableGatingStatus}
+              onChange={(e) => setEnableGatingStatus(e.target.checked)}
+              className={cn(
+                'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+              )}
+            />
+            <span className="text-sm font-medium text-gray-300">
+              Enable Gating status
+            </span>
+          </label>
+          <p className="text-xs text-gray-500 ml-7">
+            If enabled, tasks with open PRs waiting for CI completion will show in a &ldquo;Gating&rdquo; column on the Kanban board.
+            Use &ldquo;Check CI&rdquo; to verify CI status and move tasks out of Gating.
           </p>
         </div>
 

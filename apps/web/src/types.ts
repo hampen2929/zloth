@@ -288,6 +288,7 @@ export interface UserPreferences {
   default_coding_mode: CodingMode;
   auto_generate_pr_description: boolean;
   worktrees_dir: string | null;
+  enable_gating_status: boolean;
 }
 
 export interface UserPreferencesSave {
@@ -299,6 +300,7 @@ export interface UserPreferencesSave {
   default_coding_mode?: CodingMode | null;
   auto_generate_pr_description?: boolean | null;
   worktrees_dir?: string | null;
+  enable_gating_status?: boolean | null;
 }
 
 // Task Breakdown
@@ -367,6 +369,7 @@ export type TaskKanbanStatus =
   | 'todo'
   | 'in_progress'
   | 'in_review'
+  | 'gating'
   | 'done'
   | 'archived';
 
