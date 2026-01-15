@@ -17,6 +17,489 @@ dursor は現在、SQLite による永続化とインメモリ状態管理を持
 | バックグラウンドジョブ | asyncio Tasks | 永続化なし、フェイルオーバー不可 |
 | 認証 | なし | マルチテナント非対応 |
 
+## 技術選定: Azure マネージドサービス比較
+
+dursor のクラウド移行にあたり、フロントエンド層、API 層、オーケストレーション層それぞれで利用可能な Azure マネージドサービスを包括的に比較します。
+
+### フロントエンド層の技術選定
+
+Next.js アプリケーション（apps/web）をホスティングするサービスの比較です。
+
+```mermaid
+flowchart LR
+    subgraph Options["フロントエンド層の選択肢"]
+        SWA[Azure Static Web Apps]
+        ACA[Azure Container Apps]
+        AppService[Azure App Service]
+        AKS[Azure Kubernetes Service]
+    end
+
+    subgraph Criteria["評価基準"]
+        SSR[SSR サポート]
+        Cost[コスト]
+        Scale[スケーラビリティ]
+        DX[開発者体験]
+    end
+```
+
+#### 比較表: フロントエンド層
+
+| 観点 | Static Web Apps | Container Apps | App Service | AKS |
+|-----|-----------------|----------------|-------------|-----|
+| **Next.js SSR** | ○ ハイブリッド対応 | ◎ フルサポート | ◎ フルサポート | ◎ フルサポート |
+| **デプロイ容易性** | ◎ GitHub 連携自動 | ○ コンテナビルド必要 | ○ 複数方式対応 | △ Helm/kubectl |
+| **コールドスタート** | あり | 設定で回避可 | なし（Always On） | なし |
+| **カスタムドメイン** | ◎ 無料 SSL | ◎ 無料 SSL | ○ 有料プランで対応 | ○ Ingress 設定 |
+| **月額コスト（目安）** | 無料〜¥1,500 | ¥3,000〜 | ¥1,500〜¥15,000 | ¥15,000〜 |
+| **スケーリング** | 自動 | KEDA 対応 | 手動/自動 | HPA/VPA |
+| **リージョン配置** | グローバルエッジ | 単一リージョン | 単一リージョン | 単一リージョン |
+| **運用負荷** | ◎ 最小 | ○ 低 | ○ 中 | △ 高 |
+| **API 統合** | Functions 連携 | 同一環境内通信 | 同一 App Service Plan | Service mesh |
+
+#### 各サービスの詳細評価
+
+**Azure Static Web Apps**
+```
+メリット:
+- 無料プランあり（個人/小規模向け）
+- GitHub Actions との自動連携
+- グローバル CDN 配信
+- API として Azure Functions を統合可能
+- カスタムドメイン + SSL 無料
+
+デメリット:
+- SSR の制限（一部機能非対応の可能性）
+- ビルド時間制限あり
+- 高度なサーバーサイド処理に不向き
+```
+
+**Azure Container Apps**
+```
+メリット:
+- Next.js standalone モードのフルサポート
+- API と同一環境で運用可能
+- Dapr によるサービス間通信
+- scale-to-zero でコスト最適化
+
+デメリット:
+- コンテナビルドが必要
+- Static Web Apps より高コスト
+- CDN は別途 Front Door が必要
+```
+
+**Azure App Service**
+```
+メリット:
+- 成熟したプラットフォーム
+- デプロイスロットによる Blue-Green デプロイ
+- Always On でコールドスタートなし
+- VNet 統合が容易
+
+デメリット:
+- コンテナ対応は制限あり
+- スケーリングが Container Apps より柔軟性低
+- 最小コストが高め
+```
+
+**Azure Kubernetes Service (AKS)**
+```
+メリット:
+- 最大の柔軟性
+- マルチクラウド対応（ポータビリティ）
+- 高度なトラフィック制御
+
+デメリット:
+- 運用負荷が最も高い
+- 小規模には過剰
+- 学習コストが高い
+```
+
+#### フロントエンド層の推奨
+
+| シナリオ | 推奨サービス | 理由 |
+|---------|------------|------|
+| **コスト最優先** | Static Web Apps | 無料プランあり、自動デプロイ |
+| **フル機能 SSR** | Container Apps | Next.js の全機能対応、API と統合 |
+| **エンタープライズ** | App Service | SLA 99.95%、デプロイスロット |
+| **マルチクラウド** | AKS | Kubernetes 標準、ベンダー非依存 |
+
+**dursor での推奨: Container Apps**
+
+理由:
+1. API 層と同一環境でシンプルな構成
+2. Next.js standalone のフルサポート
+3. 将来的なスケーリング対応
+4. コスト効率（scale-to-zero）
+
+---
+
+### API 層の技術選定
+
+FastAPI アプリケーション（apps/api）をホスティングするサービスの比較です。
+
+```mermaid
+flowchart LR
+    subgraph Options["API 層の選択肢"]
+        ACA[Azure Container Apps]
+        AppService[Azure App Service]
+        Functions[Azure Functions]
+        AKS[Azure Kubernetes Service]
+        APIM[API Management]
+    end
+
+    subgraph Requirements["dursor の要件"]
+        FastAPI[FastAPI/Python 3.13]
+        SSE[SSE ストリーミング]
+        WebSocket[WebSocket]
+        LongConn[長時間接続]
+    end
+```
+
+#### 比較表: API 層
+
+| 観点 | Container Apps | App Service | Functions | AKS |
+|-----|----------------|-------------|-----------|-----|
+| **FastAPI 対応** | ◎ ネイティブ | ◎ ネイティブ | △ カスタムハンドラー | ◎ ネイティブ |
+| **Python 3.13** | ◎ コンテナで自由 | ○ プレビュー対応 | △ 3.11 まで | ◎ コンテナで自由 |
+| **SSE サポート** | ◎ 対応 | ◎ 対応 | △ 制限あり | ◎ 対応 |
+| **WebSocket** | ◎ 対応 | ◎ 対応 | × 非対応 | ◎ 対応 |
+| **リクエストタイムアウト** | 最大 4 分（延長可） | 230 秒 | 10 分（Premium） | 無制限 |
+| **スケーリング** | ◎ KEDA | ○ 自動/手動 | ◎ イベント駆動 | ◎ HPA |
+| **VNet 統合** | ◎ 標準 | ○ Premium で対応 | ○ Premium で対応 | ◎ 標準 |
+| **月額コスト（目安）** | ¥5,000〜 | ¥8,000〜 | 実行時間課金 | ¥20,000〜 |
+| **コンテナサポート** | ◎ ネイティブ | ○ Linux のみ | △ カスタムコンテナ | ◎ ネイティブ |
+| **デバッグ容易性** | ○ ログストリーム | ◎ 豊富なツール | ○ ローカルデバッグ | △ 複雑 |
+
+#### 各サービスの詳細評価
+
+**Azure Container Apps**
+```
+メリット:
+- Kubernetes ベースだが運用が簡単
+- KEDA による柔軟なスケーリング
+- Dapr 統合でサービス間通信が容易
+- scale-to-zero 対応
+- リビジョン管理による Blue-Green デプロイ
+
+デメリット:
+- App Service より新しく、一部機能が発展途上
+- 診断ツールが App Service ほど充実していない
+- Windows コンテナ非対応
+```
+
+**Azure App Service**
+```
+メリット:
+- 最も成熟したPaaS
+- 豊富な診断・監視ツール
+- デプロイスロット（ステージング環境）
+- 自動パッチ適用
+- SLA 99.95%
+
+デメリット:
+- スケーリングの柔軟性が低い
+- scale-to-zero 非対応（コスト効率悪い）
+- コンテナサポートが Container Apps より限定的
+```
+
+**Azure Functions**
+```
+メリット:
+- サーバーレスで運用負荷最小
+- 実行時間課金でコスト効率
+- イベント駆動アーキテクチャに最適
+- Durable Functions との統合
+
+デメリット:
+- FastAPI との親和性が低い（カスタムハンドラー必要）
+- WebSocket 非対応
+- コールドスタート問題
+- ステートフルな処理に不向き
+```
+
+**Azure Kubernetes Service (AKS)**
+```
+メリット:
+- 最大の柔軟性と制御
+- 複雑なマイクロサービスに対応
+- Istio 等のサービスメッシュ
+- マルチクラウドポータビリティ
+
+デメリット:
+- 運用負荷が最も高い
+- 学習コストが高い
+- 小〜中規模には過剰
+```
+
+#### API 層の推奨
+
+| シナリオ | 推奨サービス | 理由 |
+|---------|------------|------|
+| **バランス重視** | Container Apps | FastAPI フルサポート、運用負荷低 |
+| **安定性重視** | App Service | 成熟したプラットフォーム、豊富なツール |
+| **コスト最優先** | Functions | 実行時間課金（ただし制限あり） |
+| **大規模/複雑** | AKS | 最大の柔軟性、マイクロサービス |
+
+**dursor での推奨: Container Apps**
+
+理由:
+1. FastAPI + Python 3.13 のネイティブサポート
+2. SSE/WebSocket 対応（長時間エージェント実行の進捗通知）
+3. KEDA による負荷連動スケーリング
+4. フロントエンドと同一環境で構成がシンプル
+5. Dapr でサービス間通信が容易
+
+---
+
+### オーケストレーション層の技術選定
+
+長時間実行タスク（Claude Code/Codex: 5〜30 分）を管理するサービスの比較です。
+
+```mermaid
+flowchart LR
+    subgraph Options["オーケストレーション層の選択肢"]
+        DF[Durable Functions]
+        Celery[Container Apps + Celery]
+        LogicApps[Logic Apps]
+        Batch[Azure Batch]
+        ACI[Container Instances]
+        DataFactory[Data Factory]
+    end
+
+    subgraph Requirements["dursor の要件"]
+        LongRun[長時間実行 5-30分]
+        Parallel[並列実行]
+        State[状態管理]
+        Retry[リトライ]
+    end
+```
+
+#### 比較表: オーケストレーション層
+
+| 観点 | Durable Functions | Container Apps + Celery | Logic Apps | Azure Batch | ACI Direct |
+|-----|-------------------|------------------------|------------|-------------|------------|
+| **長時間実行** | Premium で無制限 | ◎ 無制限 | ○ 90日まで | ◎ 無制限 | ◎ 無制限 |
+| **状態管理** | ◎ 自動永続化 | △ 自前実装 | ◎ 自動 | △ 自前実装 | × なし |
+| **チェックポイント** | ◎ 組み込み | △ 自前実装 | ○ ワークフロー | × なし | × なし |
+| **Fan-out/Fan-in** | ◎ 組み込み | ○ Celery group | ◎ 並列分岐 | ◎ タスク並列 | △ 手動管理 |
+| **コンテナ実行** | △ カスタム必要 | ◎ ネイティブ | △ コネクタ経由 | ◎ ネイティブ | ◎ ネイティブ |
+| **コスト（低負荷）** | ◎ 実行時間課金 | △ 常時起動コスト | ○ 実行回数課金 | ○ VM時間課金 | ◎ 秒単位課金 |
+| **コスト（高負荷）** | △ 高額になりやすい | ○ 予測しやすい | △ 高額になりやすい | ◎ バッチ最適化 | ○ 予測しやすい |
+| **リトライ機能** | ◎ 宣言的設定 | ○ Celery 設定 | ◎ 組み込み | ○ タスク設定 | × なし |
+| **監視/可視化** | ◎ Durable Monitor | ○ Flower/カスタム | ◎ デザイナー | ○ Batch Explorer | △ 手動 |
+| **学習コスト** | 中〜高 | 低〜中 | 低 | 中 | 低 |
+| **ベンダーロックイン** | 高 | 低 | 高 | 中 | 低 |
+
+#### 各サービスの詳細評価
+
+**Azure Durable Functions**
+```
+メリット:
+- オーケストレーションパターンの組み込みサポート
+  - Fan-out/Fan-in（並列実行→集約）
+  - Human Interaction（承認待ち）
+  - Monitor（ポーリング）
+  - Async HTTP API
+- 自動チェックポイントとリプレイ
+- Azure Storage による状態永続化
+- 進捗クエリ API が標準提供
+
+デメリット:
+- Consumption プラン: 10分制限（Premium 必須）
+- コンテナ実行にはカスタムハンドラーが必要
+- コールドスタート問題（Premium で軽減）
+- Azure 固有（ベンダーロックイン）
+
+コスト例（Premium プラン）:
+- 最小インスタンス: ¥15,000/月〜
+- 実行時間: ¥0.000016/GB-秒
+```
+
+**Container Apps + Celery**
+```
+メリット:
+- 標準的なアーキテクチャ（ポータビリティ）
+- コンテナネイティブで CLI 実行が容易
+- Redis/RabbitMQ など選択可能
+- 実行時間制限なし
+- コスト予測しやすい
+
+デメリット:
+- 状態管理を自前実装
+- Redis/Celery の運用が必要
+- 最小レプリカ分のコストが常時発生
+
+コスト例:
+- Worker (min 1): ¥8,000/月〜
+- Redis (Basic): ¥3,000/月〜
+```
+
+**Azure Logic Apps**
+```
+メリット:
+- ローコード/ノーコードでワークフロー構築
+- 400+ のコネクタ（外部サービス連携）
+- 視覚的なデザイナー
+- Standard プランは VNet 統合可能
+
+デメリット:
+- プログラマティックな処理に不向き
+- コンテナ実行が間接的
+- 複雑なロジックは Expression で記述（可読性低）
+- 高頻度実行でコスト増大
+
+コスト例:
+- アクション実行: ¥0.0025/回〜
+- 高頻度: 月数万円になる可能性
+```
+
+**Azure Batch**
+```
+メリット:
+- 大規模バッチ処理に最適化
+- 低優先度 VM でコスト削減
+- タスク依存関係の管理
+- ジョブスケジューリング
+
+デメリット:
+- インタラクティブな処理に不向き
+- VM プロビジョニングに時間がかかる
+- リアルタイム性が低い
+
+コスト例:
+- VM 時間（D2s_v3）: ¥10/時間〜
+- 低優先度: 最大 80% 割引
+```
+
+**Azure Container Instances (ACI) Direct**
+```
+メリット:
+- 最もシンプルなコンテナ実行
+- 秒単位課金
+- 起動が高速（数秒）
+- GPU 対応
+
+デメリット:
+- オーケストレーション機能なし
+- 状態管理は完全に自前
+- リトライ機能なし
+
+コスト例:
+- vCPU: ¥0.0015/秒
+- メモリ: ¥0.00017/GB-秒
+- 30分実行: 約¥3
+```
+
+#### オーケストレーションパターン比較
+
+```mermaid
+flowchart TB
+    subgraph Patterns["オーケストレーションパターン"]
+        subgraph DurableFn["Durable Functions"]
+            DF_Orch[Orchestrator]
+            DF_Act1[Activity 1]
+            DF_Act2[Activity 2]
+            DF_Act3[Activity 3]
+            DF_Orch --> DF_Act1
+            DF_Orch --> DF_Act2
+            DF_Orch --> DF_Act3
+        end
+
+        subgraph CeleryPattern["Celery"]
+            C_API[API]
+            C_Broker[(Redis Broker)]
+            C_W1[Worker 1]
+            C_W2[Worker 2]
+            C_API --> C_Broker
+            C_Broker --> C_W1
+            C_Broker --> C_W2
+        end
+
+        subgraph ACIPattern["ACI + Custom"]
+            ACI_API[API]
+            ACI_1[ACI 1]
+            ACI_2[ACI 2]
+            ACI_Queue[(Queue Storage)]
+            ACI_API --> ACI_Queue
+            ACI_Queue --> ACI_1
+            ACI_Queue --> ACI_2
+        end
+    end
+```
+
+#### オーケストレーション層の推奨
+
+| シナリオ | 推奨サービス | 理由 |
+|---------|------------|------|
+| **信頼性最優先** | Durable Functions | 自動状態管理、チェックポイント |
+| **シンプルさ重視** | Container Apps + Celery | 標準的、学習コスト低 |
+| **コスト最優先** | ACI Direct | 秒単位課金、実行時のみ |
+| **ローコード** | Logic Apps | ビジュアルデザイナー |
+| **大規模バッチ** | Azure Batch | バッチ処理最適化 |
+
+**dursor での推奨: シナリオ別**
+
+| dursor のユースケース | 推奨 |
+|---------------------|------|
+| **MVP/初期段階** | Container Apps + Celery |
+| **本番運用（中規模）** | Durable Functions + ACI |
+| **本番運用（大規模）** | Durable Functions + Azure Batch |
+
+---
+
+### 総合推奨アーキテクチャ
+
+各層の選定結果を踏まえた推奨構成です。
+
+```mermaid
+flowchart TB
+    subgraph Recommended["推奨構成"]
+        subgraph Simple["シンプル構成"]
+            S_Web[Container Apps<br/>Next.js]
+            S_API[Container Apps<br/>FastAPI]
+            S_Worker[Container Apps<br/>Celery Worker]
+            S_Redis[(Redis)]
+
+            S_Web --> S_API
+            S_API --> S_Redis
+            S_Redis --> S_Worker
+        end
+
+        subgraph Enterprise["エンタープライズ構成"]
+            E_Web[Container Apps<br/>Next.js]
+            E_API[Container Apps<br/>FastAPI]
+            E_DF[Durable Functions<br/>Orchestrator]
+            E_ACI[Container Instances<br/>Agent Execution]
+
+            E_Web --> E_API
+            E_API --> E_DF
+            E_DF --> E_ACI
+        end
+    end
+```
+
+#### 構成別コスト比較（月額目安）
+
+| 構成 | フロントエンド | API | オーケストレーション | 合計（開発） | 合計（本番） |
+|-----|--------------|-----|-------------------|------------|------------|
+| **シンプル** | Container Apps ¥3,000 | Container Apps ¥5,000 | Celery + Redis ¥11,000 | ¥19,000 | ¥80,000 |
+| **エンタープライズ** | Container Apps ¥3,000 | Container Apps ¥5,000 | Durable Functions ¥15,000 | ¥23,000 | ¥120,000 |
+| **最小コスト** | Static Web Apps ¥0 | Functions ¥1,000 | ACI Direct ¥2,000 | ¥3,000 | ¥30,000 |
+
+#### 最終推奨
+
+| 層 | 推奨サービス | 代替案 |
+|----|------------|--------|
+| **フロントエンド** | Azure Container Apps | Static Web Apps（コスト重視） |
+| **API** | Azure Container Apps | App Service（安定性重視） |
+| **オーケストレーション** | Durable Functions + ACI | Celery（シンプルさ重視） |
+
+**選定理由サマリー:**
+
+1. **Container Apps をベースに統一**: 運用の一貫性、Dapr によるサービス間通信
+2. **Durable Functions でオーケストレーション**: 状態管理・リトライの組み込みサポート
+3. **ACI でエージェント実行**: 分離環境、秒単位課金、長時間実行対応
+
 ## 提案する Azure アーキテクチャ
 
 ```mermaid
