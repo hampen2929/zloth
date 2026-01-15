@@ -18,6 +18,7 @@ const COLUMN_ORDER: TaskKanbanStatus[] = [
   'todo',
   'in_progress',
   'in_review',
+  'gating',
   'done',
   'archived',
 ];
