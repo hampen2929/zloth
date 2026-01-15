@@ -150,6 +150,216 @@ flowchart LR
 | Web | 2 | 5 | 0.25 | 512Mi | HTTP リクエスト |
 | Worker | 1 | 20 | 1.0 | 2Gi | Redis キュー長 |
 
+#### コンピュート選択: Container Apps vs Durable Functions
+
+長時間実行タスク（Claude Code/Codex の 5〜30 分実行）を扱うにあたり、Azure Durable Functions も有力な候補です。以下で比較検討します。
+
+**アーキテクチャ比較:**
+
+```mermaid
+flowchart TB
+    subgraph ContainerAppsArch["Container Apps アーキテクチャ"]
+        CA_API[API Container]
+        CA_Worker[Worker Container]
+        CA_Redis[(Redis)]
+        CA_Celery[Celery]
+
+        CA_API --> CA_Redis
+        CA_Redis --> CA_Celery
+        CA_Celery --> CA_Worker
+    end
+
+    subgraph DurableFunctionsArch["Durable Functions アーキテクチャ"]
+        DF_HTTP[HTTP Trigger]
+        DF_Orchestrator[Orchestrator Function]
+        DF_Activity[Activity Function]
+        DF_Storage[(Azure Storage)]
+
+        DF_HTTP --> DF_Orchestrator
+        DF_Orchestrator --> DF_Storage
+        DF_Storage --> DF_Activity
+    end
+```
+
+**詳細比較:**
+
+| 観点 | Container Apps + Celery | Durable Functions |
+|-----|------------------------|-------------------|
+| **実行時間制限** | 無制限（Worker は常時起動） | Consumption: 10分 / Premium: 無制限 |
+| **状態管理** | Redis + PostgreSQL で自前実装 | Azure Storage に自動永続化 |
+| **チェックポイント** | 自前実装が必要 | 組み込み（自動リプレイ） |
+| **リトライ/エラー処理** | Celery で設定 | 宣言的に設定可能 |
+| **スケーリング** | KEDA ベース | 自動（イベント駆動） |
+| **コールドスタート** | minReplicas > 0 で回避 | Premium プランで回避 |
+| **CLI 実行** | ネイティブサポート | カスタムコンテナが必要 |
+| **デバッグ容易性** | コンテナログ | Durable Functions Monitor |
+| **コスト（低負荷時）** | 最小レプリカ分のコスト | Consumption は実行時間課金 |
+| **コスト（高負荷時）** | 予測しやすい | スパイクで高額になる可能性 |
+| **学習コスト** | 低（標準的なアーキテクチャ） | 中〜高（独自の概念） |
+
+**Durable Functions の利点:**
+
+1. **組み込みの状態管理**: オーケストレーター関数の状態は自動的に Azure Storage に永続化
+2. **チェックポイント/リプレイ**: 長時間実行中に障害が発生しても自動復旧
+3. **Fan-out/Fan-in パターン**: 複数モデル並列実行が宣言的に記述可能
+4. **Human Interaction パターン**: 承認待ちなどのワークフローが組み込み
+5. **インフラ管理の削減**: Redis/Celery のセットアップ不要
+
+**Durable Functions の課題:**
+
+1. **実行時間制限**: Consumption プランは 10 分制限（Premium 必須）
+2. **コンテナ実行**: Claude Code CLI の実行にはカスタムコンテナが必要
+3. **コールドスタート**: Premium でも初回起動に時間がかかる
+4. **ベンダーロックイン**: Azure 固有の実装
+
+**Durable Functions アーキテクチャ案:**
+
+```mermaid
+sequenceDiagram
+    participant Client as クライアント
+    participant HTTP as HTTP Trigger
+    participant Orch as Orchestrator
+    participant Activity as Activity Function
+    participant CLI as Claude Code CLI
+    participant Storage as Azure Storage
+
+    Client->>HTTP: POST /api/runs
+    HTTP->>Orch: StartNewAsync
+    HTTP-->>Client: 202 Accepted + instanceId
+
+    Orch->>Storage: 状態保存
+    Orch->>Activity: CallActivityAsync ExecuteAgent
+
+    Activity->>CLI: claude --print ...
+
+    Note over Activity,CLI: 長時間実行 5-30分
+
+    CLI-->>Activity: 結果
+    Activity-->>Orch: AgentResult
+    Orch->>Storage: 状態更新
+
+    Client->>HTTP: GET /api/runs/instanceId/status
+    HTTP->>Storage: 状態取得
+    HTTP-->>Client: 進捗/完了状態
+```
+
+**Durable Functions 実装例:**
+
+```python
+# function_app.py
+import azure.functions as func
+import azure.durable_functions as df
+
+app = func.FunctionApp()
+
+# HTTP Trigger - タスク開始
+@app.route(route="runs", methods=["POST"])
+@app.durable_client_input(client_name="client")
+async def start_run(req: func.HttpRequest, client: df.DurableOrchestrationClient):
+    payload = req.get_json()
+    instance_id = await client.start_new("agent_orchestrator", client_input=payload)
+    return client.create_check_status_response(req, instance_id)
+
+# Orchestrator - ワークフロー制御
+@app.orchestration_trigger(context_name="context")
+def agent_orchestrator(context: df.DurableOrchestrationContext):
+    payload = context.get_input()
+
+    # エージェント実行（長時間）
+    result = yield context.call_activity("execute_agent", payload)
+
+    # レビュー実行（オプション）
+    if payload.get("enable_review"):
+        review = yield context.call_activity("execute_review", result)
+        result["review"] = review
+
+    return result
+
+# Activity - 実際の処理
+@app.activity_trigger(input_name="payload")
+async def execute_agent(payload: dict) -> dict:
+    # Claude Code CLI 実行
+    workspace_path = payload["workspace_path"]
+    instruction = payload["instruction"]
+
+    process = await asyncio.create_subprocess_exec(
+        "claude", "--print", "--output-format", "json",
+        "-p", instruction,
+        cwd=workspace_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+
+    return {
+        "status": "completed",
+        "patch": parse_result(stdout),
+    }
+```
+
+**推奨: ハイブリッドアーキテクチャ**
+
+dursor のユースケースでは、以下のハイブリッドアーキテクチャを推奨します：
+
+```mermaid
+flowchart TB
+    subgraph Recommended["推奨アーキテクチャ"]
+        subgraph Frontend["フロントエンド層"]
+            Web[Next.js on Container Apps]
+        end
+
+        subgraph API["API 層"]
+            FastAPI[FastAPI on Container Apps]
+        end
+
+        subgraph Orchestration["オーケストレーション層"]
+            DF[Durable Functions Premium]
+        end
+
+        subgraph Execution["実行層"]
+            ACI1[Azure Container Instances]
+            ACI2[Azure Container Instances]
+        end
+
+        subgraph Data["データ層"]
+            PostgreSQL[(PostgreSQL)]
+            Storage[(Azure Storage)]
+        end
+    end
+
+    Web --> FastAPI
+    FastAPI --> DF
+    DF --> ACI1
+    DF --> ACI2
+    DF --> Storage
+    FastAPI --> PostgreSQL
+```
+
+**ハイブリッドの利点:**
+
+| コンポーネント | 選択 | 理由 |
+|--------------|------|------|
+| API サーバー | Container Apps | FastAPI の柔軟性、既存コードの活用 |
+| Web フロントエンド | Container Apps | Next.js のネイティブサポート |
+| タスクオーケストレーション | Durable Functions | 状態管理、リトライ、Fan-out の組み込みサポート |
+| エージェント実行 | Container Instances (ACI) | 長時間実行、分離環境、コスト効率 |
+
+**最終推奨:**
+
+| シナリオ | 推奨 |
+|---------|------|
+| **シンプルさ重視** | Container Apps + Celery |
+| **信頼性重視** | Durable Functions + ACI |
+| **コスト重視（低負荷）** | Durable Functions Consumption |
+| **バランス重視** | Container Apps (API) + Durable Functions (Orchestration) |
+
+本設計書では **Container Apps + Celery** をベースラインとして記載していますが、信頼性や運用負荷の観点から **Durable Functions** への移行も検討に値します。特に以下の場合は Durable Functions を推奨：
+
+- 複数エージェントの並列実行が多い
+- 承認ワークフローが必要
+- 障害時の自動復旧が重要
+- Redis/Celery の運用コストを削減したい
+
 ### 2. データベース層
 
 #### Azure Database for PostgreSQL - Flexible Server
