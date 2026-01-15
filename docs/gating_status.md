@@ -204,18 +204,28 @@ CIチェックのステータス：
 1. Settings > Defaults で「Enable Gating status」を有効化
 2. タスクを作成し、AIエグゼキュータで実行
 3. 完了したRunからPRを作成
-4. タスクは自動的に「Gating」列に移動
-5. 「Check CI」ボタンでCIステータスをポーリング
-6. CI完了時、タスクは「In Review」に移動
-7. PRをマージすると「Done」に移動
+4. **自動的にCIチェックが開始され**、タスクは「Gating」列に移動
+5. CI完了時、タスクは「In Review」に移動
+6. PRをマージすると「Done」に移動
 
 ### PR更新フロー
 
 1. InReview状態のタスクで追加の指示を送信
 2. AIが実行中 → InProgress
 3. 実行完了、PRにコミットがプッシュされる
-4. CIが再実行 → Gating
+4. **自動的にCIチェックが開始され**、CIが再実行 → Gating
 5. CI完了 → InReview
+
+### 自動CIチェック
+
+`enable_gating_status`が有効な場合、以下の操作時に自動的にCIチェックが開始されます：
+
+- PR作成 (`POST /tasks/{task_id}/prs`)
+- PR自動作成 (`POST /tasks/{task_id}/prs/auto`)
+- PR更新 (`POST /tasks/{task_id}/prs/{pr_id}/update`)
+- 手動PR同期 (`POST /tasks/{task_id}/prs/sync`)
+
+これにより、ユーザーが手動で「Check CI」を呼び出す必要なく、タスクが自動的にGating状態に移行します。
 
 ## APIエンドポイント
 
