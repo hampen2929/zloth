@@ -1,79 +1,79 @@
-# Gating Status Design
+# Gating ステータス設計
 
-## Overview
+## 概要
 
-The "Gating" status is a new Task Kanban status that represents tasks waiting for CI completion after PR creation. This status helps users track which tasks are blocked on CI pipelines.
+「Gating」ステータスは、PR作成後にCI完了を待機しているタスクを表す新しいKanbanステータスです。このステータスにより、CIパイプラインでブロックされているタスクを追跡できます。
 
-## Status Flow
+## ステータスフロー
 
 ```mermaid
 stateDiagram-v2
     [*] --> Backlog
-    Backlog --> ToDo: Manual move
-    ToDo --> InProgress: Run starts
-    InProgress --> InReview: All runs complete
-    InReview --> Gating: PR created (CI pending)
-    Gating --> InReview: CI completes (success/failure)
-    Gating --> Done: PR merged
-    InReview --> Done: PR merged
+    Backlog --> ToDo: 手動移動
+    ToDo --> InProgress: Run開始
+    InProgress --> InReview: 全Run完了
+    InReview --> Gating: PR作成 (CI待機中)
+    Gating --> InReview: CI完了 (成功/失敗)
+    Gating --> Done: PRマージ
+    InReview --> Done: PRマージ
 
-    Backlog --> Archived: Manual archive
-    ToDo --> Archived: Manual archive
-    InReview --> Archived: Manual archive
-    Archived --> Backlog: Unarchive
+    Backlog --> Archived: 手動アーカイブ
+    ToDo --> Archived: 手動アーカイブ
+    InReview --> Archived: 手動アーカイブ
+    Archived --> Backlog: アーカイブ解除
 ```
 
-## Status Computation Priority
+## ステータス計算の優先順位
 
-The kanban status is computed dynamically with the following priority:
+Kanbanステータスは以下の優先順位で動的に計算されます：
 
-1. **Archived** (highest) - User explicitly archived the task
-2. **Done** - PR is merged
-3. **Gating** - PR is open AND CI is pending/null AND `enable_gating_status` is true
-4. **In Progress** - Any run is currently running
-5. **In Review** - All runs are completed
-6. **Base Status** (lowest) - Stored DB status (Backlog/ToDo)
+1. **Archived** (最高) - ユーザーが明示的にアーカイブしたタスク
+2. **Done** - PRがマージ済み
+3. **Gating** - PRがオープン かつ CIがpending/null かつ `enable_gating_status` が有効
+4. **In Progress** - 実行中のRunがある
+5. **In Review** - 全てのRunが完了
+6. **Base Status** (最低) - DB保存のステータス (Backlog/ToDo)
 
-## Configuration
+## 設定
 
-### Enable Gating Status
+### Gatingステータスの有効化
 
-The Gating status is **disabled by default**. Users can enable it via:
+Gatingステータスは**デフォルトで無効**です。以下から有効化できます：
 
 **Settings > Defaults > Enable Gating status**
 
-When enabled:
-- Tasks with open PRs and pending CI will appear in the "Gating" column
-- Use "Check CI" to verify CI status and update the task state
+有効時：
+- オープンなPRとpending状態のCIを持つタスクが「Gating」列に表示される
+- 「Check CI」でCIステータスを確認し、タスクの状態を更新
 
-When disabled:
-- The Gating column will not appear on the Kanban board
-- Tasks go directly from In Review to Done when PR is merged
+無効時：
+- Gating列はKanbanボードに表示されない
+- タスクはPRマージ時にIn ReviewからDoneに直接移動
 
-## Database Schema
+## データベーススキーマ
 
-### user_preferences table
+### user_preferences テーブル
 
 ```sql
-enable_gating_status INTEGER DEFAULT 0  -- 0=disabled, 1=enabled
+enable_gating_status INTEGER DEFAULT 0  -- 0=無効, 1=有効
 ```
 
-## Backend Implementation
+## バックエンド実装
 
-### Files Modified
+### 変更ファイル
 
-| File | Changes |
-|------|---------|
-| `domain/enums.py` | Added `GATING = "gating"` to `TaskKanbanStatus` |
-| `domain/models.py` | Added `enable_gating_status: bool` to `UserPreferences` |
-| `storage/schema.sql` | Added `enable_gating_status` column |
-| `storage/dao.py` | Updated `TaskDAO.list_with_aggregates` to include CI status |
-| `storage/dao.py` | Updated `UserPreferencesDAO` to handle new field |
-| `services/kanban_service.py` | Added gating logic to `_compute_kanban_status` |
-| `routes/preferences.py` | Pass `enable_gating_status` to DAO |
-| `dependencies.py` | Pass `UserPreferencesDAO` to `KanbanService` |
+| ファイル | 変更内容 |
+|---------|---------|
+| `domain/enums.py` | `TaskKanbanStatus` に `GATING = "gating"` を追加 |
+| `domain/models.py` | `UserPreferences` に `enable_gating_status: bool` を追加 |
+| `storage/schema.sql` | `enable_gating_status` カラムを追加 |
+| `storage/dao.py` | `TaskDAO.list_with_aggregates` でCIステータスを含める |
+| `storage/dao.py` | `UserPreferencesDAO` で新フィールドを処理 |
+| `services/kanban_service.py` | `_compute_kanban_status` にgatingロジックを追加 |
+| `routes/preferences.py` | DAOに `enable_gating_status` を渡す |
+| `dependencies.py` | `KanbanService` に `UserPreferencesDAO` を渡す |
 
-### Kanban Status Computation
+### Kanbanステータス計算
 
 ```python
 def _compute_kanban_status(
@@ -86,17 +86,17 @@ def _compute_kanban_status(
     latest_ci_status: str | None = None,
     enable_gating_status: bool = False,
 ) -> TaskKanbanStatus:
-    # ... priority checks ...
+    # ... 優先順位チェック ...
 
-    # Gating: PR is open and CI is pending
+    # Gating: PRがオープンでCIがpending
     if enable_gating_status and latest_pr_status == "open":
         if latest_ci_status in ("pending", None):
             return TaskKanbanStatus.GATING
 ```
 
-### SQL Query for CI Status
+### CIステータス取得のSQLクエリ
 
-The `list_with_aggregates` query now includes:
+`list_with_aggregates` クエリに以下を追加：
 
 ```sql
 LEFT JOIN (
@@ -112,19 +112,19 @@ LEFT JOIN (
 ) ci ON p.latest_pr_id = ci.pr_id
 ```
 
-## Frontend Implementation
+## フロントエンド実装
 
-### Files Modified
+### 変更ファイル
 
-| File | Changes |
-|------|---------|
-| `types.ts` | Added `'gating'` to `TaskKanbanStatus` type |
-| `types.ts` | Added `enable_gating_status` to `UserPreferences` |
-| `KanbanBoard.tsx` | Added `'gating'` to `COLUMN_ORDER` |
-| `KanbanColumn.tsx` | Added gating column configuration |
-| `SettingsModal.tsx` | Added toggle for `enable_gating_status` |
+| ファイル | 変更内容 |
+|---------|---------|
+| `types.ts` | `TaskKanbanStatus` 型に `'gating'` を追加 |
+| `types.ts` | `UserPreferences` に `enable_gating_status` を追加 |
+| `KanbanBoard.tsx` | `COLUMN_ORDER` に `'gating'` を追加 |
+| `KanbanColumn.tsx` | gating列の設定を追加 |
+| `SettingsModal.tsx` | `enable_gating_status` のトグルを追加 |
 
-### Gating Column Configuration
+### Gating列の設定
 
 ```typescript
 gating: {
@@ -136,37 +136,37 @@ gating: {
 }
 ```
 
-## CI Status Values
+## CIステータス値
 
-The CI check status can be:
+CIチェックのステータス：
 
-| Status | Description | Gating? |
-|--------|-------------|---------|
-| `pending` | CI is running | Yes |
-| `null` | CI not checked yet | Yes |
-| `success` | CI passed | No |
-| `failure` | CI failed | No |
-| `error` | CI error | No |
+| ステータス | 説明 | Gating対象? |
+|-----------|------|-------------|
+| `pending` | CI実行中 | はい |
+| `null` | 未チェック | はい |
+| `success` | CI成功 | いいえ |
+| `failure` | CI失敗 | いいえ |
+| `error` | CIエラー | いいえ |
 
-## User Workflow
+## ユーザーワークフロー
 
-1. Enable "Gating status" in Settings > Defaults
-2. Create a task and run it with an AI executor
-3. Create a PR for the completed run
-4. Task automatically moves to "Gating" column
-5. Use "Check CI" button to poll CI status
-6. When CI completes, task moves to "In Review" (or "Done" if merged)
+1. Settings > Defaults で「Enable Gating status」を有効化
+2. タスクを作成し、AIエグゼキュータで実行
+3. 完了したRunからPRを作成
+4. タスクは自動的に「Gating」列に移動
+5. 「Check CI」ボタンでCIステータスをポーリング
+6. CI完了時、タスクは「In Review」に移動（マージ済みなら「Done」）
 
-## API Endpoints
+## APIエンドポイント
 
 ### GET /preferences
 
-Returns `enable_gating_status` field.
+`enable_gating_status` フィールドを返す。
 
 ### POST /preferences
 
-Accepts `enable_gating_status` field to update the setting.
+`enable_gating_status` フィールドで設定を更新。
 
 ### POST /tasks/{task_id}/prs/{pr_id}/check-ci
 
-Checks CI status for a PR. Updates the CI check record which affects the computed kanban status.
+PRのCIステータスをチェック。CIチェックレコードを更新し、計算されるKanbanステータスに影響する。
