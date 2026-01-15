@@ -309,15 +309,15 @@ sequenceDiagram
 
     Note over Browser,Claude: フェーズ1: タスク投入
 
-    Browser->>API: POST /v1/tasks/{id}/runs
+    Browser->>API: POST /v1/tasks/ID/runs
     API->>Redis: タスクをキューに投入
-    API->>API: DB に run 作成（status: queued）
+    API->>API: DB に run 作成 status: queued
     API-->>Browser: 202 Accepted + run_id
 
     Note over Browser,Claude: フェーズ2: SSE 接続確立
 
-    Browser->>API: GET /v1/runs/{id}/stream (SSE)
-    API->>Redis: SUBSCRIBE run:{run_id}:events
+    Browser->>API: GET /v1/runs/ID/stream SSE
+    API->>Redis: SUBSCRIBE run:ID:events
     API-->>Browser: SSE 接続確立
 
     Note over Browser,Claude: フェーズ3: 長時間実行（5〜30分）
@@ -326,7 +326,7 @@ sequenceDiagram
     Worker->>Worker: DB 更新（status: running）
     Worker->>Redis: PUBLISH 進捗イベント
     Redis-->>API: 進捗イベント
-    API-->>Browser: SSE: {"type": "progress", "message": "..."}
+    API-->>Browser: SSE progress event
 
     Worker->>Claude: エージェント実行開始
 
@@ -334,14 +334,14 @@ sequenceDiagram
         Claude-->>Worker: 中間出力
         Worker->>Redis: PUBLISH 進捗イベント
         Redis-->>API: 進捗イベント
-        API-->>Browser: SSE: {"type": "log", "data": "..."}
+        API-->>Browser: SSE log event
     end
 
     Claude-->>Worker: 完了 + パッチ
     Worker->>Worker: DB 更新（status: completed, patch）
     Worker->>Redis: PUBLISH 完了イベント
     Redis-->>API: 完了イベント
-    API-->>Browser: SSE: {"type": "completed", "patch": "..."}
+    API-->>Browser: SSE completed event
 ```
 
 #### Azure Container Apps での SSE 設定
@@ -391,7 +391,7 @@ flowchart LR
         end
 
         subgraph API["API サーバー"]
-            Endpoint[/ws/runs/{id}]
+            Endpoint["WebSocket Endpoint"]
         end
 
         subgraph Worker["Worker"]
@@ -480,7 +480,7 @@ sequenceDiagram
 
     Note over Browser,DB: 接続断からの復旧
 
-    Browser->>API: GET /v1/runs/{id}/stream?last_event_id=xxx
+    Browser->>API: GET /v1/runs/ID/stream?last_event_id=xxx
     API->>DB: run 状態取得
 
     alt 実行中
