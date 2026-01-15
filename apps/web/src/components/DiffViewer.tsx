@@ -111,7 +111,7 @@ export function DiffViewer({ patch }: DiffViewerProps) {
   const copyFileContent = useCallback(async (file: ParsedFile) => {
     try {
       const content = extractAppliedFileContent(file);
-      await navigator.clipboard.writeText(content);
+      await copyToClipboard(content);
       setCopiedFileContent(file.path);
       setTimeout(() => setCopiedFileContent(null), 2000);
     } catch {
@@ -589,6 +589,31 @@ function pairLinesForSplitView(
 function getFileName(path: string): string {
   const parts = path.split('/');
   return parts[parts.length - 1];
+}
+
+// Helper to copy text to clipboard with fallback
+async function copyToClipboard(text: string): Promise<void> {
+  // Try modern clipboard API first
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  // Fallback for non-secure contexts
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-999999px';
+  textArea.style.top = '-999999px';
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+
+  try {
+    document.execCommand('copy');
+  } finally {
+    textArea.remove();
+  }
 }
 
 // Extract the applied file content (new version after diff is applied)
