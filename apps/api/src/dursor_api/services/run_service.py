@@ -698,8 +698,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             ):
                 # Retry once without session continuation if the CLI rejects the session.
                 logs.append(
-                    f"Session continuation failed ({result.error}). "
-                    "Retrying without session_id."
+                    f"Session continuation failed ({result.error}). Retrying without session_id."
                 )
                 result = await executor.execute(
                     worktree_path=worktree_info.path,
