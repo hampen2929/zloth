@@ -74,8 +74,8 @@ Kanbanステータスは以下の優先順位で動的に計算されます：
 
 1. **Archived** (最高) - ユーザーが明示的にアーカイブしたタスク
 2. **Done** - PRがマージ済み
-3. **Gating** - PRがオープン かつ CIがpending/null かつ `enable_gating_status` が有効
-4. **In Progress** - 実行中のRunがある
+3. **In Progress** - 実行中のRunがある
+4. **Gating** - 全Run完了 かつ PRがオープン かつ CIがpending/null かつ `enable_gating_status` が有効
 5. **In Review** - 全てのRunが完了
 6. **Base Status** (最低) - DB保存のステータス (Backlog/ToDo)
 
@@ -131,12 +131,16 @@ def _compute_kanban_status(
     latest_ci_status: str | None = None,
     enable_gating_status: bool = False,
 ) -> TaskKanbanStatus:
-    # ... 優先順位チェック ...
+    # ... 優先順位チェック (Archived, Done, InProgress) ...
 
-    # Gating: PRがオープンでCIがpending
-    if enable_gating_status and latest_pr_status == "open":
-        if latest_ci_status in ("pending", None):
-            return TaskKanbanStatus.GATING
+    # 全Run完了時の判定
+    if run_count > 0 and completed_count == run_count:
+        # Gating: 全Run完了 + PRがオープン + CIがpending
+        if enable_gating_status and latest_pr_status == "open":
+            if latest_ci_status in ("pending", None):
+                return TaskKanbanStatus.GATING
+        # InReview: 全Run完了
+        return TaskKanbanStatus.IN_REVIEW
 ```
 
 ### CIステータス取得のSQLクエリ

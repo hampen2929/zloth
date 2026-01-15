@@ -17,11 +17,12 @@ class KanbanService:
     """Kanban status management service.
 
     Status calculation priority:
-    1. PR is merged -> Done (highest priority)
-    2. PR is open and CI is pending -> Gating (if enabled)
+    1. Archived (highest priority)
+    2. PR is merged -> Done
     3. Run is running -> InProgress
-    4. All runs completed -> InReview
-    5. DB stored base status (backlog/todo/archived)
+    4. All runs completed + PR open + CI pending -> Gating (if enabled)
+    5. All runs completed -> InReview
+    6. DB stored base status (backlog/todo/archived)
     """
 
     def __init__(
@@ -62,19 +63,18 @@ class KanbanService:
         if latest_pr_status == "merged":
             return TaskKanbanStatus.DONE
 
-        # 3. PR is open and CI is pending -> Gating (if enabled)
-        # Gating status only applies when PR exists and CI hasn't passed yet
-        if enable_gating_status and latest_pr_status == "open":
-            # CI status: pending, success, failure, error (or None if not checked)
-            if latest_ci_status in ("pending", None):
-                return TaskKanbanStatus.GATING
-
-        # 4. Run is running -> InProgress
+        # 3. Run is running -> InProgress
         if running_count > 0:
             return TaskKanbanStatus.IN_PROGRESS
 
-        # 5. Runs exist and all completed -> InReview
+        # 4. All runs completed + PR open + CI pending -> Gating (if enabled)
+        # Gating status only applies when all runs are done and CI hasn't passed yet
         if run_count > 0 and completed_count == run_count:
+            if enable_gating_status and latest_pr_status == "open":
+                # CI status: pending, success, failure, error (or None if not checked)
+                if latest_ci_status in ("pending", None):
+                    return TaskKanbanStatus.GATING
+            # 5. All runs completed -> InReview
             return TaskKanbanStatus.IN_REVIEW
 
         # 6. Use base status (backlog/todo)
