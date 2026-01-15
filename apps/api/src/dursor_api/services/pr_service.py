@@ -712,7 +712,7 @@ class PRService:
                 # Parse the output
                 title, description = self._parse_title_and_description(result)
                 if title and description:
-                    return title, description
+                    return self._truncate_title(title), description
             logger.warning("Failed to parse title/description, using fallback")
         except Exception as e:
             logger.warning(f"Failed to generate title/description: {e}")
@@ -808,7 +808,7 @@ DO NOT edit any files. Only output the title text.
             if result:
                 title = result.strip().strip("\"'")
                 title = title.split("\n")[0].strip()
-                return title
+                return self._truncate_title(title)
             return self._generate_fallback_title(run)
         except Exception:
             return self._generate_fallback_title(run)
@@ -816,8 +816,26 @@ DO NOT edit any files. Only output the title text.
     def _generate_fallback_title(self, run: Run) -> str:
         """Generate a fallback title from run summary."""
         if run.summary:
-            return run.summary.split("\n")[0]
+            title = run.summary.split("\n")[0]
+            return self._truncate_title(title)
         return "Update code changes"
+
+    def _truncate_title(self, title: str, max_length: int = 50) -> str:
+        """Truncate title to max_length characters.
+
+        If the title exceeds max_length, it truncates and adds '...' suffix.
+
+        Args:
+            title: The title to truncate.
+            max_length: Maximum allowed length (default 50).
+
+        Returns:
+            Truncated title string.
+        """
+        if len(title) <= max_length:
+            return title
+        # Truncate and add ellipsis, ensuring total length is max_length
+        return title[: max_length - 3].rstrip() + "..."
 
     async def _generate_description_for_new_pr(
         self,
