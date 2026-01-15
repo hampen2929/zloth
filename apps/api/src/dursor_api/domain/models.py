@@ -565,6 +565,7 @@ class UserPreferences(BaseModel):
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
     auto_generate_pr_description: bool = False
     worktrees_dir: str | None = None  # Custom worktrees directory path
+    enable_gating_status: bool = False  # Enable Gating status in kanban board
 
 
 class UserPreferencesSave(BaseModel):
@@ -578,6 +579,7 @@ class UserPreferencesSave(BaseModel):
     default_coding_mode: CodingMode | None = None
     auto_generate_pr_description: bool | None = None
     worktrees_dir: str | None = None  # Custom worktrees directory path
+    enable_gating_status: bool | None = None  # Enable Gating status in kanban board
 
 
 class PRCreateLink(BaseModel):
