@@ -763,20 +763,26 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             )
             logs.append(f"Committed: {commit_sha[:8]}")
 
-            # 8. Push (automatic) - only if we have GitHub service configured
+            # 8. Push (automatic) with retry on non-fast-forward
             if self.github_service and repo:
-                try:
-                    owner, repo_name = self._parse_github_url(repo.repo_url)
-                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
-                    await self.git_service.push(
-                        worktree_info.path,
-                        branch=worktree_info.branch_name,
-                        auth_url=auth_url,
-                    )
-                    logs.append(f"Pushed to branch: {worktree_info.branch_name}")
-                except Exception as push_error:
-                    logs.append(f"Push failed (will retry on PR creation): {push_error}")
-                    # Continue without failing - push can be retried during PR creation
+                owner, repo_name = self._parse_github_url(repo.repo_url)
+                auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                push_result = await self.git_service.push_with_retry(
+                    worktree_info.path,
+                    branch=worktree_info.branch_name,
+                    auth_url=auth_url,
+                )
+
+                if push_result.success:
+                    if push_result.required_pull:
+                        logs.append(
+                            f"Pulled remote changes and pushed to branch: "
+                            f"{worktree_info.branch_name}"
+                        )
+                    else:
+                        logs.append(f"Pushed to branch: {worktree_info.branch_name}")
+                else:
+                    logs.append(f"Push failed (will retry on PR creation): {push_result.error}")
 
             # 9. Save results
             await self.run_dao.update_status(
