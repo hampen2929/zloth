@@ -183,6 +183,7 @@ class KanbanService:
                 completed_count=task_data["completed_count"],
                 pr_count=task_data["pr_count"],
                 latest_pr_status=task_data["latest_pr_status"],
+                latest_ci_status=task_data.get("latest_ci_status"),
                 executor_statuses=executor_statuses,
             )
             columns[computed_status].append(task_with_status)

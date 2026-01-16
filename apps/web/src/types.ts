@@ -396,6 +396,7 @@ export interface TaskWithKanbanStatus extends Task {
   completed_count: number;
   pr_count: number;
   latest_pr_status: string | null;
+  latest_ci_status: string | null; // "pending" | "success" | "failure" | "error" | null
   executor_statuses: ExecutorRunStatus[];
 }
 

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import type { TaskWithKanbanStatus, TaskKanbanStatus, ExecutorRunStatus, ExecutorType } from '@/types';
-import { PlayIcon, CheckIcon, CodeBracketIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, CheckIcon, CodeBracketIcon, CheckCircleIcon, XCircleIcon, ClockIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
 interface KanbanCardProps {
@@ -62,6 +62,61 @@ const EXECUTOR_DISPLAY_NAMES: Record<ExecutorType, string> = {
   gemini_cli: 'Gemini',
   patch_agent: 'Patch',
 };
+
+/**
+ * InReview status badge showing CI/PR status at a glance
+ */
+function InReviewStatusBadge({ task }: { task: TaskWithKanbanStatus }) {
+  const { pr_count, latest_ci_status } = task;
+
+  // No PR created
+  if (pr_count === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-700 text-gray-300">
+        <ExclamationTriangleIcon className="w-3 h-3" />
+        No PR
+      </span>
+    );
+  }
+
+  // CI passed
+  if (latest_ci_status === 'success') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-900/50 text-green-400">
+        <CheckCircleIcon className="w-3 h-3" />
+        CI Passed
+      </span>
+    );
+  }
+
+  // CI failed
+  if (latest_ci_status === 'failure' || latest_ci_status === 'error') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-900/50 text-red-400">
+        <XCircleIcon className="w-3 h-3" />
+        CI Failed
+      </span>
+    );
+  }
+
+  // CI pending
+  if (latest_ci_status === 'pending') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-900/50 text-yellow-400">
+        <ClockIcon className="w-3 h-3" />
+        CI Running
+      </span>
+    );
+  }
+
+  // PR exists but no CI status (CI not checked yet)
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-900/50 text-purple-400">
+      <CodeBracketIcon className="w-3 h-3" />
+      PR Open
+    </span>
+  );
+}
 
 function ExecutorStatusIndicator({ status }: { status: ExecutorRunStatus }) {
   const displayName = EXECUTOR_DISPLAY_NAMES[status.executor_type];
@@ -222,10 +277,8 @@ export function KanbanCard({
 
       case 'in_review':
         return (
-          <div className="flex gap-2">
-            <span className="text-xs text-purple-400">
-              Review
-            </span>
+          <div className="flex items-center gap-2">
+            <InReviewStatusBadge task={task} />
             <button
               onClick={(e) => {
                 e.preventDefault();
