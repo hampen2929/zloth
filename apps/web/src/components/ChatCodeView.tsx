@@ -484,10 +484,22 @@ export function ChatCodeView({
     setCICheckExpanded((prev) => ({ ...prev, [ciCheckId]: !isCICheckExpanded(ciCheckId) }));
   };
 
-  // Filter CI checks for selected executor's PR
+  // Filter CI checks for selected executor's PR, deduplicated by SHA
+  // Only show one CI check per SHA (the latest one) to avoid duplicate entries
   const ciChecksForSelectedExecutor = useMemo(() => {
     if (!ciChecks || !latestPR) return [];
-    return ciChecks.filter((check) => check.pr_id === latestPR.id);
+    const checksForPR = ciChecks.filter((check) => check.pr_id === latestPR.id);
+
+    // Deduplicate by SHA - keep only the latest check for each SHA
+    const bysha = new Map<string, CICheck>();
+    for (const check of checksForPR) {
+      const sha = check.sha || check.id; // Use id as fallback if no SHA
+      const existing = bysha.get(sha);
+      if (!existing || new Date(check.updated_at) > new Date(existing.updated_at)) {
+        bysha.set(sha, check);
+      }
+    }
+    return Array.from(bysha.values());
   }, [ciChecks, latestPR]);
 
   // Auto-trigger CI check for pending CI checks (gating auto-polling)
