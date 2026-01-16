@@ -1798,6 +1798,17 @@ class CICheckDAO:
             return None
         return self._row_to_model(row)
 
+    async def get_by_pr_and_sha(self, pr_id: str, sha: str) -> CICheck | None:
+        """Get a CI check for a specific PR and SHA combination."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM ci_checks WHERE pr_id = ? AND sha = ? LIMIT 1",
+            (pr_id, sha),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
     async def list_by_task_id(self, task_id: str) -> builtins.list[CICheck]:
         """List all CI checks for a task."""
         cursor = await self.db.connection.execute(
