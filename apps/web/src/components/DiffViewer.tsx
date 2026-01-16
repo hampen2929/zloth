@@ -9,6 +9,7 @@ import {
   ClipboardIcon,
   ClipboardDocumentCheckIcon,
   DocumentArrowDownIcon,
+  DocumentDuplicateIcon,
   FolderIcon,
   MinusIcon,
   PlusIcon,
@@ -47,6 +48,7 @@ export function DiffViewer({ patch }: DiffViewerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('unified');
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [copiedPatch, setCopiedPatch] = useState(false);
+  const [copiedFileContent, setCopiedFileContent] = useState<string | null>(null);
 
   // Parse patch into files
   const files = useMemo(() => parsePatch(patch), [patch]);
@@ -101,6 +103,17 @@ export function DiffViewer({ patch }: DiffViewerProps) {
       await navigator.clipboard.writeText(path);
       setCopiedPath(path);
       setTimeout(() => setCopiedPath(null), 2000);
+    } catch {
+      // Ignore clipboard errors
+    }
+  }, []);
+
+  const copyFileContent = useCallback(async (file: ParsedFile) => {
+    try {
+      const content = extractAppliedFileContent(file);
+      await copyToClipboard(content);
+      setCopiedFileContent(file.path);
+      setTimeout(() => setCopiedFileContent(null), 2000);
     } catch {
       // Ignore clipboard errors
     }
@@ -302,6 +315,20 @@ export function DiffViewer({ patch }: DiffViewerProps) {
                         {' '}
                         <span className="text-red-400">-{file.removedLines}</span>
                       </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyFileContent(file);
+                        }}
+                        className="p-1 text-gray-500 hover:text-white rounded transition-colors"
+                        title="Copy file content (after applying diff)"
+                      >
+                        {copiedFileContent === file.path ? (
+                          <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-green-400" />
+                        ) : (
+                          <DocumentDuplicateIcon className="w-3.5 h-3.5" />
+                        )}
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -562,6 +589,58 @@ function pairLinesForSplitView(
 function getFileName(path: string): string {
   const parts = path.split('/');
   return parts[parts.length - 1];
+}
+
+// Helper to copy text to clipboard with fallback
+async function copyToClipboard(text: string): Promise<void> {
+  // Try modern clipboard API first
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  // Fallback for non-secure contexts
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-999999px';
+  textArea.style.top = '-999999px';
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+
+  try {
+    document.execCommand('copy');
+  } finally {
+    textArea.remove();
+  }
+}
+
+// Extract the applied file content (new version after diff is applied)
+// This returns only the content without +/- prefixes
+function extractAppliedFileContent(file: ParsedFile): string {
+  const lines: string[] = [];
+
+  for (const hunk of file.hunks) {
+    for (const line of hunk.lines) {
+      // Include 'add' and 'context' lines (the new state)
+      // Skip 'remove' lines (they don't exist in the new version)
+      if (line.type === 'add' || line.type === 'context') {
+        // Remove the leading +/- or space character from the content
+        const content = line.content;
+        if (line.type === 'add' && content.startsWith('+')) {
+          lines.push(content.slice(1));
+        } else if (line.type === 'context' && content.startsWith(' ')) {
+          lines.push(content.slice(1));
+        } else {
+          // Fallback: use content as-is if no prefix
+          lines.push(content);
+        }
+      }
+    }
+  }
+
+  return lines.join('\n');
 }
 
 // Parse patch into structured format
