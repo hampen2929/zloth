@@ -323,12 +323,27 @@ export function ChatCodeView({
       const ciCheck = await ciChecksApi.checkWithPolling(taskId, prResult.pr_id, {
         pollInterval: 10000, // 10 seconds
         maxWaitTime: 1800000, // 30 minutes
-        onProgress: () => {
-          mutateCIChecks();
+        onProgress: (updatedCICheck) => {
+          // Update SWR cache with the latest CI check data
+          // This ensures the UI reflects the current status immediately
+          mutateCIChecks(
+            (currentChecks) => {
+              if (!currentChecks) return [updatedCICheck];
+              // Replace or add the updated CI check
+              const existingIndex = currentChecks.findIndex(c => c.id === updatedCICheck.id);
+              if (existingIndex >= 0) {
+                const newChecks = [...currentChecks];
+                newChecks[existingIndex] = updatedCICheck;
+                return newChecks;
+              }
+              return [updatedCICheck, ...currentChecks];
+            },
+            { revalidate: false } // Don't revalidate, we have fresh data
+          );
         },
       });
 
-      // Final refresh
+      // Final refresh - force revalidation to ensure consistency
       mutateCIChecks();
 
       if (ciCheck.status === 'success') {
@@ -469,10 +484,12 @@ export function ChatCodeView({
   };
 
   // Filter CI checks for selected executor's PR
+  // Use prResult.pr_id if available (from active session), fallback to latestPR.id
+  const activePrId = prResult?.pr_id || latestPR?.id;
   const ciChecksForSelectedExecutor = useMemo(() => {
-    if (!ciChecks || !latestPR) return [];
-    return ciChecks.filter((check) => check.pr_id === latestPR.id);
-  }, [ciChecks, latestPR]);
+    if (!ciChecks || !activePrId) return [];
+    return ciChecks.filter((check) => check.pr_id === activePrId);
+  }, [ciChecks, activePrId]);
 
   // Create a unified timeline of messages+runs and reviews, sorted chronologically
   type TimelineItem =
