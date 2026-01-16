@@ -1,13 +1,16 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Install git for repository operations
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN uv pip install --system --no-cache .
 
 # Copy source code
 COPY src/ src/

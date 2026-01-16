@@ -4,20 +4,22 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
-import type { GitHubRepository, ExecutorType } from '@/types';
+import type { GitHubRepository, ExecutorType, CodingMode } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
+import { useClickOutside } from '@/hooks';
+import { ExecutorSelector } from '@/components/ExecutorSelector';
+import { BranchSelector } from '@/components/BranchSelector';
 import {
   FolderIcon,
-  BoltIcon,
   ChevronDownIcon,
   PhotoIcon,
   ArrowUpIcon,
-  CheckIcon,
-  CpuChipIcon,
   LockClosedIcon,
-  CommandLineIcon,
+  ExclamationTriangleIcon,
+  Cog6ToothIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 
 export default function HomePage() {
@@ -30,47 +32,28 @@ export default function HomePage() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [executorType, setExecutorType] = useState<ExecutorType>('claude_code');
+  const [selectedCLIs, setSelectedCLIs] = useState<ExecutorType[]>(['claude_code']);
+  const [selectedMode, setSelectedMode] = useState<CodingMode>('interactive');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Dropdown states
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
-  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [repoSearch, setRepoSearch] = useState('');
 
   // Refs for dropdown containers
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
   const repoDropdownRef = useRef<HTMLDivElement>(null);
-  const branchDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-
-      if (modelDropdownRef.current && !modelDropdownRef.current.contains(target)) {
-        setShowModelDropdown(false);
-      }
-      if (repoDropdownRef.current && !repoDropdownRef.current.contains(target)) {
-        setShowRepoDropdown(false);
-      }
-      if (branchDropdownRef.current && !branchDropdownRef.current.contains(target)) {
-        setShowBranchDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  // Close repo dropdown when clicking outside
+  useClickOutside(repoDropdownRef, () => setShowRepoDropdown(false), showRepoDropdown);
 
   // Data fetching
   const { data: models } = useSWR('models', modelsApi.list);
-  const { data: repos } = useSWR('github-repos', githubApi.listRepos);
+  const { data: repos, isLoading: reposLoading } = useSWR('github-repos', githubApi.listRepos);
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
     selectedRepo ? `branches-${selectedRepo.owner}-${selectedRepo.name}` : null,
-    () => selectedRepo ? githubApi.listBranches(selectedRepo.owner, selectedRepo.name) : null
+    () => (selectedRepo ? githubApi.listBranches(selectedRepo.owner, selectedRepo.name) : null)
   );
 
   // Apply default preferences when repos are loaded
@@ -88,6 +71,13 @@ export default function HomePage() {
     }
   }, [repos, preferences, selectedRepo]);
 
+  // Apply default coding mode from preferences
+  useEffect(() => {
+    if (preferences?.default_coding_mode) {
+      setSelectedMode(preferences.default_coding_mode);
+    }
+  }, [preferences]);
+
   // Set default branch when repo changes
   const handleRepoSelect = useCallback((repo: GitHubRepository) => {
     setSelectedRepo(repo);
@@ -98,36 +88,29 @@ export default function HomePage() {
 
   // Filter repos by search
   const filteredRepos = repos?.filter(
-    (repo) =>
-      !repoSearch ||
-      repo.full_name.toLowerCase().includes(repoSearch.toLowerCase())
+    (repo) => !repoSearch || repo.full_name.toLowerCase().includes(repoSearch.toLowerCase())
   );
 
   // Toggle model selection
   const toggleModel = (modelId: string) => {
     setSelectedModels((prev) =>
-      prev.includes(modelId)
-        ? prev.filter((id) => id !== modelId)
-        : [...prev, modelId]
+      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
     );
   };
 
-  // Get selected model names for display
-  const getSelectedModelNames = () => {
-    if (!models || selectedModels.length === 0) return 'Select models';
-    const names = models
-      .filter((m) => selectedModels.includes(m.id))
-      .map((m) => m.display_name || m.model_name);
-    if (names.length === 1) return names[0];
-    return `${names.length} models selected`;
+  // Toggle CLI selection
+  const toggleCLI = (cli: ExecutorType) => {
+    setSelectedCLIs((prev) =>
+      prev.includes(cli) ? prev.filter((c) => c !== cli) : [...prev, cli]
+    );
   };
 
   const handleSubmit = async () => {
-    // Validate based on executor type
+    // Validate: need instruction, repo, branch, and at least one CLI
     if (!instruction.trim() || !selectedRepo || !selectedBranch) {
       return;
     }
-    if (executorType === 'patch_agent' && selectedModels.length === 0) {
+    if (selectedCLIs.length === 0) {
       return;
     }
 
@@ -146,33 +129,29 @@ export default function HomePage() {
       const task = await tasksApi.create({
         repo_id: repo.id,
         title: instruction.slice(0, 50) + (instruction.length > 50 ? '...' : ''),
+        coding_mode: selectedMode,
       });
 
-      // Add the instruction as the first message
-      await tasksApi.addMessage(task.id, {
+      // Add the instruction as the first message and get its ID
+      const message = await tasksApi.addMessage(task.id, {
         role: 'user',
         content: instruction,
       });
 
-      // Create runs based on executor type
-      if (isCLIExecutor) {
-        await runsApi.create(task.id, {
-          instruction: instruction,
-          executor_type: executorType,
-        });
-      } else if (selectedModels.length > 0) {
-        await runsApi.create(task.id, {
-          instruction: instruction,
-          model_ids: selectedModels,
-          executor_type: 'patch_agent',
-        });
-      }
+      // Build executor_types array for the API (CLI only)
+      const executorTypesToRun: ExecutorType[] = [...selectedCLIs];
 
-      // Navigate to the task page with executor type
+      // Create runs with executor_types for parallel execution, linked to the message
+      await runsApi.create(task.id, {
+        instruction: instruction,
+        executor_types: executorTypesToRun,
+        message_id: message.id,
+      });
+
+      // Navigate to the task page with executor info
       const params = new URLSearchParams();
-      params.set('executor', executorType);
-      if (executorType === 'patch_agent') {
-        params.set('models', selectedModels.join(','));
+      if (selectedCLIs.length > 0) {
+        params.set('executors', selectedCLIs.join(','));
       }
       router.push(`/tasks/${task.id}?${params.toString()}`);
     } catch (err) {
@@ -201,15 +180,45 @@ export default function HomePage() {
     }
   };
 
-  const isCLIExecutor = executorType === 'claude_code' || executorType === 'codex_cli' || executorType === 'gemini_cli';
-  const canSubmit = instruction.trim() && selectedRepo && selectedBranch && !loading &&
-    (isCLIExecutor || selectedModels.length > 0);
+  const hasExecutor = selectedCLIs.length > 0;
+  const canSubmit =
+    instruction.trim() &&
+    selectedRepo &&
+    selectedBranch &&
+    !loading &&
+    hasExecutor;
+
+  // Compute validation errors for display
+  // Don't show errors while data is still loading
+  const getValidationErrors = () => {
+    const errors: { message: string; action?: { label: string; href: string } }[] = [];
+
+    // Only show GitHub App error after loading completes
+    if (!reposLoading && !repos) {
+      errors.push({
+        message: 'GitHub Appが未設定です',
+        action: { label: '設定する', href: '#settings-github' },
+      });
+    } else if (!reposLoading && repos && !selectedRepo) {
+      errors.push({ message: 'リポジトリを選択してください' });
+    }
+    if (selectedRepo && !selectedBranch) {
+      errors.push({ message: 'ブランチを選択してください' });
+    }
+    // Show executor selection error if no CLI is selected
+    if (selectedCLIs.length === 0) {
+      errors.push({ message: 'CLIを選択してください' });
+    }
+    return errors;
+  };
+
+  const validationErrors = getValidationErrors();
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
       <div className="w-full max-w-3xl px-4">
         {/* Main Input Area */}
-        <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-lg">
+        <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-lg">
           {/* Textarea */}
           <div className="p-4">
             <textarea
@@ -232,177 +241,17 @@ export default function HomePage() {
           {/* Bottom Bar */}
           <div className="px-4 pb-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              {/* Executor Selector Dropdown */}
-              <div className="relative" ref={modelDropdownRef}>
-                <button
-                  onClick={() => setShowModelDropdown(!showModelDropdown)}
-                  className={cn(
-                    'flex items-center gap-2 text-sm transition-colors',
-                    'text-gray-400 hover:text-white',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
-                  )}
-                >
-                  {executorType === 'claude_code' ? (
-                    <>
-                      <CommandLineIcon className="w-4 h-4" />
-                      <span>Claude Code</span>
-                    </>
-                  ) : executorType === 'codex_cli' ? (
-                    <>
-                      <CommandLineIcon className="w-4 h-4" />
-                      <span>Codex</span>
-                    </>
-                  ) : executorType === 'gemini_cli' ? (
-                    <>
-                      <CommandLineIcon className="w-4 h-4" />
-                      <span>Gemini CLI</span>
-                    </>
-                  ) : (
-                    <>
-                      <CpuChipIcon className="w-4 h-4" />
-                      <span>{getSelectedModelNames()}</span>
-                    </>
-                  )}
-                  <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showModelDropdown && 'rotate-180')} />
-                </button>
-
-                {showModelDropdown && (
-                  <div className="absolute bottom-full left-0 mb-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col max-h-80">
-                    {/* Models Section (scrollable) */}
-                    <div className="flex-1 overflow-y-auto min-h-0">
-                      <div className="p-3 border-b border-gray-700 sticky top-0 bg-gray-800">
-                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Models</span>
-                      </div>
-                      {!models || models.length === 0 ? (
-                        <div className="p-4 text-center">
-                          <CpuChipIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                          <p className="text-gray-500 text-sm">No models configured</p>
-                          <p className="text-gray-600 text-xs mt-1">Add models in Settings</p>
-                        </div>
-                      ) : (
-                        models.map((model) => {
-                          const isSelected = selectedModels.includes(model.id);
-                          return (
-                            <button
-                              key={model.id}
-                              onClick={() => {
-                                setExecutorType('patch_agent');
-                                toggleModel(model.id);
-                              }}
-                              className={cn(
-                                'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                                'hover:bg-gray-700 transition-colors',
-                                'focus:outline-none focus:bg-gray-700'
-                              )}
-                            >
-                              <div className={cn(
-                                'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
-                                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
-                              )}>
-                                {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="text-gray-100 text-sm font-medium truncate">
-                                  {model.display_name || model.model_name}
-                                </div>
-                                <div className="text-gray-500 text-xs">{model.provider}</div>
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* CLI Options (fixed at bottom) */}
-                    <div className="border-t border-gray-700 flex-shrink-0">
-                      <div className="p-3 border-b border-gray-700">
-                        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">CLI Agents</span>
-                      </div>
-                      {/* Claude Code Option */}
-                      <button
-                        onClick={() => {
-                          setExecutorType('claude_code');
-                          setSelectedModels([]);
-                          setShowModelDropdown(false);
-                        }}
-                        className={cn(
-                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                          'hover:bg-gray-700 transition-colors',
-                          'focus:outline-none focus:bg-gray-700'
-                        )}
-                      >
-                        <div className={cn(
-                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
-                          executorType === 'claude_code' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
-                        )}>
-                          {executorType === 'claude_code' && <CheckIcon className="w-3 h-3 text-white" />}
-                        </div>
-                        <div className="min-w-0 flex-1 flex items-center gap-2">
-                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
-                          <div>
-                            <div className="text-gray-100 text-sm font-medium">Claude Code</div>
-                            <div className="text-gray-500 text-xs">Use Claude Code CLI</div>
-                          </div>
-                        </div>
-                      </button>
-                      {/* Codex Option */}
-                      <button
-                        onClick={() => {
-                          setExecutorType('codex_cli');
-                          setSelectedModels([]);
-                          setShowModelDropdown(false);
-                        }}
-                        className={cn(
-                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                          'hover:bg-gray-700 transition-colors',
-                          'focus:outline-none focus:bg-gray-700'
-                        )}
-                      >
-                        <div className={cn(
-                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
-                          executorType === 'codex_cli' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
-                        )}>
-                          {executorType === 'codex_cli' && <CheckIcon className="w-3 h-3 text-white" />}
-                        </div>
-                        <div className="min-w-0 flex-1 flex items-center gap-2">
-                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
-                          <div>
-                            <div className="text-gray-100 text-sm font-medium">Codex</div>
-                            <div className="text-gray-500 text-xs">Use OpenAI Codex CLI</div>
-                          </div>
-                        </div>
-                      </button>
-                      {/* Gemini CLI Option */}
-                      <button
-                        onClick={() => {
-                          setExecutorType('gemini_cli');
-                          setSelectedModels([]);
-                          setShowModelDropdown(false);
-                        }}
-                        className={cn(
-                          'w-full px-3 py-2.5 text-left flex items-center gap-3',
-                          'hover:bg-gray-700 transition-colors',
-                          'focus:outline-none focus:bg-gray-700'
-                        )}
-                      >
-                        <div className={cn(
-                          'w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0',
-                          executorType === 'gemini_cli' ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
-                        )}>
-                          {executorType === 'gemini_cli' && <CheckIcon className="w-3 h-3 text-white" />}
-                        </div>
-                        <div className="min-w-0 flex-1 flex items-center gap-2">
-                          <CommandLineIcon className="w-4 h-4 text-gray-400" />
-                          <div>
-                            <div className="text-gray-100 text-sm font-medium">Gemini CLI</div>
-                            <div className="text-gray-500 text-xs">Use Google Gemini CLI</div>
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* Executor Selector */}
+              <ExecutorSelector
+                selectedCLIs={selectedCLIs}
+                selectedModels={selectedModels}
+                models={models || []}
+                onCLIToggle={toggleCLI}
+                onCLIsChange={setSelectedCLIs}
+                onModelToggle={toggleModel}
+                onModelsChange={setSelectedModels}
+                hideModels={true}
+              />
             </div>
 
             {/* Right side buttons */}
@@ -443,132 +292,64 @@ export default function HomePage() {
         {/* Repository and Branch Selection */}
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
           {/* Repository Selector */}
-          <div className="relative" ref={repoDropdownRef}>
-            <button
-              onClick={() => {
-                setShowRepoDropdown(!showRepoDropdown);
-                setShowBranchDropdown(false);
-              }}
-              className={cn(
-                'flex items-center gap-2 transition-colors',
-                'text-gray-400 hover:text-white',
-                'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
-              )}
-            >
-              <FolderIcon className="w-4 h-4" />
-              <span>{selectedRepo ? selectedRepo.full_name : 'Select repository'}</span>
-              <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showRepoDropdown && 'rotate-180')} />
-            </button>
-
-            {showRepoDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                <div className="p-2 border-b border-gray-700">
-                  <input
-                    type="text"
-                    value={repoSearch}
-                    onChange={(e) => setRepoSearch(e.target.value)}
-                    placeholder="Search repositories..."
-                    className={cn(
-                      'w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded',
-                      'text-white text-sm placeholder:text-gray-500',
-                      'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-                    )}
-                    autoFocus
-                  />
-                </div>
-                <div className="max-h-60 overflow-y-auto">
-                  {!repos ? (
-                    <div className="p-4 text-center">
-                      <div className="w-5 h-5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto" />
-                      <p className="text-gray-500 text-sm mt-2">Loading repositories...</p>
-                    </div>
-                  ) : filteredRepos && filteredRepos.length === 0 ? (
-                    <div className="p-4 text-center">
-                      <FolderIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                      <p className="text-gray-500 text-sm">No repositories found</p>
-                    </div>
-                  ) : (
-                    filteredRepos?.slice(0, 20).map((repo) => (
-                      <button
-                        key={repo.id}
-                        onClick={() => handleRepoSelect(repo)}
-                        className={cn(
-                          'w-full px-3 py-2.5 text-left flex items-center justify-between',
-                          'hover:bg-gray-700 transition-colors',
-                          'focus:outline-none focus:bg-gray-700'
-                        )}
-                      >
-                        <span className="text-gray-100 truncate">{repo.full_name}</span>
-                        {repo.private && (
-                          <span className="flex items-center gap-1 text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-400 ml-2 flex-shrink-0">
-                            <LockClosedIcon className="w-3 h-3" />
-                            Private
-                          </span>
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <RepoSelector
+            selectedRepo={selectedRepo}
+            repos={repos}
+            filteredRepos={filteredRepos}
+            showDropdown={showRepoDropdown}
+            repoSearch={repoSearch}
+            dropdownRef={repoDropdownRef}
+            onToggleDropdown={() => setShowRepoDropdown(!showRepoDropdown)}
+            onSearchChange={setRepoSearch}
+            onSelect={handleRepoSelect}
+          />
 
           {/* Branch Selector */}
-          <div className="relative" ref={branchDropdownRef}>
-            <button
-              onClick={() => {
-                if (selectedRepo) {
-                  setShowBranchDropdown(!showBranchDropdown);
-                  setShowRepoDropdown(false);
-                }
-              }}
-              disabled={!selectedRepo}
-              className={cn(
-                'flex items-center gap-2 transition-colors',
-                'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1',
-                selectedRepo
-                  ? 'text-gray-400 hover:text-white'
-                  : 'text-gray-600 cursor-not-allowed'
-              )}
-            >
-              <BoltIcon className="w-4 h-4" />
-              <span>{selectedBranch || 'Select branch'}</span>
-              <ChevronDownIcon className={cn('w-4 h-4 transition-transform', showBranchDropdown && 'rotate-180')} />
-            </button>
+          <BranchSelector
+            selectedBranch={selectedBranch}
+            branches={branches ?? undefined}
+            selectedRepo={selectedRepo}
+            onBranchSelect={setSelectedBranch}
+          />
 
-            {showBranchDropdown && branches && (
-              <div className="absolute top-full left-0 mt-2 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                <div className="max-h-60 overflow-y-auto">
-                  {branches.map((branch) => (
-                    <button
-                      key={branch}
-                      onClick={() => {
-                        setSelectedBranch(branch);
-                        setShowBranchDropdown(false);
-                      }}
-                      className={cn(
-                        'w-full px-3 py-2.5 text-left flex items-center justify-between',
-                        'hover:bg-gray-700 transition-colors',
-                        'focus:outline-none focus:bg-gray-700',
-                        branch === selectedBranch ? 'text-blue-400' : 'text-gray-100'
-                      )}
-                    >
-                      <span className="truncate">{branch}</span>
-                      {selectedRepo && branch === selectedRepo.default_branch && (
-                        <span className="text-xs text-gray-500 ml-2 flex-shrink-0">(default)</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Mode Selector */}
+          <ModeSelector
+            selectedMode={selectedMode}
+            onModeChange={setSelectedMode}
+          />
         </div>
 
         {/* Keyboard hint */}
-        <div className="mt-3 text-xs text-gray-600 text-center">
-          {submitShortcut} to submit
-        </div>
+        <div className="mt-3 text-xs text-gray-600 text-center">{submitShortcut} to submit</div>
+
+        {/* Validation hints - show when there are issues preventing submission */}
+        {!canSubmit && !loading && validationErrors.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {validationErrors.map((err, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between gap-2 p-2 bg-amber-900/20 border border-amber-800/50 rounded-lg text-sm"
+              >
+                <div className="flex items-center gap-2 text-amber-400">
+                  <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                  <span>{err.message}</span>
+                </div>
+                {err.action && (
+                  <button
+                    onClick={() => {
+                      // Trigger settings open via hash - will be handled by ClientLayout
+                      window.location.hash = err.action!.href.replace('#', '');
+                    }}
+                    className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-sm whitespace-nowrap"
+                  >
+                    <Cog6ToothIcon className="w-4 h-4" />
+                    {err.action.label}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Error message */}
         {error && (
@@ -585,6 +366,171 @@ export default function HomePage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// --- Sub-components ---
+
+interface RepoSelectorProps {
+  selectedRepo: GitHubRepository | null;
+  repos: GitHubRepository[] | undefined;
+  filteredRepos: GitHubRepository[] | undefined;
+  showDropdown: boolean;
+  repoSearch: string;
+  dropdownRef: React.RefObject<HTMLDivElement | null>;
+  onToggleDropdown: () => void;
+  onSearchChange: (value: string) => void;
+  onSelect: (repo: GitHubRepository) => void;
+}
+
+function RepoSelector({
+  selectedRepo,
+  repos,
+  filteredRepos,
+  showDropdown,
+  repoSearch,
+  dropdownRef,
+  onToggleDropdown,
+  onSearchChange,
+  onSelect,
+}: RepoSelectorProps) {
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={onToggleDropdown}
+        className={cn(
+          'flex items-center gap-2 transition-colors',
+          'text-gray-400 hover:text-white',
+          'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
+        )}
+      >
+        <FolderIcon className="w-4 h-4" />
+        <span>{selectedRepo ? selectedRepo.full_name : 'Select repository'}</span>
+        <ChevronDownIcon
+          className={cn('w-4 h-4 transition-transform', showDropdown && 'rotate-180')}
+        />
+      </button>
+
+      {showDropdown && (
+        <div className="absolute top-full left-0 mt-2 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="p-2 border-b border-gray-700">
+            <input
+              type="text"
+              value={repoSearch}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search repositories..."
+              className={cn(
+                'w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded',
+                'text-white text-sm placeholder:text-gray-500',
+                'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+              )}
+              autoFocus
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            {!repos ? (
+              <div className="p-4 text-center">
+                <div className="w-5 h-5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto" />
+                <p className="text-gray-500 text-sm mt-2">Loading repositories...</p>
+              </div>
+            ) : filteredRepos && filteredRepos.length === 0 ? (
+              <div className="p-4 text-center">
+                <FolderIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No repositories found</p>
+              </div>
+            ) : (
+              filteredRepos?.slice(0, 20).map((repo) => (
+                <button
+                  key={repo.id}
+                  onClick={() => onSelect(repo)}
+                  className={cn(
+                    'w-full px-3 py-2.5 text-left flex items-center justify-between',
+                    'hover:bg-gray-700 transition-colors',
+                    'focus:outline-none focus:bg-gray-700'
+                  )}
+                >
+                  <span className="text-gray-100 truncate">{repo.full_name}</span>
+                  {repo.private && (
+                    <span className="flex items-center gap-1 text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-400 ml-2 flex-shrink-0">
+                      <LockClosedIcon className="w-3 h-3" />
+                      Private
+                    </span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Mode labels for display
+const MODE_CONFIG: { value: CodingMode; label: string; description: string }[] = [
+  { value: 'interactive', label: 'Interactive', description: 'Manual control' },
+  { value: 'semi_auto', label: 'Semi Auto', description: 'Auto with approval' },
+  { value: 'full_auto', label: 'Full Auto', description: 'Fully autonomous' },
+];
+
+interface ModeSelectorProps {
+  selectedMode: CodingMode;
+  onModeChange: (mode: CodingMode) => void;
+}
+
+function ModeSelector({ selectedMode, onModeChange }: ModeSelectorProps) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useClickOutside(dropdownRef, () => setShowDropdown(false), showDropdown);
+
+  const currentConfig = MODE_CONFIG.find((m) => m.value === selectedMode) || MODE_CONFIG[0];
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className={cn(
+          'flex items-center gap-2 transition-colors',
+          'text-gray-400 hover:text-white',
+          'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1'
+        )}
+      >
+        <BoltIcon className="w-4 h-4" />
+        <span>{currentConfig.label}</span>
+        <ChevronDownIcon
+          className={cn('w-4 h-4 transition-transform', showDropdown && 'rotate-180')}
+        />
+      </button>
+
+      {showDropdown && (
+        <div className="absolute top-full left-0 mt-2 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          {MODE_CONFIG.map((mode) => (
+            <button
+              key={mode.value}
+              onClick={() => {
+                onModeChange(mode.value);
+                setShowDropdown(false);
+              }}
+              className={cn(
+                'w-full px-3 py-2.5 text-left flex items-center justify-between',
+                'hover:bg-gray-700 transition-colors',
+                'focus:outline-none focus:bg-gray-700',
+                selectedMode === mode.value && 'bg-gray-700/50'
+              )}
+            >
+              <div>
+                <div className="text-gray-100">{mode.label}</div>
+                <div className="text-xs text-gray-500">{mode.description}</div>
+              </div>
+              {selectedMode === mode.value && (
+                <span className="text-blue-400 text-sm">&#10003;</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -59,7 +59,7 @@ class GitHubService:
                 app_id_masked=self._mask_value(row["app_id"]),
                 installation_id=row["installation_id"],
                 installation_id_masked=self._mask_value(row["installation_id"]),
-                has_private_key=bool(row.get("private_key")),
+                has_private_key=bool(row["private_key"]),
                 is_configured=True,
                 source="db",
             )
@@ -69,9 +69,7 @@ class GitHubService:
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
         """Save GitHub App configuration to database."""
         # Check if config exists
-        existing = await self.db.fetch_one(
-            "SELECT id FROM github_app_config WHERE id = 1"
-        )
+        existing = await self.db.fetch_one("SELECT id FROM github_app_config WHERE id = 1")
 
         if data.private_key:
             # Encode private key to base64 for storage
@@ -85,7 +83,8 @@ class GitHubService:
                 await self.db.execute(
                     """
                     UPDATE github_app_config
-                    SET app_id = ?, private_key = ?, installation_id = ?, updated_at = CURRENT_TIMESTAMP
+                    SET app_id = ?, private_key = ?, installation_id = ?,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                     """,
                     (data.app_id, encoded_key, data.installation_id),
@@ -130,9 +129,7 @@ class GitHubService:
                 # Assume it's already decoded
                 return settings.github_app_private_key
 
-        row = await self.db.fetch_one(
-            "SELECT private_key FROM github_app_config WHERE id = 1"
-        )
+        row = await self.db.fetch_one("SELECT private_key FROM github_app_config WHERE id = 1")
         if row and row["private_key"]:
             return base64.b64decode(row["private_key"]).decode()
 
@@ -148,18 +145,20 @@ class GitHubService:
         if not private_key:
             return None
 
+        app_id: str | None
+        installation_id: str | None
         if config.source == "env":
-            return (
-                settings.github_app_id,
-                private_key,
-                settings.github_app_installation_id,
-            )
+            app_id = settings.github_app_id
+            installation_id = settings.github_app_installation_id
         else:
-            return (
-                config.app_id,
-                private_key,
-                config.installation_id,
-            )
+            app_id = config.app_id
+            installation_id = config.installation_id
+
+        # These should be set when is_configured is True
+        if not app_id or not installation_id:
+            return None
+
+        return (app_id, private_key, installation_id)
 
     def _generate_jwt(self, app_id: str, private_key: str) -> str:
         """Generate JWT for GitHub App authentication."""
@@ -207,9 +206,7 @@ class GitHubService:
 
         return token
 
-    async def _github_request(
-        self, method: str, endpoint: str, **kwargs: Any
-    ) -> Any:
+    async def _github_request(self, method: str, endpoint: str, **kwargs: Any) -> Any:
         """Make authenticated request to GitHub API."""
         token = await self._get_installation_token()
         if not token:
@@ -251,12 +248,29 @@ class GitHubService:
         return repos
 
     async def list_branches(self, owner: str, repo: str) -> list[str]:
-        """List branches for a repository."""
-        data = await self._github_request(
-            "GET", f"/repos/{owner}/{repo}/branches", params={"per_page": 100}
-        )
+        """List all branches for a repository with pagination support."""
+        all_branches: list[str] = []
+        page = 1
 
-        return [branch["name"] for branch in data]
+        while True:
+            data = await self._github_request(
+                "GET",
+                f"/repos/{owner}/{repo}/branches",
+                params={"per_page": 100, "page": page},
+            )
+
+            if not data:
+                break
+
+            all_branches.extend(branch["name"] for branch in data)
+
+            # If we got less than 100, we've reached the last page
+            if len(data) < 100:
+                break
+
+            page += 1
+
+        return all_branches
 
     async def clone_url(self, owner: str, repo: str) -> str:
         """Get authenticated clone URL for a repository."""
@@ -342,3 +356,213 @@ class GitHubService:
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
             json=update_data,
         )
+
+    async def find_pull_request_by_head(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        head: str,
+        base: str | None = None,
+        state: str = "all",
+    ) -> dict | None:
+        """Find a pull request by head branch (and optional base branch).
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            head: Head in the form "owner:branch".
+            base: Optional base branch name.
+            state: PR state: open|closed|all.
+
+        Returns:
+            PR dict if found, else None.
+        """
+        params: dict[str, Any] = {
+            "head": head,
+            "state": state,
+            "per_page": 20,
+            "sort": "created",
+            "direction": "desc",
+        }
+        if base:
+            params["base"] = base
+
+        prs = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params=params,
+        )
+
+        if isinstance(prs, list) and prs:
+            return prs[0]
+        return None
+
+    async def get_pull_request_status(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+    ) -> dict:
+        """Get PR status from GitHub API.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            pr_number: PR number.
+
+        Returns:
+            Dict with:
+                - state: "open" | "closed"
+                - merged: bool
+                - merged_at: str | None
+        """
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        return {
+            "state": pr_data.get("state", "open"),
+            "merged": pr_data.get("merged", False),
+            "merged_at": pr_data.get("merged_at"),
+        }
+
+    # =========================================
+    # Agentic Mode Methods
+    # =========================================
+
+    async def get_pr_check_status(self, pr_number: int, repo_full_name: str) -> str:
+        """Get combined CI check status for a PR.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            Combined status: "success", "pending", "failure", or "error".
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        # Get PR to find the head SHA
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        head_sha = pr_data.get("head", {}).get("sha")
+        if not head_sha:
+            return "error"
+
+        # Get combined status
+        status_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/commits/{head_sha}/status",
+        )
+
+        return status_data.get("state", "pending")
+
+    async def check_pr_conflicts(self, pr_number: int, repo_full_name: str) -> bool:
+        """Check if PR has merge conflicts.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            True if PR has conflicts, False otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        # GitHub uses "dirty" for conflict state
+        mergeable_state = pr_data.get("mergeable_state", "unknown")
+        return mergeable_state == "dirty"
+
+    async def is_pr_mergeable(self, pr_number: int, repo_full_name: str) -> bool:
+        """Check if PR is mergeable.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            True if PR is mergeable, False otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        # mergeable can be null while GitHub is computing
+        mergeable = pr_data.get("mergeable")
+        return mergeable is True
+
+    async def merge_pr(
+        self,
+        pr_number: int,
+        repo_full_name: str,
+        method: str = "squash",
+    ) -> str | None:
+        """Merge a pull request.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+            method: Merge method: "merge", "squash", or "rebase".
+
+        Returns:
+            Merge commit SHA if successful, None otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        result = await self._github_request(
+            "PUT",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+            json={"merge_method": method},
+        )
+
+        return result.get("sha")
+
+    async def delete_pr_branch(self, pr_number: int, repo_full_name: str) -> bool:
+        """Delete the branch associated with a PR.
+
+        Args:
+            pr_number: PR number.
+            repo_full_name: Full repository name (owner/repo).
+
+        Returns:
+            True if branch was deleted, False otherwise.
+        """
+        owner, repo = repo_full_name.split("/", 1)
+
+        # Get PR to find the branch name
+        pr_data = await self._github_request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+        )
+
+        branch_name = pr_data.get("head", {}).get("ref")
+        if not branch_name:
+            return False
+
+        token = await self._get_installation_token()
+        if not token:
+            return False
+
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"https://api.github.com/repos/{owner}/{repo}/git/refs/heads/{branch_name}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            return response.status_code == 204

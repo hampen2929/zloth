@@ -2,12 +2,12 @@
 
 from dursor_api.domain.enums import Provider, RunStatus
 from dursor_api.domain.models import (
+    PR,
     AgentRequest,
     AgentResult,
     FileDiff,
     Message,
     ModelProfile,
-    PR,
     Repo,
     Run,
     Task,

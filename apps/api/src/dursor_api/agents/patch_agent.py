@@ -5,13 +5,13 @@ import os
 from pathlib import Path
 
 from dursor_api.agents.base import BaseAgent
-from dursor_api.agents.llm_router import LLMClient, LLMConfig
+from dursor_api.agents.llm_router import LLMClient
 from dursor_api.domain.models import AgentRequest, AgentResult, FileDiff
-
 
 SYSTEM_PROMPT = """You are a code editing assistant that generates unified diff patches.
 
-Your task is to analyze the provided codebase and instruction, then output ONLY a unified diff patch that implements the requested changes.
+Your task is to analyze the provided codebase and instruction, then output ONLY a unified diff
+patch that implements the requested changes.
 
 IMPORTANT RULES:
 1. Output ONLY the unified diff patch - no explanations, no markdown code blocks, no other text
@@ -166,20 +166,50 @@ class PatchAgent(BaseAgent):
 
         # Common code file extensions
         code_extensions = {
-            ".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".go", ".rs", ".rb",
-            ".php", ".c", ".cpp", ".h", ".hpp", ".cs", ".swift", ".kt", ".scala",
-            ".vue", ".svelte", ".html", ".css", ".scss", ".sass", ".less",
-            ".json", ".yaml", ".yml", ".toml", ".xml", ".md", ".txt",
-            ".sh", ".bash", ".zsh", ".fish", ".sql", ".graphql",
+            ".py",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".java",
+            ".go",
+            ".rs",
+            ".rb",
+            ".php",
+            ".c",
+            ".cpp",
+            ".h",
+            ".hpp",
+            ".cs",
+            ".swift",
+            ".kt",
+            ".scala",
+            ".vue",
+            ".svelte",
+            ".html",
+            ".css",
+            ".scss",
+            ".sass",
+            ".less",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".xml",
+            ".md",
+            ".txt",
+            ".sh",
+            ".bash",
+            ".zsh",
+            ".fish",
+            ".sql",
+            ".graphql",
         }
 
         for root, dirs, files in os.walk(workspace_path):
             # Skip hidden directories and common non-code directories
-            dirs[:] = [
-                d for d in dirs
-                if not d.startswith(".")
-                and d not in {"node_modules", "venv", ".venv", "__pycache__", "dist", "build", "target"}
-            ]
+            skip_dirs = {"node_modules", "venv", ".venv", "__pycache__", "dist", "build", "target"}
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in skip_dirs]
 
             for file in files:
                 if len(file_contents) >= max_files:
@@ -307,12 +337,14 @@ class PatchAgent(BaseAgent):
             if line.startswith("--- "):
                 # Save previous file
                 if current_file:
-                    files.append(FileDiff(
-                        path=current_file,
-                        added_lines=added,
-                        removed_lines=removed,
-                        patch="\n".join(current_patch_lines),
-                    ))
+                    files.append(
+                        FileDiff(
+                            path=current_file,
+                            added_lines=added,
+                            removed_lines=removed,
+                            patch="\n".join(current_patch_lines),
+                        )
+                    )
 
                 # Start new file
                 current_patch_lines = [line]
@@ -351,12 +383,14 @@ class PatchAgent(BaseAgent):
 
         # Save last file
         if current_file:
-            files.append(FileDiff(
-                path=current_file,
-                added_lines=added,
-                removed_lines=removed,
-                patch="\n".join(current_patch_lines),
-            ))
+            files.append(
+                FileDiff(
+                    path=current_file,
+                    added_lines=added,
+                    removed_lines=removed,
+                    patch="\n".join(current_patch_lines),
+                )
+            )
 
         return files
 
@@ -384,4 +418,7 @@ class PatchAgent(BaseAgent):
         total_added = sum(f.added_lines for f in files_changed)
         total_removed = sum(f.removed_lines for f in files_changed)
 
-        return f"Modified {len(files_changed)} file(s): {file_list}. (+{total_added}/-{total_removed} lines)"
+        return (
+            f"Modified {len(files_changed)} file(s): {file_list}. "
+            f"(+{total_added}/-{total_removed} lines)"
+        )

@@ -1,9 +1,12 @@
 """Repository management service."""
 
+from __future__ import annotations
+
 import os
 import shutil
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import git
 
@@ -11,19 +14,22 @@ from dursor_api.config import settings
 from dursor_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
 from dursor_api.storage.dao import RepoDAO
 
-# Forward declaration for type hints
-GitHubService = None
+if TYPE_CHECKING:
+    from dursor_api.services.github_service import GitHubService
 
 
 class RepoService:
     """Service for managing Git repositories."""
 
-    def __init__(self, dao: RepoDAO, github_service: "GitHubService | None" = None):
+    def __init__(self, dao: RepoDAO, github_service: GitHubService | None = None):
         self.dao = dao
-        self.workspaces_dir = settings.workspaces_dir
+        if settings.workspaces_dir:
+            self.workspaces_dir: Path = settings.workspaces_dir
+        else:
+            raise ValueError("workspaces_dir must be set in settings")
         self._github_service = github_service
 
-    def set_github_service(self, github_service: "GitHubService") -> None:
+    def set_github_service(self, github_service: GitHubService) -> None:
         """Set the GitHub service (for dependency injection)."""
         self._github_service = github_service
 
@@ -104,7 +110,7 @@ class RepoService:
         """
         return await self.dao.find_by_url(repo_url)
 
-    async def select(self, data: RepoSelectRequest, github_service: "GitHubService") -> Repo:
+    async def select(self, data: RepoSelectRequest, github_service: GitHubService) -> Repo:
         """Select and clone a repository by owner/repo name using GitHub App auth.
 
         Args:
@@ -123,12 +129,35 @@ class RepoService:
         # Check if already cloned
         existing = await self.find_by_url(repo_url)
         if existing:
-            # Optionally update to the requested branch
+            # Update selected_branch if a branch is specified
             if data.branch:
+                # Save selected_branch to database for use as default base_ref
+                await self.dao.update_selected_branch(existing.id, data.branch)
+                # Update the existing object to reflect the change
+                existing.selected_branch = data.branch
+
                 workspace_path = Path(existing.workspace_path)
                 if workspace_path.exists():
                     repo = git.Repo(workspace_path)
-                    repo.git.checkout(data.branch)
+                    try:
+                        # Fetch the branch from origin with auth (shallow clone may not have it)
+                        auth_url = await github_service.clone_url(data.owner, data.repo)
+                        repo.git.fetch(auth_url, data.branch, depth=1)
+                    except git.GitCommandError:
+                        # Branch might not exist on remote, ignore fetch errors
+                        pass
+                    try:
+                        # Force checkout to FETCH_HEAD to ensure we have the latest remote state.
+                        # Using -B to reset the local branch if it already exists.
+                        repo.git.checkout("-B", data.branch, "FETCH_HEAD")
+                    except git.GitCommandError as e:
+                        # Branch might already be checked out in a worktree, which is fine.
+                        # Git prevents checking out the same branch in multiple places,
+                        # but the branch exists and is available for worktree operations.
+                        if "already checked out at" in str(e):
+                            pass  # Safe to ignore - branch exists in a worktree
+                        else:
+                            raise
             return existing
 
         # Ensure workspaces directory is writable before cloning
@@ -154,10 +183,14 @@ class RepoService:
         default_branch = repo.active_branch.name
         latest_commit = repo.head.commit.hexsha
 
+        # Determine selected_branch (only if explicitly specified and different from default)
+        selected_branch = data.branch if data.branch and data.branch != default_branch else None
+
         # Save to database (store public URL, not auth URL)
         return await self.dao.create(
             repo_url=repo_url,
             default_branch=default_branch,
+            selected_branch=selected_branch,
             latest_commit=latest_commit,
             workspace_path=str(workspace_path),
         )

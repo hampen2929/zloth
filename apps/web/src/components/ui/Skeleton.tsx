@@ -101,14 +101,17 @@ export function FormSkeleton() {
   );
 }
 
+// Pre-computed widths for diff skeleton lines to avoid impure Math.random() in render
+const DIFF_LINE_WIDTHS = [72, 55, 68, 45, 80, 62, 48, 75, 58, 42, 70, 65, 52, 78, 60];
+
 export function DiffSkeleton() {
   return (
     <div className="space-y-1 p-4 font-mono text-sm">
-      {Array.from({ length: 15 }).map((_, i) => (
+      {DIFF_LINE_WIDTHS.map((width, i) => (
         <Skeleton
           key={i}
           className="h-5"
-          style={{ width: `${Math.random() * 40 + 40}%` }}
+          style={{ width: `${width}%` }}
         />
       ))}
     </div>

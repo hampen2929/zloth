@@ -5,6 +5,7 @@ import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 
@@ -17,7 +18,12 @@ class Database:
     """Async SQLite database wrapper."""
 
     def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or settings.data_dir / "dursor.db"
+        if db_path:
+            self.db_path = db_path
+        elif settings.data_dir:
+            self.db_path = settings.data_dir / "dursor.db"
+        else:
+            raise ValueError("data_dir must be set in settings")
         self._connection: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:
@@ -40,8 +46,9 @@ class Database:
         if not self._connection:
             await self.connect()
 
-        await self._connection.executescript(schema)
-        await self._connection.commit()
+        conn = self.connection
+        await conn.executescript(schema)
+        await conn.commit()
 
         # Run migrations for existing databases
         await self._run_migrations()
@@ -183,6 +190,21 @@ class Database:
             raise RuntimeError("Database not connected")
         return self._connection
 
+    async def fetch_one(
+        self, query: str, params: tuple[Any, ...] | None = None
+    ) -> aiosqlite.Row | None:
+        """Execute a query and fetch one row."""
+        conn = self.connection
+        cursor = await conn.execute(query, params or ())
+        return await cursor.fetchone()
+
+    async def execute(self, query: str, params: tuple[Any, ...] | None = None) -> aiosqlite.Cursor:
+        """Execute a query and return the cursor."""
+        conn = self.connection
+        cursor = await conn.execute(query, params or ())
+        await conn.commit()
+        return cursor
+
 
 # Global database instance
 _db: Database | None = None
@@ -199,7 +221,7 @@ async def get_db() -> Database:
 
 
 @asynccontextmanager
-async def get_db_context() -> AsyncGenerator[Database, None]:
+async def get_db_context() -> AsyncGenerator[Database]:
     """Get database as async context manager."""
     db = await get_db()
     try:

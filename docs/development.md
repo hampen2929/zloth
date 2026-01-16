@@ -4,7 +4,7 @@
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - Node.js 20+
 - Git
 - Docker & Docker Compose (optional)
@@ -14,21 +14,17 @@
 ```bash
 cd apps/api
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
 # Install dependencies (including dev)
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Configure environment
 cp ../../.env.example ../../.env
 # Edit .env
 
 # Start dev server
-python -m dursor_api.main
+uv run python -m dursor_api.main
 # or
-uvicorn dursor_api.main:app --reload --port 8000
+uv run uvicorn dursor_api.main:app --reload --port 8000
 ```
 
 ### Frontend (Next.js)
@@ -69,16 +65,16 @@ docker compose down
 cd apps/api
 
 # Lint
-ruff check src/
+uv run ruff check src/
 
 # Auto-fix
-ruff check --fix src/
+uv run ruff check --fix src/
 
 # Format
-ruff format src/
+uv run ruff format src/
 
 # Type check
-mypy src/
+uv run mypy src/
 ```
 
 ### TypeScript
@@ -101,13 +97,13 @@ npx tsc --noEmit
 cd apps/api
 
 # Run all tests
-pytest
+uv run pytest
 
 # With coverage
-pytest --cov=dursor_api
+uv run pytest --cov=dursor_api
 
 # Specific test
-pytest tests/test_runs.py -v
+uv run pytest tests/test_runs.py -v
 ```
 
 ### Frontend
@@ -143,7 +139,7 @@ npm test
 
 **Change log level:**
 ```bash
-DURSOR_LOG_LEVEL=DEBUG python -m dursor_api.main
+DURSOR_LOG_LEVEL=DEBUG uv run python -m dursor_api.main
 ```
 
 ### Frontend
@@ -261,7 +257,7 @@ ALTER TABLE runs ADD COLUMN new_column TEXT;
 
 **Q: `ModuleNotFoundError: No module named 'dursor_api'`**
 
-A: Activate virtual environment and run `pip install -e .`
+A: Run `uv sync` to install the package
 
 **Q: Frontend cannot connect to API**
 

@@ -25,14 +25,33 @@ class WorktreeInfo:
 class WorktreeService:
     """Manages git worktrees for isolated branch development."""
 
-    def __init__(self, workspaces_dir: Path | None = None):
+    def __init__(
+        self,
+        workspaces_dir: Path | None = None,
+        worktrees_dir: Path | None = None,
+    ):
         """Initialize WorktreeService.
 
         Args:
-            workspaces_dir: Base directory for worktrees. Defaults to settings.
+            workspaces_dir: Base directory for workspaces. Defaults to settings.
+            worktrees_dir: Base directory for worktrees. Defaults to settings.
+                           Separate from workspaces_dir to avoid inheriting
+                           parent directory's CLAUDE.md when CLI agents run.
         """
-        self.workspaces_dir = workspaces_dir or settings.workspaces_dir
-        self.worktrees_dir = self.workspaces_dir / "worktrees"
+        if workspaces_dir:
+            self.workspaces_dir = workspaces_dir
+        elif settings.workspaces_dir:
+            self.workspaces_dir = settings.workspaces_dir
+        else:
+            raise ValueError("workspaces_dir must be provided or set in settings")
+
+        if worktrees_dir:
+            self.worktrees_dir = worktrees_dir
+        elif settings.worktrees_dir:
+            self.worktrees_dir = settings.worktrees_dir
+        else:
+            # Fallback to old behavior if not configured
+            self.worktrees_dir = self.workspaces_dir / "worktrees"
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
     def _generate_branch_name(self, run_id: str) -> str:
@@ -70,7 +89,7 @@ class WorktreeService:
         worktree_path = self.worktrees_dir / f"run_{run_id}"
 
         # Run git commands in a thread pool to avoid blocking
-        def _create_worktree():
+        def _create_worktree() -> WorktreeInfo:
             source_repo = git.Repo(repo.workspace_path)
 
             # Fetch to ensure we have latest refs
@@ -96,7 +115,8 @@ class WorktreeService:
             # git worktree add -b <branch> <path> <base>
             source_repo.git.worktree(
                 "add",
-                "-b", branch_name,
+                "-b",
+                branch_name,
                 str(worktree_path),
                 base_branch,
             )
@@ -118,7 +138,8 @@ class WorktreeService:
             worktree_path: Path to the worktree to remove.
             delete_branch: Whether to also delete the branch.
         """
-        def _cleanup():
+
+        def _cleanup() -> None:
             if not worktree_path.exists():
                 return
 
@@ -172,9 +193,10 @@ class WorktreeService:
         Returns:
             List of WorktreeInfo objects.
         """
-        def _list():
+
+        def _list() -> list[WorktreeInfo]:
             source_repo = git.Repo(repo.workspace_path)
-            worktrees = []
+            worktrees: list[WorktreeInfo] = []
 
             # Parse git worktree list --porcelain output
             try:
@@ -190,12 +212,14 @@ class WorktreeService:
                     elif line == "" and current_path and current_branch:
                         # Only include worktrees in our worktrees directory
                         if str(current_path).startswith(str(self.worktrees_dir)):
-                            worktrees.append(WorktreeInfo(
-                                path=current_path,
-                                branch_name=current_branch,
-                                base_branch="",  # Not easily available
-                                created_at=datetime.utcnow(),  # Not easily available
-                            ))
+                            worktrees.append(
+                                WorktreeInfo(
+                                    path=current_path,
+                                    branch_name=current_branch,
+                                    base_branch="",  # Not easily available
+                                    created_at=datetime.utcnow(),  # Not easily available
+                                )
+                            )
                         current_path = None
                         current_branch = None
 
@@ -216,24 +240,26 @@ class WorktreeService:
         Returns:
             Tuple of (unified diff string, list of changed file paths).
         """
-        def _get_changes():
+
+        def _get_changes() -> tuple[str, list[str]]:
             repo = git.Repo(worktree_path)
 
             # Get list of changed files
-            changed_files = []
+            changed_files: list[str] = []
 
             # Untracked files
             for item in repo.untracked_files:
                 changed_files.append(item)
 
             # Modified and deleted files
-            for item in repo.index.diff(None):
-                changed_files.append(item.a_path)
+            for diff_item in repo.index.diff(None):
+                if diff_item.a_path:
+                    changed_files.append(diff_item.a_path)
 
             # Staged files
-            for item in repo.index.diff("HEAD"):
-                if item.a_path not in changed_files:
-                    changed_files.append(item.a_path)
+            for diff_item in repo.index.diff("HEAD"):
+                if diff_item.a_path and diff_item.a_path not in changed_files:
+                    changed_files.append(diff_item.a_path)
 
             # Generate diff
             # First, stage all changes
@@ -264,7 +290,8 @@ class WorktreeService:
         Returns:
             Commit SHA.
         """
-        def _commit():
+
+        def _commit() -> str:
             repo = git.Repo(worktree_path)
             repo.git.add("-A")
             repo.index.commit(message)

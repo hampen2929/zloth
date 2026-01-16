@@ -8,52 +8,59 @@ operations while AI Agents only edit files.
 from __future__ import annotations
 
 import asyncio
+import builtins
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-logger = logging.getLogger(__name__)
 
 from dursor_api.agents.llm_router import LLMConfig, LLMRouter
 from dursor_api.agents.patch_agent import PatchAgent
 from dursor_api.config import settings
-from dursor_api.domain.enums import ExecutorType, RunStatus
+from dursor_api.domain.enums import ExecutorType, RoleExecutionStatus, RunStatus
 from dursor_api.domain.models import (
     SUMMARY_FILE_PATH,
     AgentConstraints,
     AgentRequest,
     FileDiff,
+    ImplementationResult,
     Run,
     RunCreate,
 )
 from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
 from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from dursor_api.roles.base_service import BaseRoleService
+from dursor_api.roles.registry import RoleRegistry
+from dursor_api.services.commit_message import ensure_english_commit_message
 from dursor_api.services.git_service import GitService
 from dursor_api.services.model_service import ModelService
 from dursor_api.services.repo_service import RepoService
-from dursor_api.storage.dao import RunDAO, TaskDAO
+from dursor_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from dursor_api.services.github_service import GitHubService
     from dursor_api.services.output_manager import OutputManager
 
 
+# Note: QueueAdapter is kept for backward compatibility
+# New code should use RoleQueueAdapter from roles.base_service
 class QueueAdapter:
     """Simple in-memory queue adapter for v0.1.
 
     Can be replaced with Celery/RQ/Redis in v0.2+.
     """
 
-    def __init__(self):
-        self._tasks: dict[str, asyncio.Task] = {}
+    def __init__(self) -> None:
+        self._tasks: dict[str, asyncio.Task[None]] = {}
 
     def enqueue(
         self,
         run_id: str,
-        coro: Callable[[], Awaitable[None]],
+        coro: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         """Enqueue a run for execution.
 
@@ -61,7 +68,7 @@ class QueueAdapter:
             run_id: Run ID.
             coro: Coroutine to execute.
         """
-        task = asyncio.create_task(coro())
+        task: asyncio.Task[None] = asyncio.create_task(coro())
         self._tasks[run_id] = task
 
     def cancel(self, run_id: str) -> bool:
@@ -92,14 +99,18 @@ class QueueAdapter:
         return task is not None and not task.done()
 
 
-class RunService:
-    """Service for managing and executing runs.
+@RoleRegistry.register("implementation")
+class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
+    """Service for managing and executing runs (Implementation Role).
 
     Following the orchestrator management pattern, this service:
     - Creates worktrees for isolated execution
     - Runs AI Agent CLIs (file editing only)
     - Automatically stages, commits, and pushes changes
     - Tracks commit SHAs for PR creation
+
+    This service inherits from BaseRoleService for common role patterns
+    while maintaining its specialized implementation logic.
     """
 
     def __init__(
@@ -109,34 +120,41 @@ class RunService:
         model_service: ModelService,
         repo_service: RepoService,
         git_service: GitService | None = None,
-        github_service: "GitHubService | None" = None,
-        output_manager: "OutputManager | None" = None,
+        user_preferences_dao: UserPreferencesDAO | None = None,
+        github_service: GitHubService | None = None,
+        output_manager: OutputManager | None = None,
     ):
+        # Initialize base class with output manager and executors
+        super().__init__(output_manager=output_manager)
+
         self.run_dao = run_dao
         self.task_dao = task_dao
         self.model_service = model_service
         self.repo_service = repo_service
         self.git_service = git_service or GitService()
+        self.user_preferences_dao = user_preferences_dao
         self.github_service = github_service
-        self.output_manager = output_manager
+        # Note: self.output_manager is set by base class
         self.queue = QueueAdapter()
         self.llm_router = LLMRouter()
+        # Note: Executors are also available via self._executors from base class
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
         )
-        self.codex_executor = CodexExecutor(
-            CodexOptions(codex_cli_path=settings.codex_cli_path)
-        )
+        self.codex_executor = CodexExecutor(CodexOptions(codex_cli_path=settings.codex_cli_path))
         self.gemini_executor = GeminiExecutor(
             GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
         )
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
-        """Create runs for multiple models or Claude Code.
+        """Create runs for multiple models or CLI executors.
+
+        Supports parallel execution of multiple CLI executors (Claude Code, Codex, Gemini)
+        by specifying executor_types list.
 
         Args:
             task_id: Task ID.
-            data: Run creation data with model IDs or executor type.
+            data: Run creation data with model IDs or executor type(s).
 
         Returns:
             List of created Run objects.
@@ -151,55 +169,51 @@ class RunService:
         if not repo:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        runs = []
-
-        # Lock executor after the first run in the task.
-        # Users expect "resume" style conversations to keep using the initially chosen executor.
+        runs: list[Run] = []
         existing_runs = await self.run_dao.list(task_id)
-        locked_executor: ExecutorType | None = None
-        if existing_runs:
-            # DAO returns newest-first; the earliest run is last.
-            locked_executor = existing_runs[-1].executor_type
-            if data.executor_type != locked_executor:
-                data = data.model_copy(update={"executor_type": locked_executor})
 
-        if data.executor_type == ExecutorType.CLAUDE_CODE:
-            # Create a single Claude Code run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.CLAUDE_CODE,
-            )
-            runs.append(run)
-        elif data.executor_type == ExecutorType.CODEX_CLI:
-            # Create a single Codex CLI run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.CODEX_CLI,
-            )
-            runs.append(run)
-        elif data.executor_type == ExecutorType.GEMINI_CLI:
-            # Create a single Gemini CLI run
-            run = await self._create_cli_run(
-                task_id=task_id,
-                repo=repo,
-                instruction=data.instruction,
-                base_ref=data.base_ref or repo.default_branch,
-                executor_type=ExecutorType.GEMINI_CLI,
-            )
-            runs.append(run)
+        # Determine executor types to use:
+        # 1. If executor_types is specified, use it (new multi-CLI parallel execution)
+        # 2. Otherwise, fall back to executor_type for backward compatibility
+        executor_types: list[ExecutorType]
+        if data.executor_types:
+            executor_types = data.executor_types
         else:
+            executor_types = [data.executor_type]
+
+        # Note: Each executor type maintains its own worktree and session
+        # so we allow multiple different CLI types in the same task
+
+        # Separate CLI executors from PATCH_AGENT
+        cli_executor_types = [
+            et
+            for et in executor_types
+            if et in {ExecutorType.CLAUDE_CODE, ExecutorType.CODEX_CLI, ExecutorType.GEMINI_CLI}
+        ]
+        has_patch_agent = ExecutorType.PATCH_AGENT in executor_types
+
+        # Create runs for each CLI executor type
+        for executor_type in cli_executor_types:
+            run = await self._create_cli_run(
+                task_id=task_id,
+                repo=repo,
+                instruction=data.instruction,
+                base_ref=data.base_ref or repo.selected_branch or repo.default_branch,
+                executor_type=executor_type,
+                message_id=data.message_id,
+            )
+            runs.append(run)
+
+        # Handle PATCH_AGENT if included
+        if has_patch_agent:
             # Create runs for each model (PatchAgent)
             model_ids = data.model_ids
             if not model_ids:
                 # If the task is already locked to patch_agent, reuse the most recent
                 # model set (grouped by latest patch_agent instruction).
-                patch_runs = [r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT]
+                patch_runs = [
+                    r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT
+                ]
                 if patch_runs:
                     latest_instruction = patch_runs[0].instruction  # newest-first
                     model_ids = []
@@ -224,17 +238,23 @@ class RunService:
                     task_id=task_id,
                     instruction=data.instruction,
                     executor_type=ExecutorType.PATCH_AGENT,
+                    message_id=data.message_id,
                     model_id=model_id,
                     model_name=model.model_name,
                     provider=model.provider,
-                    base_ref=data.base_ref or repo.default_branch,
+                    base_ref=data.base_ref or repo.selected_branch or repo.default_branch,
                 )
                 runs.append(run)
 
                 # Enqueue for execution
+                def make_patch_agent_coro(
+                    r: Run, rp: Any
+                ) -> Callable[[], Coroutine[Any, Any, None]]:
+                    return lambda: self._execute_patch_agent_run(r, rp)
+
                 self.queue.enqueue(
                     run.id,
-                    lambda r=run, rp=repo: self._execute_patch_agent_run(r, rp),
+                    make_patch_agent_coro(run, repo),
                 )
 
         return runs
@@ -246,6 +266,7 @@ class RunService:
         instruction: str,
         base_ref: str,
         executor_type: ExecutorType,
+        message_id: str | None = None,
     ) -> Run:
         """Create and start a CLI-based run (Claude Code, Codex, or Gemini).
 
@@ -259,6 +280,7 @@ class RunService:
             instruction: Natural language instruction.
             base_ref: Base branch to work from.
             executor_type: Type of CLI executor to use.
+            message_id: ID of the triggering message.
 
         Returns:
             Created Run object.
@@ -285,15 +307,43 @@ class RunService:
             # Verify worktree is still valid (exists and is a valid git repo)
             worktree_path = Path(existing_run.worktree_path)
             if await self.git_service.is_valid_worktree(worktree_path):
-                # Reuse existing worktree and branch number
-                worktree_info = WorktreeInfo(
-                    path=worktree_path,
-                    branch_name=existing_run.working_branch,
-                    base_branch=existing_run.base_ref or base_ref,
-                    created_at=existing_run.created_at,
+                # If we're working from the repo's default branch, ensure the existing worktree
+                # still contains the latest origin/<default>. Otherwise, create a fresh worktree
+                # from the latest default to avoid PRs being based on a stale main.
+                should_check_default = (base_ref == repo.default_branch) and bool(
+                    repo.default_branch
                 )
-                branch_number = existing_run.branch_number
-                logger.info(f"Reusing existing worktree: {worktree_path}")
+                if should_check_default:
+                    default_ref = f"origin/{repo.default_branch}"
+                    up_to_date = await self.git_service.is_ancestor(
+                        repo_path=worktree_path,
+                        ancestor=default_ref,
+                        descendant="HEAD",
+                    )
+                    if not up_to_date:
+                        logger.info(
+                            "Existing worktree is behind latest default; creating a new worktree "
+                            f"(worktree={worktree_path}, default={default_ref})"
+                        )
+                    else:
+                        worktree_info = WorktreeInfo(
+                            path=worktree_path,
+                            branch_name=existing_run.working_branch or "",
+                            base_branch=existing_run.base_ref or base_ref,
+                            created_at=existing_run.created_at,
+                        )
+                        branch_number = existing_run.branch_number
+                        logger.info(f"Reusing existing worktree: {worktree_path}")
+                else:
+                    # Reuse existing worktree (no default-base freshness check)
+                    worktree_info = WorktreeInfo(
+                        path=worktree_path,
+                        branch_name=existing_run.working_branch or "",
+                        base_branch=existing_run.base_ref or base_ref,
+                        created_at=existing_run.created_at,
+                    )
+                    branch_number = existing_run.branch_number
+                    logger.info(f"Reusing existing worktree: {worktree_path}")
             else:
                 logger.warning(f"Worktree invalid or broken, will create new: {worktree_path}")
 
@@ -306,17 +356,26 @@ class RunService:
             task_id=task_id,
             instruction=instruction,
             executor_type=executor_type,
+            message_id=message_id,
             base_ref=base_ref,
             branch_number=branch_number,
         )
 
         if not worktree_info:
+            branch_prefix: str | None = None
+            if self.user_preferences_dao:
+                prefs = await self.user_preferences_dao.get()
+                branch_prefix = prefs.default_branch_prefix if prefs else None
+                # Apply custom worktrees_dir from UserPreferences if set
+                if prefs and prefs.worktrees_dir:
+                    self.git_service.set_worktrees_dir(prefs.worktrees_dir)
+
             # Create new worktree for this run
             worktree_info = await self.git_service.create_worktree(
                 repo=repo,
                 base_branch=base_ref,
                 run_id=run.id,
-                branch_number=branch_number,
+                branch_prefix=branch_prefix,
             )
 
         # Update run with worktree info
@@ -327,17 +386,22 @@ class RunService:
         )
 
         # Update the run object with new info
-        run = await self.run_dao.get(run.id)
+        updated_run = await self.run_dao.get(run.id)
+        if not updated_run:
+            raise ValueError(f"Run not found after update: {run.id}")
 
         # Enqueue for execution based on executor type
+        def make_coro(
+            r: Run, wt: Any, et: ExecutorType, ps: str | None, rp: Any
+        ) -> Callable[[], Coroutine[Any, Any, None]]:
+            return lambda: self._execute_cli_run(r, wt, et, ps, rp)
+
         self.queue.enqueue(
-            run.id,
-            lambda r=run, wt=worktree_info, et=executor_type, ps=previous_session_id, rp=repo: self._execute_cli_run(
-                r, wt, et, ps, rp
-            ),
+            updated_run.id,
+            make_coro(updated_run, worktree_info, executor_type, previous_session_id, repo),
         )
 
-        return run
+        return updated_run
 
     async def get(self, run_id: str) -> Run | None:
         """Get a run by ID.
@@ -416,6 +480,13 @@ class RunService:
             run: Run object.
             repo: Repository object.
         """
+        # Validate required fields for PatchAgent runs
+        if not run.model_id or not run.provider or not run.model_name:
+            raise ValueError(
+                f"PatchAgent run {run.id} missing required model info: "
+                f"model_id={run.model_id}, provider={run.provider}, model_name={run.model_name}"
+            )
+
         try:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
@@ -501,7 +572,9 @@ class RunService:
         commit_sha: str | None = None
 
         # Map executor types to their executors and names
-        executor_map = {
+        executor_map: dict[
+            ExecutorType, tuple[ClaudeCodeExecutor | CodexExecutor | GeminiExecutor, str]
+        ] = {
             ExecutorType.CLAUDE_CODE: (self.claude_executor, "Claude Code"),
             ExecutorType.CODEX_CLI: (self.codex_executor, "Codex"),
             ExecutorType.GEMINI_CLI: (self.gemini_executor, "Gemini"),
@@ -509,10 +582,73 @@ class RunService:
 
         executor, executor_name = executor_map[executor_type]
 
+        # Track if we need to add conflict resolution instructions
+        conflict_instruction: str | None = None
+
         try:
             # Update status to running
             await self.run_dao.update_status(run.id, RunStatus.RUNNING)
             logger.info(f"[{run.id[:8]}] Starting {executor_name} run")
+
+            # Publish initial progress log so frontend can see activity
+            await self._log_output(run.id, f"Starting {executor_name} execution...")
+
+            # 0. Sync with remote (pull latest changes from remote branch)
+            # This handles the case where the PR branch was updated on GitHub
+            # (e.g., via "Update branch" button) and we need to incorporate those changes.
+            if self.github_service and repo:
+                try:
+                    await self._log_output(run.id, "Checking for remote updates...")
+                    owner, repo_name = self._parse_github_url(repo.repo_url)
+                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
+
+                    # Check if we're behind remote
+                    is_behind = await self.git_service.is_behind_remote(
+                        worktree_info.path,
+                        worktree_info.branch_name,
+                        auth_url=auth_url,
+                    )
+
+                    if is_behind:
+                        logger.info(
+                            f"[{run.id[:8]}] Local branch is behind remote, "
+                            "pulling latest changes..."
+                        )
+                        logs.append("Detected remote updates, pulling latest changes...")
+
+                        pull_result = await self.git_service.pull(
+                            worktree_info.path,
+                            branch=worktree_info.branch_name,
+                            auth_url=auth_url,
+                        )
+
+                        if pull_result.success:
+                            logs.append("Successfully pulled latest changes from remote")
+                            logger.info(f"[{run.id[:8]}] Successfully pulled remote changes")
+                        elif pull_result.has_conflicts:
+                            # Conflicts detected - add resolution instructions for AI
+                            conflict_files_str = ", ".join(pull_result.conflict_files)
+                            logs.append(
+                                f"Merge conflicts detected in: {conflict_files_str}. "
+                                "AI will be asked to resolve them."
+                            )
+                            logger.warning(
+                                f"[{run.id[:8]}] Merge conflicts detected: "
+                                f"{pull_result.conflict_files}"
+                            )
+                            conflict_instruction = self._build_conflict_resolution_instruction(
+                                pull_result.conflict_files
+                            )
+                        else:
+                            logs.append(f"Pull failed: {pull_result.error}")
+                            logger.warning(f"[{run.id[:8]}] Pull failed: {pull_result.error}")
+                    else:
+                        logger.info(f"[{run.id[:8]}] Branch is up to date with remote")
+
+                except Exception as sync_error:
+                    # Log but don't fail - we can still proceed with the run
+                    logs.append(f"Remote sync warning: {sync_error}")
+                    logger.warning(f"[{run.id[:8]}] Remote sync failed: {sync_error}")
 
             # 1. Record pre-execution status
             pre_status = await self.git_service.get_status(worktree_info.path)
@@ -525,11 +661,25 @@ class RunService:
 
             # 2. Build instruction with constraints
             constraints = AgentConstraints()
-            instruction_with_constraints = f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
-            logger.info(f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars")
+
+            # Include conflict resolution instruction if conflicts were detected
+            if conflict_instruction:
+                instruction_with_constraints = (
+                    f"{constraints.to_prompt()}\n\n"
+                    f"{conflict_instruction}\n\n"
+                    f"## Task\n{run.instruction}"
+                )
+            else:
+                instruction_with_constraints = (
+                    f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
+                )
+            logger.info(
+                f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars"
+            )
 
             # 3. Execute the CLI (file editing only)
             logger.info(f"[{run.id[:8]}] Executing CLI...")
+            await self._log_output(run.id, f"Launching {executor_name} CLI...")
             attempt_session_id = resume_session_id
             result = await executor.execute(
                 worktree_path=worktree_info.path,
@@ -537,16 +687,26 @@ class RunService:
                 on_output=lambda line: self._log_output(run.id, line),
                 resume_session_id=attempt_session_id,
             )
+            # Session error patterns that should trigger a retry without session continuation
+            session_error_patterns = [
+                "already in use",
+                "in use",
+                "no conversation found",
+                "not found",
+                "invalid session",
+                "session expired",
+            ]
+            error_lower = result.error.lower() if result.error else ""
             if (
                 not result.success
                 and attempt_session_id
                 and result.error
-                and ("session" in result.error.lower())
-                and ("already in use" in result.error.lower() or "in use" in result.error.lower())
+                and ("session" in error_lower)
+                and any(pattern in error_lower for pattern in session_error_patterns)
             ):
                 # Retry once without session continuation if the CLI rejects the session.
                 logs.append(
-                    "Session continuation failed (session already in use). Retrying without session_id."
+                    f"Session continuation failed ({result.error}). Retrying without session_id."
                 )
                 result = await executor.execute(
                     worktree_path=worktree_info.path,
@@ -567,9 +727,7 @@ class RunService:
                 return
 
             # 4. Read and remove summary file (before staging)
-            summary_from_file = await self._read_and_remove_summary_file(
-                worktree_info.path, logs
-            )
+            summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
 
             # 5. Stage all changes
             await self.git_service.stage_all(worktree_info.path)
@@ -597,33 +755,42 @@ class RunService:
 
             # Determine final summary (priority: file > CLI output > generated)
             final_summary = (
-                summary_from_file
-                or result.summary
-                or self._generate_summary(files_changed)
+                summary_from_file or result.summary or self._generate_summary(files_changed)
             )
 
             # 7. Commit (automatic)
             commit_message = self._generate_commit_message(run.instruction, final_summary)
+            commit_message = await ensure_english_commit_message(
+                commit_message,
+                llm_router=self.llm_router,
+                hint=final_summary or "",
+            )
             commit_sha = await self.git_service.commit(
                 worktree_info.path,
                 message=commit_message,
             )
             logs.append(f"Committed: {commit_sha[:8]}")
 
-            # 8. Push (automatic) - only if we have GitHub service configured
+            # 8. Push (automatic) with retry on non-fast-forward
             if self.github_service and repo:
-                try:
-                    owner, repo_name = self._parse_github_url(repo.repo_url)
-                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
-                    await self.git_service.push(
-                        worktree_info.path,
-                        branch=worktree_info.branch_name,
-                        auth_url=auth_url,
-                    )
-                    logs.append(f"Pushed to branch: {worktree_info.branch_name}")
-                except Exception as push_error:
-                    logs.append(f"Push failed (will retry on PR creation): {push_error}")
-                    # Continue without failing - push can be retried during PR creation
+                owner, repo_name = self._parse_github_url(repo.repo_url)
+                auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                push_result = await self.git_service.push_with_retry(
+                    worktree_info.path,
+                    branch=worktree_info.branch_name,
+                    auth_url=auth_url,
+                )
+
+                if push_result.success:
+                    if push_result.required_pull:
+                        logs.append(
+                            f"Pulled remote changes and pushed to branch: "
+                            f"{worktree_info.branch_name}"
+                        )
+                    else:
+                        logs.append(f"Pushed to branch: {worktree_info.branch_name}")
+                else:
+                    logs.append(f"Push failed (will retry on PR creation): {push_result.error}")
 
             # 9. Save results
             await self.run_dao.update_status(
@@ -656,7 +823,7 @@ class RunService:
     async def _read_and_remove_summary_file(
         self,
         worktree_path: Path,
-        logs: list[str],
+        logs: builtins.list[str],
     ) -> str | None:
         """Read summary from the agent-generated summary file and remove it.
 
@@ -727,7 +894,7 @@ class RunService:
             return f"{first_line}\n\n{summary}"
         return first_line
 
-    def _parse_diff(self, diff: str) -> list[FileDiff]:
+    def _parse_diff(self, diff: str) -> builtins.list[FileDiff]:
         """Parse unified diff to extract file change information.
 
         Args:
@@ -736,9 +903,9 @@ class RunService:
         Returns:
             List of FileDiff objects.
         """
-        files: list[FileDiff] = []
+        files: builtins.list[FileDiff] = []
         current_file: str | None = None
-        current_patch_lines: list[str] = []
+        current_patch_lines: builtins.list[str] = []
         added_lines = 0
         removed_lines = 0
 
@@ -746,12 +913,14 @@ class RunService:
             if line.startswith("--- a/"):
                 # Save previous file if exists
                 if current_file:
-                    files.append(FileDiff(
-                        path=current_file,
-                        added_lines=added_lines,
-                        removed_lines=removed_lines,
-                        patch="\n".join(current_patch_lines),
-                    ))
+                    files.append(
+                        FileDiff(
+                            path=current_file,
+                            added_lines=added_lines,
+                            removed_lines=removed_lines,
+                            patch="\n".join(current_patch_lines),
+                        )
+                    )
                 # Reset for new file
                 current_patch_lines = [line]
                 added_lines = 0
@@ -777,14 +946,52 @@ class RunService:
 
         # Save last file
         if current_file:
-            files.append(FileDiff(
-                path=current_file,
-                added_lines=added_lines,
-                removed_lines=removed_lines,
-                patch="\n".join(current_patch_lines),
-            ))
+            files.append(
+                FileDiff(
+                    path=current_file,
+                    added_lines=added_lines,
+                    removed_lines=removed_lines,
+                    patch="\n".join(current_patch_lines),
+                )
+            )
 
         return files
+
+    def _build_conflict_resolution_instruction(self, conflict_files: builtins.list[str]) -> str:
+        """Build instruction for AI to resolve merge conflicts.
+
+        Args:
+            conflict_files: List of files with merge conflicts.
+
+        Returns:
+            Instruction string for conflict resolution.
+        """
+        files_list = "\n".join(f"- {f}" for f in conflict_files)
+        return f"""## IMPORTANT: Merge Conflict Resolution Required
+
+The following files have merge conflicts that MUST be resolved before proceeding with the task:
+
+{files_list}
+
+### Instructions for Conflict Resolution:
+1. Open each conflicted file listed above
+2. Look for conflict markers: `<<<<<<<`, `=======`, and `>>>>>>>`
+3. Understand both versions of the conflicting code
+4. Resolve each conflict by keeping the correct code (you may combine both versions if appropriate)
+5. Remove ALL conflict markers completely
+6. Ensure the resolved code is syntactically correct and functional
+
+### Conflict Marker Format:
+```
+<​<<<<<< HEAD
+(your local changes)
+==​=====
+(incoming changes from remote)
+>>​>>>>> branch-name
+```
+
+After resolving ALL conflicts, proceed with the original task below.
+"""
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
         """Parse GitHub URL to extract owner and repo name.
@@ -811,7 +1018,7 @@ class RunService:
                 return match.group(1), match.group(2)
         raise ValueError(f"Could not parse GitHub URL: {repo_url}")
 
-    def _generate_summary(self, files_changed: list[FileDiff]) -> str:
+    def _generate_summary(self, files_changed: builtins.list[FileDiff]) -> str:
         """Generate a human-readable summary of changes.
 
         Args:
@@ -839,3 +1046,111 @@ class RunService:
         summary_parts.append(f"Files: {file_list}")
 
         return ". ".join(summary_parts) + "."
+
+    # ==========================================
+    # BaseRoleService Abstract Method Implementations
+    # ==========================================
+
+    async def create(self, task_id: str, data: RunCreate) -> Run:
+        """Create a single run (BaseRoleService interface).
+
+        Note: For multiple runs, use create_runs() instead.
+
+        Args:
+            task_id: Task ID.
+            data: Run creation data.
+
+        Returns:
+            Created Run object.
+        """
+        runs = await self.create_runs(task_id, data)
+        if not runs:
+            raise ValueError("No runs created")
+        return runs[0]
+
+    # Note: get() method is inherited from the existing implementation above (line ~395)
+
+    async def list_by_task(self, task_id: str) -> builtins.list[Run]:
+        """List runs for a task (BaseRoleService interface).
+
+        Args:
+            task_id: Task ID.
+
+        Returns:
+            List of Run objects.
+        """
+        return await self.run_dao.list(task_id)
+
+    async def _execute(self, record: Run) -> ImplementationResult:
+        """Execute run-specific logic (BaseRoleService interface).
+
+        Note: RunService uses its own execution flow via _execute_cli_run
+        and _execute_patch_agent_run, so this method is not directly used.
+
+        Args:
+            record: Run record.
+
+        Returns:
+            ImplementationResult.
+        """
+        # RunService manages execution via create_runs which enqueues
+        # _execute_cli_run or _execute_patch_agent_run directly.
+        # This implementation is provided for interface compliance.
+        return ImplementationResult(
+            success=False,
+            error="Direct execution not supported. Use create_runs() instead.",
+        )
+
+    async def _update_status(
+        self,
+        record_id: str,
+        status: RoleExecutionStatus,
+        result: ImplementationResult | None = None,
+    ) -> None:
+        """Update run status (BaseRoleService interface).
+
+        Args:
+            record_id: Run ID.
+            status: New status.
+            result: Optional result to save.
+        """
+        if result:
+            await self.run_dao.update_status(
+                record_id,
+                status,
+                summary=result.summary,
+                patch=result.patch,
+                files_changed=result.files_changed,
+                logs=result.logs,
+                warnings=result.warnings,
+                error=result.error,
+                session_id=result.session_id,
+            )
+        else:
+            await self.run_dao.update_status(record_id, status)
+
+    def _get_record_id(self, record: Run) -> str:
+        """Extract ID from run (BaseRoleService interface).
+
+        Args:
+            record: Run record.
+
+        Returns:
+            Run ID.
+        """
+        return record.id
+
+    def _create_error_result(self, error: str) -> ImplementationResult:
+        """Create error result (BaseRoleService interface).
+
+        Args:
+            error: Error message.
+
+        Returns:
+            ImplementationResult with error.
+        """
+        return ImplementationResult(
+            success=False,
+            error=error,
+            logs=[f"Error: {error}"],
+        )

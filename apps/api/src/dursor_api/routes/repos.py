@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from dursor_api.dependencies import get_github_service, get_repo_service
 from dursor_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
-from dursor_api.dependencies import get_repo_service, get_github_service
-from dursor_api.services.repo_service import RepoService
 from dursor_api.services.github_service import GitHubService
+from dursor_api.services.repo_service import RepoService
 
 router = APIRouter(prefix="/repos", tags=["repos"])
 

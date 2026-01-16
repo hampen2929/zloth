@@ -21,6 +21,9 @@ out/
 .coverage
 htmlcov/
 .pytest_cache/
+playwright-report/
+playwright/.cache/
+test-results/
 
 # IDE
 .idea/
@@ -45,3 +48,6 @@ logs/
 
 # Build artifacts
 *.tgz
+
+# Claude Code local settings
+.claude/settings.local.json

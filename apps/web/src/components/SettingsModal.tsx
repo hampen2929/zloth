@@ -3,7 +3,12 @@
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 import { modelsApi, githubApi, preferencesApi } from '@/lib/api';
-import type { Provider, ModelProfileCreate, GitHubAppConfig, GitHubRepository, UserPreferences } from '@/types';
+import type {
+  Provider,
+  ModelProfileCreate,
+  PRCreationMode,
+  CodingMode,
+} from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
@@ -38,21 +43,31 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
+export type SettingsTabType = 'models' | 'github' | 'defaults';
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  defaultTab?: SettingsTabType;
 }
 
-type TabType = 'models' | 'github' | 'defaults';
-
-const tabConfig: { id: TabType; label: string; icon: React.ReactNode }[] = [
+export const settingsTabConfig: { id: SettingsTabType; label: string; icon: React.ReactNode }[] = [
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
 ];
 
-export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('models');
+export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTabType>(defaultTab || 'models');
+
+  // Update active tab when defaultTab changes
+  // This is intentional: we want to switch tabs when externally triggered
+  useEffect(() => {
+    if (defaultTab) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveTab(defaultTab);
+    }
+  }, [defaultTab]);
 
   return (
     <Modal
@@ -63,7 +78,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     >
       {/* Tabs */}
       <div className="flex border-b border-gray-800" role="tablist">
-        {tabConfig.map((tab) => (
+        {settingsTabConfig.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -93,7 +108,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   );
 }
 
-function ModelsTab() {
+export function ModelsTab() {
   const { data: models, error } = useSWR('models', modelsApi.list);
   const [showForm, setShowForm] = useState(false);
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -112,7 +127,7 @@ function ModelsTab() {
         await modelsApi.delete(modelId);
         mutate('models');
         success('Model deleted successfully');
-      } catch (err) {
+      } catch {
         toastError('Failed to delete model');
       }
     }
@@ -322,8 +337,8 @@ function AddModelForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function GitHubAppTab() {
-  const { data: config, error, isLoading } = useSWR('github-config', githubApi.getConfig);
+export function GitHubAppTab() {
+  const { data: config, isLoading } = useSWR('github-config', githubApi.getConfig);
   const [appId, setAppId] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [installationId, setInstallationId] = useState('');
@@ -493,8 +508,8 @@ function GitHubAppTab() {
   );
 }
 
-function DefaultsTab() {
-  const { data: preferences, isLoading: prefsLoading } = useSWR('preferences', preferencesApi.get);
+export function DefaultsTab() {
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: githubConfig } = useSWR('github-config', githubApi.getConfig);
   const { data: repos, isLoading: reposLoading } = useSWR(
     githubConfig?.is_configured ? 'github-repos' : null,
@@ -504,6 +519,12 @@ function DefaultsTab() {
   const [selectedRepo, setSelectedRepo] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
+  const [branchPrefix, setBranchPrefix] = useState<string>('');
+  const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
+  const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
+  const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
+  const [worktreesDir, setWorktreesDir] = useState<string>('');
+  const [enableGatingStatus, setEnableGatingStatus] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -514,24 +535,60 @@ function DefaultsTab() {
       if (preferences.default_repo_owner && preferences.default_repo_name) {
         const repoFullName = `${preferences.default_repo_owner}/${preferences.default_repo_name}`;
         setSelectedRepo(repoFullName);
-        // Load branches for the default repo
-        loadBranches(preferences.default_repo_owner, preferences.default_repo_name, preferences.default_branch);
+        // Find the repository to get its default branch
+        const repoData = repos.find((r) => r.full_name === repoFullName);
+        // Set selected branch to repository's default branch directly (like top page)
+        setSelectedBranch(repoData?.default_branch || '');
+        // Load branch list
+        loadBranches(preferences.default_repo_owner, preferences.default_repo_name);
       }
     }
   }, [preferences, repos]);
 
-  const loadBranches = async (owner: string, repo: string, defaultBranch?: string | null) => {
+  // Initialize branch prefix and other settings from preferences
+  useEffect(() => {
+    if (preferences) {
+      setBranchPrefix(preferences.default_branch_prefix || '');
+      setPrCreationMode(preferences.default_pr_creation_mode || 'link');
+      setCodingMode(preferences.default_coding_mode || 'interactive');
+      setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
+      setWorktreesDir(preferences.worktrees_dir || '');
+      setEnableGatingStatus(preferences.enable_gating_status || false);
+    }
+  }, [preferences]);
+
+  const selectedRepoDefaultBranch = (() => {
+    if (!repos || !selectedRepo) return null;
+    return repos.find((r) => r.full_name === selectedRepo)?.default_branch ?? null;
+  })();
+
+  const branchOptions: { value: string; label: string }[] = (() => {
+    const list = branches || [];
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+
+    if (selectedRepoDefaultBranch) {
+      seen.add(selectedRepoDefaultBranch);
+      opts.push({
+        value: selectedRepoDefaultBranch,
+        label: `Default (${selectedRepoDefaultBranch})`,
+      });
+    }
+
+    for (const b of list) {
+      if (seen.has(b)) continue;
+      seen.add(b);
+      opts.push({ value: b, label: b });
+    }
+
+    return opts;
+  })();
+
+  const loadBranches = async (owner: string, repo: string) => {
     setBranchesLoading(true);
     try {
       const branchList = await githubApi.listBranches(owner, repo);
       setBranches(branchList);
-      if (defaultBranch && branchList.includes(defaultBranch)) {
-        setSelectedBranch(defaultBranch);
-      } else if (branchList.length > 0) {
-        // Try to select 'main' or 'master' or the first branch
-        const mainBranch = branchList.find(b => b === 'main') || branchList.find(b => b === 'master') || branchList[0];
-        setSelectedBranch(mainBranch);
-      }
     } catch (err) {
       console.error('Failed to load branches:', err);
       setBranches([]);
@@ -542,12 +599,16 @@ function DefaultsTab() {
 
   const handleRepoChange = async (fullName: string) => {
     setSelectedRepo(fullName);
-    setSelectedBranch('');
     setBranches([]);
 
     if (fullName) {
       const [owner, repo] = fullName.split('/');
+      // Find the repository to get its default branch and set it directly (like top page)
+      const selectedRepoData = repos?.find((r) => r.full_name === fullName);
+      setSelectedBranch(selectedRepoData?.default_branch || '');
       await loadBranches(owner, repo);
+    } else {
+      setSelectedBranch('');
     }
   };
 
@@ -559,10 +620,16 @@ function DefaultsTab() {
         default_repo_owner: owner,
         default_repo_name: repo,
         default_branch: selectedBranch || null,
+        default_branch_prefix: branchPrefix.trim() ? branchPrefix.trim() : null,
+        default_pr_creation_mode: prCreationMode,
+        default_coding_mode: codingMode,
+        auto_generate_pr_description: autoGeneratePrDescription,
+        worktrees_dir: worktreesDir.trim() ? worktreesDir.trim() : null,
+        enable_gating_status: enableGatingStatus,
       });
       mutate('preferences');
       success('Default settings saved successfully');
-    } catch (err) {
+    } catch {
       toastError('Failed to save settings');
     } finally {
       setLoading(false);
@@ -576,13 +643,25 @@ function DefaultsTab() {
         default_repo_owner: null,
         default_repo_name: null,
         default_branch: null,
+        default_branch_prefix: null,
+        default_pr_creation_mode: null,
+        default_coding_mode: null,
+        auto_generate_pr_description: false,
+        worktrees_dir: null,
+        enable_gating_status: false,
       });
       setSelectedRepo('');
       setSelectedBranch('');
       setBranches([]);
+      setBranchPrefix('');
+      setPrCreationMode('create');
+      setCodingMode('interactive');
+      setAutoGeneratePrDescription(false);
+      setWorktreesDir('');
+      setEnableGatingStatus(false);
       mutate('preferences');
       success('Default settings cleared');
-    } catch (err) {
+    } catch {
       toastError('Failed to clear settings');
     } finally {
       setLoading(false);
@@ -674,15 +753,127 @@ function DefaultsTab() {
             <option value="">
               {branchesLoading ? 'Loading branches...' : 'Select a branch'}
             </option>
-            {branches.map((branch) => (
-              <option key={branch} value={branch}>
-                {branch}
+            {branchOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
               </option>
             ))}
           </select>
           <p className="text-xs text-gray-500">
             Select the branch that will be pre-selected when creating new tasks.
           </p>
+        </div>
+
+        {/* Branch prefix */}
+        <Input
+          label="Branch Prefix"
+          value={branchPrefix}
+          onChange={(e) => setBranchPrefix(e.target.value)}
+          placeholder="dursor"
+          hint="Prefix used for new work branches (e.g., dursor/abcd1234). Leave blank to use the default."
+        />
+
+        {/* Default coding mode */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Default Coding Mode
+          </label>
+          <select
+            value={codingMode}
+            onChange={(e) => setCodingMode(e.target.value as CodingMode)}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors'
+            )}
+          >
+            <option value="interactive">Interactive - Manual control</option>
+            <option value="semi_auto">Semi Auto - Autonomous with human approval for merge</option>
+            <option value="full_auto">Full Auto - Fully autonomous including merge</option>
+          </select>
+          <p className="text-xs text-gray-500">
+            Choose the default coding mode for new tasks.
+          </p>
+        </div>
+
+        {/* PR creation behavior */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Create PR behavior
+          </label>
+          <select
+            value={prCreationMode}
+            onChange={(e) => setPrCreationMode(e.target.value as PRCreationMode)}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors'
+            )}
+          >
+            <option value="create">Create PR automatically</option>
+            <option value="link">Open PR link (manual creation)</option>
+          </select>
+          <p className="text-xs text-gray-500">
+            Choose whether &ldquo;Create PR&rdquo; creates the PR immediately or opens the GitHub PR creation page.
+          </p>
+        </div>
+
+        {/* Auto-generate PR description */}
+        <div className="space-y-1">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoGeneratePrDescription}
+              onChange={(e) => setAutoGeneratePrDescription(e.target.checked)}
+              className={cn(
+                'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+              )}
+            />
+            <span className="text-sm font-medium text-gray-300">
+              Auto-generate PR description
+            </span>
+          </label>
+          <p className="text-xs text-gray-500 ml-7">
+            If enabled, AI will generate the PR description when creating a PR (slower).
+            If disabled, a simple description is used and you can generate it later with &ldquo;Update PR&rdquo;.
+          </p>
+        </div>
+
+        {/* Enable Gating status */}
+        <div className="space-y-1">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enableGatingStatus}
+              onChange={(e) => setEnableGatingStatus(e.target.checked)}
+              className={cn(
+                'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+              )}
+            />
+            <span className="text-sm font-medium text-gray-300">
+              Enable Gating status
+            </span>
+          </label>
+          <p className="text-xs text-gray-500 ml-7">
+            If enabled, tasks with open PRs and pending CI will show in &ldquo;Gating&rdquo; column.
+            When CI completes, they move to &ldquo;In Review&rdquo;.
+          </p>
+        </div>
+
+        {/* Advanced Settings */}
+        <div className="border-t border-gray-700 pt-4 mt-4">
+          <h4 className="text-sm font-semibold text-gray-300 mb-3">Advanced Settings</h4>
+
+          {/* Worktrees Directory */}
+          <Input
+            label="Worktrees Directory"
+            value={worktreesDir}
+            onChange={(e) => setWorktreesDir(e.target.value)}
+            placeholder="~/.dursor/worktrees"
+            hint="Directory for git worktrees. Leave blank to use the default (~/.dursor/worktrees). This should be outside the dursor installation directory to avoid CLAUDE.md conflicts."
+          />
         </div>
 
         {/* Action buttons */}

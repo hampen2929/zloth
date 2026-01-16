@@ -96,8 +96,15 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     # Paths
-    base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent)
+    base_dir: Path = Field(
+        default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent
+    )
     workspaces_dir: Path | None = Field(default=None)
+    worktrees_dir: Path | None = Field(
+        default=None,
+        description="Directory for git worktrees. Defaults to ~/.dursor/worktrees "
+        "to avoid inheriting parent directory's CLAUDE.md",
+    )
     data_dir: Path | None = Field(default=None)
 
     # Database
@@ -116,10 +123,57 @@ class Settings(BaseSettings):
     codex_cli_path: str = Field(default="codex")
     gemini_cli_path: str = Field(default="gemini")
 
-    def model_post_init(self, __context) -> None:
+    # Agentic Mode Configuration
+    agentic_enabled: bool = Field(default=True, description="Enable agentic mode")
+    agentic_auto_merge: bool = Field(
+        default=True, description="Enable auto-merge in Full Auto mode"
+    )
+
+    # Agentic Iteration Limits
+    agentic_max_total_iterations: int = Field(default=10, description="Max total iterations")
+    agentic_max_ci_iterations: int = Field(default=5, description="Max CI fix iterations")
+    agentic_max_review_iterations: int = Field(default=3, description="Max review fix iterations")
+    agentic_timeout_minutes: int = Field(default=60, description="Total timeout in minutes")
+
+    # CI Polling Configuration
+    ci_polling_interval_seconds: int = Field(
+        default=30, description="Interval between CI status polls (seconds)"
+    )
+    ci_polling_timeout_minutes: int = Field(
+        default=30, description="Timeout for CI polling (minutes)"
+    )
+    ci_polling_enabled: bool = Field(
+        default=True, description="Enable CI polling (alternative to webhooks)"
+    )
+
+    # Quality Thresholds
+    review_min_score: float = Field(default=0.75, description="Minimum review score")
+    coverage_threshold: int = Field(default=80, description="Minimum coverage percentage")
+
+    # Webhook
+    webhook_secret: str = Field(default="", description="Webhook HMAC secret")
+
+    # Merge Settings
+    merge_method: str = Field(default="squash", description="Merge method: merge, squash, rebase")
+    merge_delete_branch: bool = Field(default=True, description="Delete branch after merge")
+
+    # Notification
+    slack_webhook_url: str = Field(default="", description="Slack webhook URL")
+    notify_email: str = Field(default="", description="Notification email address")
+    notify_on_ready: bool = Field(default=True, description="Notify when PR ready (Semi Auto)")
+    notify_on_complete: bool = Field(default=True, description="Notify on completion")
+    notify_on_failure: bool = Field(default=True, description="Notify on failure")
+    notify_on_warning: bool = Field(default=True, description="Notify on warnings")
+    warn_iteration_threshold: int = Field(default=7, description="Warn after this many iterations")
+
+    def model_post_init(self, __context: object) -> None:
         """Set derived paths after initialization."""
         if self.workspaces_dir is None:
             self.workspaces_dir = self.base_dir / "workspaces"
+        if self.worktrees_dir is None:
+            # Default to ~/.dursor/worktrees to avoid inheriting
+            # parent directory's CLAUDE.md when CLI agents run in worktrees
+            self.worktrees_dir = Path.home() / ".dursor" / "worktrees"
         if self.data_dir is None:
             self.data_dir = self.base_dir / "data"
         if self.database_url is None:
@@ -128,6 +182,7 @@ class Settings(BaseSettings):
         # Ensure directories exist and are writable
         for dir_path, dir_name in [
             (self.workspaces_dir, "workspaces"),
+            (self.worktrees_dir, "worktrees"),
             (self.data_dir, "data"),
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)

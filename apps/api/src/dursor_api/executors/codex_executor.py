@@ -7,7 +7,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dursor_api.domain.models import FileDiff
 from dursor_api.executors.claude_code_executor import ExecutorResult
 
 
@@ -19,6 +18,9 @@ class CodexOptions:
     max_output_lines: int = 10000
     codex_cli_path: str = "codex"
     env_vars: dict[str, str] = field(default_factory=dict)
+    # Buffer limit for reading stdout/stderr lines (default: 1MB)
+    # Increase this if you encounter "chunk exceed the limit" errors
+    stream_limit: int = 1024 * 1024
 
 
 class CodexExecutor:
@@ -38,6 +40,7 @@ class CodexExecutor:
         instruction: str,
         on_output: Callable[[str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
+        read_only: bool = False,
     ) -> ExecutorResult:
         """Execute codex CLI with the given instruction.
 
@@ -46,6 +49,7 @@ class CodexExecutor:
             instruction: Natural language instruction for Codex.
             on_output: Optional callback for streaming output.
             resume_session_id: Optional session ID to resume a previous conversation.
+            read_only: If True, run in readonly approval mode (no file modifications).
 
         Returns:
             ExecutorResult with success status, patch, and logs.
@@ -69,9 +73,12 @@ class CodexExecutor:
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(worktree_path),
                 env=env,
+                limit=self.options.stream_limit,  # Increase buffer limit for long output lines
             )
 
             async def read_output() -> None:
+                if process.stdout is None:
+                    return
                 while True:
                     line = await process.stdout.readline()
                     if not line:
@@ -106,18 +113,29 @@ class CodexExecutor:
         # Exit code 2 usually means a clap argument parse error, so we try a small
         # set of known-good orderings before giving up.
         base = [self.options.codex_cli_path, "exec"]
+
+        # Determine approval mode flag
+        # Note: Codex CLI's `exec` subcommand does not support --approval-mode flag.
+        # For read-only mode (e.g., code review), we rely on the prompt instructions
+        # to prevent file modifications. The worktree is reset after review anyway.
+        approval_flag = "--full-auto"
+        if read_only:
+            logs.append("Running in read-only mode (prompt-based, --full-auto)")
+        else:
+            logs.append("Running in full-auto mode")
+
         cmds: list[list[str]] = []
         if resume_session_id:
             logs.append(f"Continuing session: {resume_session_id}")
             # Prefer this ordering (confirmed working with Codex v0.77.0):
             #   codex exec --full-auto <PROMPT> resume <SESSION_ID>
-            cmds.append([*base, "--full-auto", instruction, "resume", resume_session_id])
+            cmds.append([*base, approval_flag, instruction, "resume", resume_session_id])
             # Fallbacks for other parser behaviors:
-            cmds.append([*base, instruction, "resume", resume_session_id, "--full-auto"])
-            cmds.append([*base, "resume", resume_session_id, instruction, "--full-auto"])
-            cmds.append([*base, "--full-auto", "resume", resume_session_id, instruction])
+            cmds.append([*base, instruction, "resume", resume_session_id, approval_flag])
+            cmds.append([*base, "resume", resume_session_id, instruction, approval_flag])
+            cmds.append([*base, approval_flag, "resume", resume_session_id, instruction])
         else:
-            cmds.append([*base, instruction, "--full-auto"])
+            cmds.append([*base, instruction, approval_flag])
 
         try:
             last_code: int | None = None
@@ -196,8 +214,7 @@ class CodexExecutor:
 
         # Prefer scanning line-by-line for the common hint.
         hint_re = re.compile(
-            r"To continue this session,\s*run\s*codex\s+resume\s+"
-            + uuid_re,
+            r"To continue this session,\s*run\s*codex\s+resume\s+" + uuid_re,
             re.IGNORECASE,
         )
         session_line_re = re.compile(r"\bsession id:\s*" + uuid_re + r"\b", re.IGNORECASE)

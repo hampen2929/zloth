@@ -22,6 +22,9 @@ class ClaudeCodeOptions:
     max_output_lines: int = 10000
     claude_cli_path: str = "claude"
     env_vars: dict[str, str] = field(default_factory=dict)
+    # Buffer limit for reading stdout/stderr lines (default: 1MB)
+    # Increase this if you encounter "chunk exceed the limit" errors
+    stream_limit: int = 1024 * 1024
 
 
 @dataclass
@@ -49,12 +52,66 @@ class ClaudeCodeExecutor:
         """
         self.options = options or ClaudeCodeOptions()
 
+    def _extract_display_text(self, json_line: str) -> str | None:
+        """Extract human-readable text from a stream-json line.
+
+        Stream-json format outputs JSON objects with different types:
+        - {"type": "assistant", "message": {"content": [{"text": "..."}]}}
+        - {"type": "system", "message": "..."}
+        - {"type": "result", ...}
+
+        Args:
+            json_line: A single line of stream-json output.
+
+        Returns:
+            Human-readable text for display, or None if not displayable.
+        """
+        try:
+            data = json.loads(json_line)
+            if not isinstance(data, dict):
+                return json_line
+
+            msg_type = data.get("type")
+
+            # Assistant messages contain the main content
+            if msg_type == "assistant":
+                message = data.get("message", {})
+                if isinstance(message, dict):
+                    content = message.get("content", [])
+                    if isinstance(content, list):
+                        texts = []
+                        for block in content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                texts.append(block.get("text", ""))
+                        if texts:
+                            return "".join(texts)
+                return None
+
+            # System messages (e.g., init info)
+            if msg_type == "system":
+                message = data.get("message", "")
+                if isinstance(message, str) and message:
+                    return f"[system] {message}"
+                return None
+
+            # Result message - don't display raw JSON
+            if msg_type == "result":
+                return None
+
+            # Unknown type - return as-is for debugging
+            return None
+
+        except json.JSONDecodeError:
+            # Not JSON, return as-is
+            return json_line
+
     async def execute(
         self,
         worktree_path: Path,
         instruction: str,
         on_output: Callable[[str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
+        read_only: bool = False,
     ) -> ExecutorResult:
         """Execute claude CLI with the given instruction.
 
@@ -63,6 +120,7 @@ class ClaudeCodeExecutor:
             instruction: Natural language instruction for Claude Code.
             on_output: Optional callback for streaming output.
             resume_session_id: Optional session ID to resume a previous conversation.
+            read_only: If True, run in plan mode (read-only, no file modifications).
 
         Returns:
             ExecutorResult with success status, patch, and logs.
@@ -78,22 +136,39 @@ class ClaudeCodeExecutor:
         # Build command
         # Use --print (-p) for non-interactive mode with instruction as argument
         # Note: Using create_subprocess_exec avoids shell escaping issues
-        # Use --dangerously-skip-permissions to allow edits without prompts in automated mode
-        # Note: We do NOT use --output-format json as it suppresses streaming output
+        # Use --output-format stream-json for streaming output with structured JSON
+        # This enables session_id extraction from the result message
+        # Note: --verbose is required when using --output-format=stream-json with -p
         cmd = [
             self.options.claude_cli_path,
-            "-p", instruction,  # Pass instruction directly as argument
-            "--dangerously-skip-permissions",  # Allow file edits without permission prompts
+            "-p",
+            instruction,  # Pass instruction directly as argument
+            "--verbose",  # Required for stream-json with -p mode
+            "--output-format",
+            "stream-json",  # Streaming JSON for session_id extraction
         ]
 
-        # Add --session-id flag if we have a previous session ID
-        # Note: Use --session-id (not --resume) to continue conversation in -p mode
+        # Permission mode: read_only uses plan mode, otherwise use dangerously-skip-permissions
+        if read_only:
+            # Plan mode restricts Claude to read-only operations
+            cmd.extend(["--permission-mode", "plan"])
+            logs.append("Running in read-only mode (--permission-mode plan)")
+        else:
+            # Allow file edits without permission prompts for implementation
+            cmd.append("--dangerously-skip-permissions")
+
+        # Add --resume flag if we have a previous session ID
+        # Note: Use --resume (not --session-id) to continue conversation
         if resume_session_id:
-            cmd.extend(["--session-id", resume_session_id])
+            cmd.extend(["--resume", resume_session_id])
             logs.append(f"Continuing session: {resume_session_id}")
 
         # Don't log full instruction - it can be very long
-        cmd_display = [self.options.claude_cli_path, "-p", f"<instruction:{len(instruction)} chars>"]
+        cmd_display = [
+            self.options.claude_cli_path,
+            "-p",
+            f"<instruction:{len(instruction)} chars>",
+        ]
         logs.append(f"Executing: {' '.join(cmd_display)}")
         logs.append(f"Working directory: {worktree_path}")
         logs.append(f"Instruction length: {len(instruction)} chars")
@@ -110,24 +185,30 @@ class ClaudeCodeExecutor:
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(worktree_path),
                 env=env,
+                limit=self.options.stream_limit,  # Increase buffer limit for long output lines
             )
             logger.info(f"Process created successfully with PID: {process.pid}")
 
             # Stream output from CLI
-            async def read_output():
+            async def read_output() -> None:
                 line_count = 0
                 logger.info("Starting to read output lines...")
+                if process.stdout is None:
+                    logger.error("Process stdout is None")
+                    return
                 while True:
                     # Add timeout per line to detect hanging
                     try:
                         line = await asyncio.wait_for(
                             process.stdout.readline(),
-                            timeout=300.0  # 5 min timeout per line
+                            timeout=300.0,  # 5 min timeout per line
                         )
                     except TimeoutError:
-                        logger.warning(f"No output for 5 minutes, checking if process is alive...")
+                        logger.warning("No output for 5 minutes, checking if process is alive...")
                         if process.returncode is None:
-                            logger.warning(f"Process still running (PID: {process.pid}), continuing to wait...")
+                            logger.warning(
+                                f"Process still running (PID: {process.pid}), continuing to wait..."
+                            )
                             continue
                         else:
                             logger.info(f"Process has exited with code: {process.returncode}")
@@ -148,7 +229,10 @@ class ClaudeCodeExecutor:
 
                     if len(output_lines) <= self.options.max_output_lines:
                         if on_output:
-                            await on_output(decoded)
+                            # Extract human-readable text from stream-json
+                            display_text = self._extract_display_text(decoded)
+                            if display_text:
+                                await on_output(display_text)
                 logger.info(f"Finished reading output: {line_count} lines total")
 
             try:
@@ -184,7 +268,9 @@ class ClaudeCodeExecutor:
                     patch="",
                     files_changed=[],
                     logs=logs,
-                    error=f"Claude Code exited with code {process.returncode}\n\nLast output:\n{tail}",
+                    error=(
+                        f"Claude Code exited with code {process.returncode}\n\nLast output:\n{tail}"
+                    ),
                 )
 
             # Extract session ID from JSON output
@@ -221,10 +307,12 @@ class ClaudeCodeExecutor:
     def _extract_session_id(self, output_lines: list[str]) -> str | None:
         """Extract session ID from Claude CLI output.
 
-        Claude CLI outputs session information in various formats:
-        - JSON: {"session_id": "uuid"}
-        - Text: "Session ID: uuid" or "session: uuid"
-        - Hint: "To continue, use --session-id uuid"
+        With --output-format stream-json, Claude CLI outputs JSON lines:
+        - {"type": "system", "message": "..."}
+        - {"type": "assistant", "message": {...}}
+        - {"type": "result", "session_id": "uuid", ...}
+
+        The session_id is in the final "result" type message.
 
         Args:
             output_lines: Output lines from Claude CLI execution.
@@ -232,26 +320,32 @@ class ClaudeCodeExecutor:
         Returns:
             Session ID if found, None otherwise.
         """
-        uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-
-        # Try JSON parsing first (in case output contains JSON)
-        for line in output_lines:
+        # Primary: Look for stream-json "result" message with session_id
+        # Search from the end since "result" is the final message
+        for line in reversed(output_lines):
             try:
                 data = json.loads(line)
                 if isinstance(data, dict):
+                    # stream-json format: {"type": "result", "session_id": "..."}
+                    if data.get("type") == "result" and "session_id" in data:
+                        session_id = data["session_id"]
+                        logger.info(f"Extracted session_id from result: {session_id}")
+                        return str(session_id)
+                    # Alternative field names
                     if "session_id" in data:
-                        return data["session_id"]
+                        return str(data["session_id"])
                     if "sessionId" in data:
-                        return data["sessionId"]
+                        return str(data["sessionId"])
             except json.JSONDecodeError:
                 continue
 
-        # Search for session ID patterns in text output
+        # Fallback: Search for session ID patterns in text output
+        uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
         patterns = [
             # "Session ID: <uuid>" or "session_id: <uuid>"
             re.compile(r"session[_\s]?id[:\s]+(" + uuid_pattern + r")", re.IGNORECASE),
-            # "--session-id <uuid>" hint
-            re.compile(r"--session-id\s+(" + uuid_pattern + r")", re.IGNORECASE),
+            # "--resume <uuid>" or "--session-id <uuid>" hint
+            re.compile(r"--(?:resume|session-id)\s+(" + uuid_pattern + r")", re.IGNORECASE),
             # "session: <uuid>"
             re.compile(r"\bsession[:\s]+(" + uuid_pattern + r")", re.IGNORECASE),
         ]
@@ -262,13 +356,7 @@ class ClaudeCodeExecutor:
                 if match:
                     return match.group(1)
 
-        # Fallback: search combined output
-        combined = "\n".join(output_lines[-500:])  # Limit to avoid huge joins
-        for pattern in patterns:
-            match = pattern.search(combined)
-            if match:
-                return match.group(1)
-
+        logger.warning("Could not extract session_id from CLI output")
         return None
 
     async def cancel(self, process: asyncio.subprocess.Process) -> None:

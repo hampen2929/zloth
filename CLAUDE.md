@@ -2,6 +2,27 @@
 
 This file provides context for Claude Code to understand the project.
 
+## Quick Reference
+
+```bash
+# Backend (apps/api)
+uv sync --extra dev          # Install dependencies
+uv run pytest                 # Run tests
+uv run ruff check src/        # Lint check
+uv run ruff format src/       # Format code
+uv run mypy src/              # Type check
+
+# Frontend (apps/web)
+npm ci                        # Install dependencies
+npm run lint                  # ESLint check
+npm run build                 # Build
+npm run dev                   # Start dev server
+
+# Docker
+docker compose up -d --build  # Start all services
+docker compose down           # Stop all services
+```
+
 ## Project Overview
 
 **dursor** is a self-hostable multi-model parallel coding agent.
@@ -12,7 +33,7 @@ This file provides context for Claude Code to understand the project.
 - **Conversation-driven PR Development**: Grow PRs through chat interaction
 
 ### Tech Stack
-- **Backend**: FastAPI (Python 3.11+)
+- **Backend**: FastAPI (Python 3.13+, uv)
 - **Frontend**: Next.js 14 (React, TypeScript, Tailwind CSS)
 - **Database**: SQLite (aiosqlite)
 - **LLM**: OpenAI, Anthropic, Google Generative AI
@@ -149,19 +170,22 @@ class AgentResult:
 ### Backend
 ```bash
 cd apps/api
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+
+# Install uv (if not installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install dependencies (automatically creates virtual environment)
+uv sync --extra dev
 
 # Start dev server
-python -m dursor_api.main
+uv run python -m dursor_api.main
 
 # Test
-pytest
+uv run pytest
 
 # Lint
-ruff check src/
-mypy src/
+uv run ruff check src/
+uv run mypy src/
 ```
 
 ### Frontend
@@ -220,6 +244,77 @@ docker compose down
 - **Linter**: ESLint
 - **Types**: Use strict type definitions
 
+### Documentation
+- **Diagrams**: All diagrams must be written in Mermaid format
+  - Use fenced code blocks with `mermaid` language identifier
+  - Prefer flowcharts, sequence diagrams, and ER diagrams as appropriate
+  - Keep diagrams simple and readable
+
+### mypy Best Practices
+
+This project uses mypy in strict mode. Follow these patterns to avoid common type errors:
+
+#### DAO Return Types
+DAO `get()` methods return `T | None`. Always handle the None case explicitly:
+```python
+# Bad - mypy error
+pr = await self.pr_dao.get(pr_id)
+return pr  # Error: Incompatible return type "PR | None", expected "PR"
+
+# Good
+pr = await self.pr_dao.get(pr_id)
+if not pr:
+    raise ValueError(f"PR not found: {pr_id}")
+return pr
+```
+
+#### Lambda Type Inference
+Lambda expressions with default arguments cause type inference issues. Use typed helper functions:
+```python
+# Bad - mypy error: Cannot infer type of lambda
+self.queue.enqueue(run.id, lambda r=run: self._execute(r))
+
+# Good
+def make_coro(r: Run) -> Callable[[], Coroutine[Any, Any, None]]:
+    return lambda: self._execute(r)
+self.queue.enqueue(run.id, make_coro(run))
+```
+
+#### Dict with Union Value Types
+When dict values have different but related types, add explicit type annotations:
+```python
+# Bad - mypy infers tuple[object, str]
+executor_map = {
+    ExecutorType.CLAUDE: (self.claude_executor, "Claude"),
+    ExecutorType.CODEX: (self.codex_executor, "Codex"),
+}
+
+# Good
+executor_map: dict[ExecutorType, tuple[ClaudeExecutor | CodexExecutor, str]] = {
+    ExecutorType.CLAUDE: (self.claude_executor, "Claude"),
+    ExecutorType.CODEX: (self.codex_executor, "Codex"),
+}
+```
+
+#### aiosqlite Row Access
+`aiosqlite.Row` uses bracket notation, not `.get()`:
+```python
+# Bad - Row has no attribute 'get'
+has_key = bool(row.get("private_key"))
+
+# Good
+has_key = bool(row["private_key"])
+```
+
+#### Optional Field Validation
+When using fields that may be None, validate early and use type narrowing:
+```python
+# Validate at function entry for required optional fields
+if not run.model_id or not run.provider:
+    raise ValueError(f"Missing required fields: {run.model_id=}, {run.provider=}")
+# After this check, mypy knows these are not None
+```
+
 ## Important Design Decisions
 
 ### v0.1 Scope Limitations
@@ -257,3 +352,32 @@ A: Check that `DURSOR_ENCRYPTION_KEY` is set
 
 **Q: Cannot create PR**
 A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull requests` permissions.
+
+## Claude Code Guidelines
+
+### Before Making Changes
+- Always read relevant files before editing
+- Run linters, formatters, and tests before committing
+- Backend: `cd apps/api && uv run ruff format src/ && uv run ruff check src/ && uv run pytest`
+- Frontend: `cd apps/web && npm run lint && npm run build`
+
+### File Organization Rules
+- Python source code goes in `apps/api/src/dursor_api/`
+- TypeScript source code goes in `apps/web/src/`
+- New API routes should follow the existing pattern in `routes/`
+- New services should follow the existing pattern in `services/`
+
+### Code Style Enforcement
+- Python: ruff handles both linting and formatting
+- TypeScript: ESLint for linting, Prettier for formatting
+- Always run format before commit: `uv run ruff format src/` (Python)
+
+### Testing Requirements
+- All new Python code should have corresponding tests
+- Run `uv run pytest` to verify tests pass
+- Frontend build must succeed: `npm run build`
+
+### Security Considerations
+- Never commit `.env` files or API keys
+- Forbidden paths (`.git`, `.env`, `workspaces/`, `data/`) should not be modified
+- API keys must be encrypted using the crypto service

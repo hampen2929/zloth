@@ -87,9 +87,7 @@ class ModelService:
         """
         # Get models from environment variables
         env_models = settings.env_models
-        env_profiles = [
-            _env_model_to_profile(i + 1, model) for i, model in enumerate(env_models)
-        ]
+        env_profiles = [_env_model_to_profile(i + 1, model) for i, model in enumerate(env_models)]
 
         # Get models from database
         db_profiles = await self.dao.list()
