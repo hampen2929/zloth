@@ -1,4 +1,4 @@
-# dursor
+# Dursor - Multi-Model AI Coding Agent
 
 [![CI](https://github.com/hampen2929/dursor/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/dursor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
