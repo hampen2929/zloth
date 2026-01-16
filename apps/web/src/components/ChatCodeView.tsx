@@ -58,6 +58,7 @@ export function ChatCodeView({
   const [reviewExpanded, setReviewExpanded] = useState<Record<string, boolean>>({});
   const [ciCheckExpanded, setCICheckExpanded] = useState<Record<string, boolean>>({});
   const [checkingCI, setCheckingCI] = useState(false);
+  const [hasPendingCIChecks, setHasPendingCIChecks] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -88,11 +89,19 @@ export function ChatCodeView({
   );
 
   // Fetch CI checks for the task
+  // Auto-poll when:
+  // 1. User clicked "Check CI" button (checkingCI=true), OR
+  // 2. There are pending CI checks (from automatic gating)
   const { data: ciChecks, mutate: mutateCIChecks } = useSWR<CICheck[]>(
     `ci-checks-${taskId}`,
     () => ciChecksApi.list(taskId),
-    { refreshInterval: checkingCI ? 5000 : 0 }
+    { refreshInterval: checkingCI || hasPendingCIChecks ? 5000 : 0 }
   );
+
+  // Track pending CI checks state for auto-polling
+  useEffect(() => {
+    setHasPendingCIChecks(ciChecks?.some((check) => check.status === 'pending') ?? false);
+  }, [ciChecks]);
 
   // Determine executor types used in this task
   const sortedRuns = useMemo(() => [...runs].reverse(), [runs]);
@@ -471,6 +480,27 @@ export function ChatCodeView({
     if (!ciChecks || !latestPR) return [];
     return ciChecks.filter((check) => check.pr_id === latestPR.id);
   }, [ciChecks, latestPR]);
+
+  // Auto-trigger CI check for pending CI checks (gating auto-polling)
+  // This ensures that when automatic gating creates a pending CI check,
+  // we actually poll GitHub for the latest status
+  useEffect(() => {
+    if (!prResult?.pr_id || !ciChecks) return;
+
+    const pendingCheck = ciChecks.find(
+      (c) => c.status === 'pending' && c.pr_id === prResult.pr_id
+    );
+
+    if (pendingCheck) {
+      // Trigger CI check to update status from GitHub
+      // This is fire-and-forget; SWR polling will pick up the updated data
+      ciChecksApi.check(taskId, prResult.pr_id).then(() => {
+        mutateCIChecks();
+      }).catch(() => {
+        // Ignore errors - we'll retry on next poll
+      });
+    }
+  }, [ciChecks, prResult?.pr_id, taskId, mutateCIChecks]);
 
   // Create a unified timeline of messages+runs and reviews, sorted chronologically
   type TimelineItem =
