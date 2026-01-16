@@ -133,7 +133,8 @@ export function ChatCodeView({
 
   // Get branch name from selected run (each executor has its own branch)
   // This ensures PR creation uses the selected executor's run, not any executor
-  const latestSuccessfulRun = runsForSelectedExecutor.find(
+  // Note: sortedRuns is in chronological order (oldest first), so we search from the end
+  const latestSuccessfulRun = [...runsForSelectedExecutor].reverse().find(
     (r) => r.status === 'succeeded' && r.working_branch
   );
 
@@ -143,7 +144,8 @@ export function ChatCodeView({
     .map((r) => r.id);
 
   // Get the latest run for the selected executor (for branch info, PR creation)
-  const latestRunForSelectedExecutor = runsForSelectedExecutor[0];
+  // Note: sortedRuns is in chronological order (oldest first), so we need the last element
+  const latestRunForSelectedExecutor = runsForSelectedExecutor[runsForSelectedExecutor.length - 1];
 
   // Get the PR for the selected executor's branch (each executor has its own PR)
   const selectedExecutorBranch = latestRunForSelectedExecutor?.working_branch;
@@ -521,7 +523,8 @@ export function ChatCodeView({
   // Get aggregate stats for an executor type
   const getExecutorStats = (executorType: ExecutorType) => {
     const executorRuns = sortedRuns.filter((r) => r.executor_type === executorType);
-    const latestRun = executorRuns[0];
+    // sortedRuns is in chronological order (oldest first), so latest is the last element
+    const latestRun = executorRuns[executorRuns.length - 1];
     const totalFiles = executorRuns.reduce((acc, r) => acc + (r.files_changed?.length || 0), 0);
     const totalAdded = executorRuns.reduce(
       (acc, r) => acc + (r.files_changed?.reduce((a, f) => a + f.added_lines, 0) || 0),
