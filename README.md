@@ -208,6 +208,19 @@ We welcome bug reports and feature requests via [GitHub Issues](https://github.c
 
 > **Note**: This project is primarily developed using AI-assisted coding. Pull requests may not be reviewed or merged. If you have ideas or find bugs, please open an Issue instead.
 
-## License
+## License & Sponsorship
 
-MIT License - see [LICENSE](LICENSE) for details.
+This project is open source under the [MIT License](LICENSE). We aim to keep dursor free and open for everyone.
+
+### Individual Use
+
+**Free to use.** If you find dursor useful for your personal projects, please consider [becoming a sponsor](https://github.com/sponsors/hampen2929) to support ongoing development.
+
+### Enterprise Use
+
+**Sponsorship recommended.** Enterprise usage is free and unrestricted under the MIT license. However, if your company relies on dursor for development, we strongly encourage you to [sponsor the project](https://github.com/sponsors/hampen2929).
+
+- **Voluntary**: No contracts or forced payments.
+- **Sustainability**: Your sponsorship helps ensure the project remains maintained and improved.
+
+> We may offer a managed SaaS version in the future for teams who prefer not to self-host, but the core project will remain open source.
