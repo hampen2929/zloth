@@ -58,6 +58,15 @@ class PullResult:
     error: str | None = None
 
 
+@dataclass
+class PushResult:
+    """Result of a git push operation."""
+
+    success: bool
+    error: str | None = None
+    required_pull: bool = False  # True if we had to pull before push succeeded
+
+
 class GitService:
     """Service for centralized git operation management.
 
@@ -772,6 +781,75 @@ class GitService:
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _push)
+
+    async def push_with_retry(
+        self,
+        repo_path: Path,
+        branch: str,
+        auth_url: str | None = None,
+        max_retries: int = 2,
+    ) -> PushResult:
+        """Push to remote with automatic retry on non-fast-forward errors.
+
+        If push fails because remote has new commits (non-fast-forward),
+        this method will fetch, pull, and retry the push.
+
+        Args:
+            repo_path: Path to the repository.
+            branch: Branch name to push.
+            auth_url: Authenticated URL for push.
+            max_retries: Maximum number of retry attempts.
+
+        Returns:
+            PushResult with success status and details.
+        """
+        required_pull = False
+
+        for attempt in range(max_retries + 1):
+            try:
+                await self.push(repo_path, branch=branch, auth_url=auth_url)
+                return PushResult(success=True, required_pull=required_pull)
+            except Exception as e:
+                error_str = str(e).lower()
+
+                # Check if this is a non-fast-forward error
+                is_non_ff = any(
+                    pattern in error_str
+                    for pattern in [
+                        "non-fast-forward",
+                        "[rejected]",
+                        "failed to push some refs",
+                        "updates were rejected",
+                        "fetch first",
+                    ]
+                )
+
+                if not is_non_ff or attempt >= max_retries:
+                    return PushResult(success=False, error=str(e), required_pull=required_pull)
+
+                # Try to pull and retry
+                logger.info(
+                    f"Push rejected (non-fast-forward), pulling and retrying "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+
+                pull_result = await self.pull(repo_path, branch=branch, auth_url=auth_url)
+                required_pull = True
+
+                if not pull_result.success:
+                    if pull_result.has_conflicts:
+                        return PushResult(
+                            success=False,
+                            error=f"Merge conflicts in: {', '.join(pull_result.conflict_files)}",
+                            required_pull=True,
+                        )
+                    return PushResult(
+                        success=False,
+                        error=f"Pull failed: {pull_result.error}",
+                        required_pull=True,
+                    )
+
+        return PushResult(success=False, error="Max retries exceeded", required_pull=required_pull)
 
     async def fetch(
         self,
