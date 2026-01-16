@@ -145,12 +145,23 @@ class KanbanBoard(BaseModel):
     total_tasks: int
 
 
+class CICheckSummary(BaseModel):
+    """CI check summary for task detail view."""
+
+    id: str
+    pr_id: str
+    status: str  # "pending" | "success" | "failure" | "error"
+    created_at: datetime
+    updated_at: datetime
+
+
 class TaskDetail(Task):
     """Task with additional details."""
 
     messages: list["Message"] = []
     runs: list["RunSummary"] = []
     prs: list["PRSummary"] = []
+    ci_checks: list["CICheckSummary"] = []
 
 
 # ============================================================
@@ -565,6 +576,7 @@ class UserPreferences(BaseModel):
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
     auto_generate_pr_description: bool = False
     worktrees_dir: str | None = None  # Custom worktrees directory path
+    enable_gating_status: bool = False  # Enable gating status for CI waiting
 
 
 class UserPreferencesSave(BaseModel):
@@ -578,6 +590,7 @@ class UserPreferencesSave(BaseModel):
     default_coding_mode: CodingMode | None = None
     auto_generate_pr_description: bool | None = None
     worktrees_dir: str | None = None  # Custom worktrees directory path
+    enable_gating_status: bool | None = None  # Enable gating status for CI waiting
 
 
 class PRCreateLink(BaseModel):
