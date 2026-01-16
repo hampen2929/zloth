@@ -93,29 +93,31 @@ class CICheckService:
         # Derive status from jobs data instead of relying on combined status API
         # This ensures consistency between displayed jobs and overall status
         status = self._derive_status_from_jobs(ci_data.get("jobs", {}))
+        sha = ci_data.get("sha")
 
         # Create or update CICheck record
-        existing = await self.ci_check_dao.get_latest_by_pr_id(pr_id)
-        if existing and existing.status == "pending":
-            # Update existing pending check
+        # Look for existing check with the same SHA to avoid duplicate records
+        existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha) if sha else None
+        if existing:
+            # Update existing check for this SHA
             ci_check = await self.ci_check_dao.update(
                 id=existing.id,
                 status=status,
                 workflow_run_id=ci_data.get("workflow_run_id"),
-                sha=ci_data.get("sha"),
+                sha=sha,
                 jobs=ci_data.get("jobs"),
                 failed_jobs=ci_data.get("failed_jobs"),
             )
             if not ci_check:
                 raise ValueError(f"Failed to update CI check: {existing.id}")
         else:
-            # Create new check record
+            # Create new check record for this SHA
             ci_check = await self.ci_check_dao.create(
                 task_id=task_id,
                 pr_id=pr_id,
                 status=status,
                 workflow_run_id=ci_data.get("workflow_run_id"),
-                sha=ci_data.get("sha"),
+                sha=sha,
                 jobs=ci_data.get("jobs"),
                 failed_jobs=ci_data.get("failed_jobs"),
             )

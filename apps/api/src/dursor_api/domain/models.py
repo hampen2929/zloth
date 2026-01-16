@@ -125,6 +125,7 @@ class TaskWithKanbanStatus(Task):
     completed_count: int = 0  # Number of completed runs
     pr_count: int = 0
     latest_pr_status: str | None = None
+    latest_ci_status: str | None = None  # "pending" | "success" | "failure" | "error" | None
     executor_statuses: list[ExecutorRunStatus] = Field(
         default_factory=list, description="Status per executor type"
     )

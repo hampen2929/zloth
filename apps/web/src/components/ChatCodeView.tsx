@@ -59,6 +59,7 @@ export function ChatCodeView({
   const [ciCheckExpanded, setCICheckExpanded] = useState<Record<string, boolean>>({});
   const [checkingCI, setCheckingCI] = useState(false);
   const [hasPendingCIChecks, setHasPendingCIChecks] = useState(false);
+  const [recentPRCreation, setRecentPRCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -91,11 +92,12 @@ export function ChatCodeView({
   // Fetch CI checks for the task
   // Auto-poll when:
   // 1. User clicked "Check CI" button (checkingCI=true), OR
-  // 2. There are pending CI checks (from automatic gating)
+  // 2. There are pending CI checks (from automatic gating), OR
+  // 3. PR was recently created (aggressive polling for 10 seconds)
   const { data: ciChecks, mutate: mutateCIChecks } = useSWR<CICheck[]>(
     `ci-checks-${taskId}`,
     () => ciChecksApi.list(taskId),
-    { refreshInterval: checkingCI || hasPendingCIChecks ? 5000 : 0 }
+    { refreshInterval: checkingCI || hasPendingCIChecks || recentPRCreation ? (recentPRCreation ? 1000 : 5000) : 0 }
   );
 
   // Track pending CI checks state for auto-polling
@@ -166,8 +168,10 @@ export function ChatCodeView({
     if (latestPR && !prResult) {
       setPRResult({ url: latestPR.url, number: latestPR.number, pr_id: latestPR.id });
       setPRLinkResult(null);
+      // Immediately refresh CI checks when PR is detected
+      mutateCIChecks();
     }
-  }, [latestPR, prResult]);
+  }, [latestPR, prResult, mutateCIChecks]);
 
   // Reset PR state when switching to a different executor
   // This allows creating a new PR for each executor
@@ -295,6 +299,11 @@ export function ChatCodeView({
         }
         setPRResult({ url: result.url, number: result.number, pr_id: result.pr_id });
         onPRCreated();
+        // Immediately refresh CI checks to show pending CI status
+        mutateCIChecks();
+        // Enable aggressive polling for 10 seconds after PR creation
+        setRecentPRCreation(true);
+        setTimeout(() => setRecentPRCreation(false), 10000);
         success('Pull request created successfully!');
       }
     } catch (err) {
@@ -475,10 +484,22 @@ export function ChatCodeView({
     setCICheckExpanded((prev) => ({ ...prev, [ciCheckId]: !isCICheckExpanded(ciCheckId) }));
   };
 
-  // Filter CI checks for selected executor's PR
+  // Filter CI checks for selected executor's PR, deduplicated by SHA
+  // Only show one CI check per SHA (the latest one) to avoid duplicate entries
   const ciChecksForSelectedExecutor = useMemo(() => {
     if (!ciChecks || !latestPR) return [];
-    return ciChecks.filter((check) => check.pr_id === latestPR.id);
+    const checksForPR = ciChecks.filter((check) => check.pr_id === latestPR.id);
+
+    // Deduplicate by SHA - keep only the latest check for each SHA
+    const bysha = new Map<string, CICheck>();
+    for (const check of checksForPR) {
+      const sha = check.sha || check.id; // Use id as fallback if no SHA
+      const existing = bysha.get(sha);
+      if (!existing || new Date(check.updated_at) > new Date(existing.updated_at)) {
+        bysha.set(sha, check);
+      }
+    }
+    return Array.from(bysha.values());
   }, [ciChecks, latestPR]);
 
   // Auto-trigger CI check for pending CI checks (gating auto-polling)

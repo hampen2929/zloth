@@ -110,6 +110,10 @@ class KanbanService:
             ExecutorType.GEMINI_CLI,
         ]
 
+        # Note: We do NOT automatically refresh CI status here because it would
+        # cause unrelated tasks to unexpectedly transition to Gating status.
+        # CI status should only be refreshed explicitly when viewing a specific task.
+
         # Group tasks by computed status
         columns: dict[TaskKanbanStatus, list[TaskWithKanbanStatus]] = {
             status: [] for status in TaskKanbanStatus
@@ -163,6 +167,7 @@ class KanbanService:
                 completed_count=task_data["completed_count"],
                 pr_count=task_data["pr_count"],
                 latest_pr_status=task_data["latest_pr_status"],
+                latest_ci_status=task_data.get("latest_ci_status"),
                 executor_statuses=executor_statuses,
             )
             columns[computed_status].append(task_with_status)

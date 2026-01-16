@@ -390,6 +390,7 @@ class TaskDAO:
                     "completed_count": row["completed_count"],
                     "pr_count": row["pr_count"],
                     "latest_pr_status": row["latest_pr_status"],
+                    "latest_pr_id": row["latest_pr_id"] if "latest_pr_id" in row.keys() else None,
                     "latest_ci_status": (
                         row["latest_ci_status"] if "latest_ci_status" in row.keys() else None
                     ),
@@ -1797,8 +1798,23 @@ class CICheckDAO:
             return None
         return self._row_to_model(row)
 
+    async def get_by_pr_and_sha(self, pr_id: str, sha: str) -> CICheck | None:
+        """Get a CI check for a specific PR and SHA combination."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM ci_checks WHERE pr_id = ? AND sha = ? LIMIT 1",
+            (pr_id, sha),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
     async def list_by_task_id(self, task_id: str) -> builtins.list[CICheck]:
-        """List all CI checks for a task."""
+        """List all CI checks for a task.
+
+        Note: Deduplication by SHA is handled in the frontend to avoid
+        complex SQL that may cause issues in some scenarios.
+        """
         cursor = await self.db.connection.execute(
             "SELECT * FROM ci_checks WHERE task_id = ? ORDER BY created_at DESC",
             (task_id,),

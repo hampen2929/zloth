@@ -200,7 +200,12 @@ async def get_kanban_service() -> KanbanService:
     github_service = await get_github_service()
     user_preferences_dao = await get_user_preferences_dao()
     return KanbanService(
-        task_dao, run_dao, pr_dao, review_dao, github_service, user_preferences_dao
+        task_dao,
+        run_dao,
+        pr_dao,
+        review_dao,
+        github_service,
+        user_preferences_dao,
     )
 
 
