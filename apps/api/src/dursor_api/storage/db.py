@@ -1,11 +1,16 @@
 """Database connection and initialization."""
 
-import aiosqlite
-from pathlib import Path
+import logging
+import re
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from pathlib import Path
+
+import aiosqlite
 
 from dursor_api.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -41,25 +46,135 @@ class Database:
         # Run migrations for existing databases
         await self._run_migrations()
 
+    def _parse_schema_columns(self, schema: str) -> dict[str, list[tuple[str, str]]]:
+        """Parse schema.sql and extract column definitions for each table.
+
+        Returns:
+            dict mapping table_name -> list of (column_name, column_definition)
+        """
+        tables: dict[str, list[tuple[str, str]]] = {}
+
+        # Remove SQL comments (-- style)
+        schema_no_comments = re.sub(r"--[^\n]*", "", schema)
+
+        # Match CREATE TABLE statements
+        table_pattern = re.compile(
+            r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\);",
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        for match in table_pattern.finditer(schema_no_comments):
+            table_name = match.group(1)
+            body = match.group(2)
+
+            columns: list[tuple[str, str]] = []
+            # Split by comma, but handle nested parentheses (for CHECK constraints, etc.)
+            parts = self._split_column_definitions(body)
+
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+
+                # Skip constraints (PRIMARY KEY, FOREIGN KEY, CHECK, UNIQUE, INDEX)
+                upper_part = part.upper()
+                if any(
+                    upper_part.startswith(kw)
+                    for kw in ["PRIMARY KEY", "FOREIGN KEY", "CHECK", "UNIQUE", "INDEX"]
+                ):
+                    continue
+
+                # Extract column name and definition
+                # Column definition starts with column name followed by type/constraints
+                col_match = re.match(r"(\w+)\s+(.*)", part, re.DOTALL)
+                if col_match:
+                    col_name = col_match.group(1)
+                    col_def = col_match.group(2).strip()
+                    # Skip if it's a table constraint keyword
+                    if col_name.upper() not in [
+                        "PRIMARY",
+                        "FOREIGN",
+                        "CHECK",
+                        "UNIQUE",
+                        "INDEX",
+                        "CONSTRAINT",
+                    ]:
+                        columns.append((col_name, col_def))
+
+            tables[table_name] = columns
+
+        return tables
+
+    def _split_column_definitions(self, body: str) -> list[str]:
+        """Split column definitions by comma, respecting parentheses."""
+        parts: list[str] = []
+        current = ""
+        depth = 0
+
+        for char in body:
+            if char == "(":
+                depth += 1
+                current += char
+            elif char == ")":
+                depth -= 1
+                current += char
+            elif char == "," and depth == 0:
+                parts.append(current)
+                current = ""
+            else:
+                current += char
+
+        if current.strip():
+            parts.append(current)
+
+        return parts
+
     async def _run_migrations(self) -> None:
-        """Run database migrations for existing databases."""
-        cursor = await self._connection.execute("PRAGMA table_info(runs)")
-        columns = await cursor.fetchall()
-        column_names = [col["name"] for col in columns]
+        """Run database migrations for existing databases.
 
-        # Migration: Add session_id column to runs table if it doesn't exist
-        if "session_id" not in column_names:
-            await self._connection.execute(
-                "ALTER TABLE runs ADD COLUMN session_id TEXT"
-            )
-            await self._connection.commit()
+        Automatically adds missing columns by comparing schema.sql with existing tables.
+        """
+        schema_path = Path(__file__).parent / "schema.sql"
+        schema = schema_path.read_text()
 
-        # Migration: Add commit_sha column to runs table if it doesn't exist
-        if "commit_sha" not in column_names:
-            await self._connection.execute(
-                "ALTER TABLE runs ADD COLUMN commit_sha TEXT"
-            )
-            await self._connection.commit()
+        # Parse expected columns from schema
+        schema_tables = self._parse_schema_columns(schema)
+
+        # For each table in schema, check and add missing columns
+        for table_name, expected_columns in schema_tables.items():
+            await self._migrate_table_columns(table_name, expected_columns)
+
+    async def _migrate_table_columns(
+        self, table_name: str, expected_columns: list[tuple[str, str]]
+    ) -> None:
+        """Add missing columns to a table.
+
+        Args:
+            table_name: Name of the table to migrate
+            expected_columns: List of (column_name, column_definition) from schema
+        """
+        conn = self.connection
+        # Get existing columns
+        cursor = await conn.execute(f"PRAGMA table_info({table_name})")
+        rows = await cursor.fetchall()
+        existing_columns = {row["name"] for row in rows}
+
+        # Add missing columns
+        for col_name, col_def in expected_columns:
+            if col_name not in existing_columns:
+                # Build ALTER TABLE statement
+                # SQLite requires DEFAULT for new columns if table has data
+                alter_sql = f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"
+                try:
+                    await conn.execute(alter_sql)
+                    await conn.commit()
+                    logger.info(
+                        f"Migration: Added column '{col_name}' to table '{table_name}'"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Migration: Failed to add column '{col_name}' to '{table_name}': {e}"
+                    )
 
     @property
     def connection(self) -> aiosqlite.Connection:
