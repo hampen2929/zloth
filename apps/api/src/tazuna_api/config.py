@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
-        env_prefix="DURSOR_",
-        extra="ignore",  # Ignore non-DURSOR_ env vars like OPENAI_API_KEY
+        env_prefix="TAZUNA_",
+        extra="ignore",  # Ignore non-TAZUNA_ env vars like OPENAI_API_KEY
     )
 
     # Server

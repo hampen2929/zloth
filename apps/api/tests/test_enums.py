@@ -1,6 +1,6 @@
 """Tests for domain enums."""
 
-from dursor_api.domain.enums import (
+from tazuna_api.domain.enums import (
     ExecutorType,
     MessageRole,
     PRCreationMode,

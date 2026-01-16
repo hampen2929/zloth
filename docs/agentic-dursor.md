@@ -1,8 +1,8 @@
-# Agentic Dursor - 自律的開発フロー設計
+# Agentic Tazuna - 自律的開発フロー設計
 
 ## 概要
 
-dursor をコーディングエージェントが**自律的に開発を行える**システムとして設計する。
+tazuna をコーディングエージェントが**自律的に開発を行える**システムとして設計する。
 
 本ドキュメントは [Coding Mode 設計](./coding-mode.md) の **Semi Auto** と **Full Auto** モードの詳細実装を定義する。
 
@@ -39,19 +39,19 @@ flowchart LR
 2. **Strict Merge Gates**: マージ条件を明確かつ厳格に定義
 3. **Agent Specialization**: コーディング(Claude)とレビュー(Codex)を分離
 4. **Fail-fast Feedback Loop**: CI/レビュー失敗を検知し自動修正
-5. **dursor as Orchestrator**: CIはチェックのみ、dursorが全体を制御
+5. **tazuna as Orchestrator**: CIはチェックのみ、tazunaが全体を制御
 6. **Human-in-the-loop Option**: Semi Autoでは最終承認を人間が行う
 
 ---
 
-## CIとdursorの責務分離
+## CIとtazunaの責務分離
 
 ### 責務分担
 
 | 担当 | 責務 | 実行場所 |
 |------|------|----------|
 | **GitHub Actions (CI)** | チェック実行、結果通知 | GitHub |
-| **dursor Orchestrator** | 失敗検知、自動修正、マージ制御 | dursor API |
+| **tazuna Orchestrator** | 失敗検知、自動修正、マージ制御 | tazuna API |
 
 ```mermaid
 flowchart LR
@@ -63,7 +63,7 @@ flowchart LR
         CI5[Codexレビュー]
     end
 
-    subgraph Orchestrator["dursor Orchestrator<br/>制御中枢"]
+    subgraph Orchestrator["tazuna Orchestrator<br/>制御中枢"]
         OR1[結果監視]
         OR2[失敗時修正指示]
         OR3[マージ判断]
@@ -82,11 +82,11 @@ flowchart LR
     Orchestrator --> CI
 ```
 
-### なぜdursorがオーケストレーションするのか
+### なぜtazunaがオーケストレーションするのか
 
 CIだけでは実現できない機能：
 
-| 機能 | CI単独 | dursor + CI |
+| 機能 | CI単独 | tazuna + CI |
 |------|--------|-------------|
 | テスト/Lint実行 | ✅ | ✅ |
 | 失敗時の自動修正 | ❌ | ✅ |
@@ -103,7 +103,7 @@ CIだけでは実現できない機能：
 
 ```mermaid
 flowchart TB
-    subgraph System["Agentic Dursor System"]
+    subgraph System["Agentic Tazuna System"]
         subgraph Orchestrator["AgenticOrchestrator"]
             TM[Task Manager] --> CP[Coding Phase]
             CP --> RP[Review Phase]
@@ -154,7 +154,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant GH as GitHub Actions
-    participant WH as dursor Webhook
+    participant WH as tazuna Webhook
     participant OR as Orchestrator
     participant CC as Claude Code
     participant GIT as Git
@@ -348,17 +348,17 @@ jobs:
       - run: echo "All checks passed!"
 
   # ============================================
-  # Notify dursor (Webhook)
+  # Notify tazuna (Webhook)
   # ============================================
-  notify-dursor:
+  notify-tazuna:
     runs-on: ubuntu-latest
     needs: [all-checks-passed]
     if: always()
     steps:
-      - name: Notify dursor orchestrator
+      - name: Notify tazuna orchestrator
         env:
-          DURSOR_WEBHOOK_URL: ${{ secrets.DURSOR_WEBHOOK_URL }}
-          DURSOR_WEBHOOK_SECRET: ${{ secrets.DURSOR_WEBHOOK_SECRET }}
+          TAZUNA_WEBHOOK_URL: ${{ secrets.TAZUNA_WEBHOOK_URL }}
+          TAZUNA_WEBHOOK_SECRET: ${{ secrets.TAZUNA_WEBHOOK_SECRET }}
         run: |
           # Collect job results
           PAYLOAD=$(cat <<EOF
@@ -385,19 +385,19 @@ jobs:
           )
 
           # Calculate HMAC signature
-          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$DURSOR_WEBHOOK_SECRET" | awk '{print $2}')
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$TAZUNA_WEBHOOK_SECRET" | awk '{print $2}')
 
           # Send webhook
-          curl -X POST "$DURSOR_WEBHOOK_URL/v1/webhooks/ci" \
+          curl -X POST "$TAZUNA_WEBHOOK_URL/v1/webhooks/ci" \
             -H "Content-Type: application/json" \
             -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
             -d "$PAYLOAD"
 ```
 
-### Webhook Handler (dursor側)
+### Webhook Handler (tazuna側)
 
 ```python
-# apps/api/src/dursor_api/routes/webhooks.py
+# apps/api/src/tazuna_api/routes/webhooks.py
 
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
@@ -504,7 +504,7 @@ async def fetch_job_logs(workflow_run_id: int, job_name: str) -> str:
 ### AgenticOrchestrator 完全実装
 
 ```python
-# apps/api/src/dursor_api/services/agentic_orchestrator.py
+# apps/api/src/tazuna_api/services/agentic_orchestrator.py
 
 from enum import Enum
 from dataclasses import dataclass
@@ -1155,7 +1155,7 @@ flowchart TD
     subgraph CI["Phase 2: CI"]
         F --> G[GitHub Actions Triggered]
         G --> H{CI Result}
-        H -->|Webhook| I[dursor Webhook Handler]
+        H -->|Webhook| I[tazuna Webhook Handler]
     end
 
     subgraph CIFix["Phase 2a: CI Fix Loop"]
@@ -1384,7 +1384,7 @@ POST /v1/webhooks/ci:
 ### Webhook Handler (approve/reject)
 
 ```python
-# apps/api/src/dursor_api/routes/tasks.py
+# apps/api/src/tazuna_api/routes/tasks.py
 
 @router.post("/{task_id}/approve-merge")
 async def approve_merge(
@@ -1432,25 +1432,25 @@ class RejectMergeRequest(BaseModel):
 
 ```bash
 # Agentic Mode
-DURSOR_AGENTIC_ENABLED=true
-DURSOR_AGENTIC_AUTO_MERGE=true
+TAZUNA_AGENTIC_ENABLED=true
+TAZUNA_AGENTIC_AUTO_MERGE=true
 
 # Iteration Limits
-DURSOR_AGENTIC_MAX_TOTAL_ITERATIONS=10
-DURSOR_AGENTIC_MAX_CI_ITERATIONS=5
-DURSOR_AGENTIC_MAX_REVIEW_ITERATIONS=3
-DURSOR_AGENTIC_TIMEOUT_MINUTES=60
+TAZUNA_AGENTIC_MAX_TOTAL_ITERATIONS=10
+TAZUNA_AGENTIC_MAX_CI_ITERATIONS=5
+TAZUNA_AGENTIC_MAX_REVIEW_ITERATIONS=3
+TAZUNA_AGENTIC_TIMEOUT_MINUTES=60
 
 # Quality Thresholds
-DURSOR_REVIEW_MIN_SCORE=0.75
-DURSOR_COVERAGE_THRESHOLD=80
+TAZUNA_REVIEW_MIN_SCORE=0.75
+TAZUNA_COVERAGE_THRESHOLD=80
 
 # Webhook
-DURSOR_WEBHOOK_SECRET=your-secret-here
+TAZUNA_WEBHOOK_SECRET=your-secret-here
 
 # Merge
-DURSOR_MERGE_METHOD=squash
-DURSOR_MERGE_DELETE_BRANCH=true
+TAZUNA_MERGE_METHOD=squash
+TAZUNA_MERGE_DELETE_BRANCH=true
 ```
 
 ---
@@ -1469,7 +1469,7 @@ DURSOR_MERGE_DELETE_BRANCH=true
 ### Notification Service 実装
 
 ```python
-# apps/api/src/dursor_api/services/notification_service.py
+# apps/api/src/tazuna_api/services/notification_service.py
 
 from enum import Enum
 from dataclasses import dataclass
@@ -1555,7 +1555,7 @@ class EmailNotifier(NotificationChannel):
         self.config = smtp_config
 
     async def send(self, event: NotificationEvent) -> bool:
-        subject = f"[dursor] {event.type.value.replace('_', ' ').title()}: {event.task_title}"
+        subject = f"[tazuna] {event.type.value.replace('_', ' ').title()}: {event.task_title}"
         body = self._build_email_body(event)
         # ... SMTP send implementation
         return True
@@ -1584,17 +1584,17 @@ class NotificationService:
 
 ```bash
 # 通知チャネル
-DURSOR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
-DURSOR_NOTIFY_EMAIL=dev-alerts@example.com
+TAZUNA_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
+TAZUNA_NOTIFY_EMAIL=dev-alerts@example.com
 
 # 通知トリガー
-DURSOR_NOTIFY_ON_READY=true      # Semi Auto: PR準備完了
-DURSOR_NOTIFY_ON_COMPLETE=true   # 完了通知
-DURSOR_NOTIFY_ON_FAILURE=true    # 失敗通知
-DURSOR_NOTIFY_ON_WARNING=true    # 警告（高イテレーション）
+TAZUNA_NOTIFY_ON_READY=true      # Semi Auto: PR準備完了
+TAZUNA_NOTIFY_ON_COMPLETE=true   # 完了通知
+TAZUNA_NOTIFY_ON_FAILURE=true    # 失敗通知
+TAZUNA_NOTIFY_ON_WARNING=true    # 警告（高イテレーション）
 
 # 警告閾値
-DURSOR_WARN_ITERATION_THRESHOLD=7  # この回数を超えると警告
+TAZUNA_WARN_ITERATION_THRESHOLD=7  # この回数を超えると警告
 ```
 
 ---

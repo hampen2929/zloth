@@ -207,7 +207,7 @@ BREAKDOWN_INSTRUCTION_TEMPLATE_V2 = """
 {content}
 
 ## 出力形式
-`.dursor-breakdown.json` に以下の形式で出力:
+`.tazuna-breakdown.json` に以下の形式で出力:
 
 ```json
 {{

@@ -499,9 +499,9 @@ export function GitHubAppTab() {
           You can also configure the GitHub App via environment variables:
         </p>
         <div className="font-mono text-xs text-gray-400 space-y-1 bg-gray-800/50 p-3 rounded">
-          <div>DURSOR_GITHUB_APP_ID=&lt;app_id&gt;</div>
-          <div>DURSOR_GITHUB_APP_PRIVATE_KEY=&lt;base64_encoded_key&gt;</div>
-          <div>DURSOR_GITHUB_APP_INSTALLATION_ID=&lt;installation_id&gt;</div>
+          <div>TAZUNA_GITHUB_APP_ID=&lt;app_id&gt;</div>
+          <div>TAZUNA_GITHUB_APP_PRIVATE_KEY=&lt;base64_encoded_key&gt;</div>
+          <div>TAZUNA_GITHUB_APP_INSTALLATION_ID=&lt;installation_id&gt;</div>
         </div>
       </div>
     </div>
@@ -769,8 +769,8 @@ export function DefaultsTab() {
           label="Branch Prefix"
           value={branchPrefix}
           onChange={(e) => setBranchPrefix(e.target.value)}
-          placeholder="dursor"
-          hint="Prefix used for new work branches (e.g., dursor/abcd1234). Leave blank to use the default."
+          placeholder="tazuna"
+          hint="Prefix used for new work branches (e.g., tazuna/abcd1234). Leave blank to use the default."
         />
 
         {/* Default coding mode */}
@@ -871,8 +871,8 @@ export function DefaultsTab() {
             label="Worktrees Directory"
             value={worktreesDir}
             onChange={(e) => setWorktreesDir(e.target.value)}
-            placeholder="~/.dursor/worktrees"
-            hint="Directory for git worktrees. Leave blank to use the default (~/.dursor/worktrees). This should be outside the dursor installation directory to avoid CLAUDE.md conflicts."
+            placeholder="~/.tazuna/worktrees"
+            hint="Directory for git worktrees. Leave blank to use the default (~/.tazuna/worktrees). This should be outside the tazuna installation directory to avoid CLAUDE.md conflicts."
           />
         </div>
 

@@ -226,7 +226,7 @@ export default function HomePage() {
               value={instruction}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
-              placeholder="Ask dursor to build, fix bugs, explore..."
+              placeholder="Ask tazuna to build, fix bugs, explore..."
               className={cn(
                 'w-full bg-transparent text-white placeholder-gray-500',
                 'text-lg resize-none focus:outline-none min-h-[80px]',

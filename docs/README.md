@@ -1,6 +1,6 @@
-# dursor Documentation
+# tazuna Documentation
 
-Welcome to the dursor documentation. This guide will help you understand, develop, and contribute to the project.
+Welcome to the tazuna documentation. This guide will help you understand, develop, and contribute to the project.
 
 ## Documentation Index
 
@@ -26,8 +26,8 @@ Welcome to the dursor documentation. This guide will help you understand, develo
 
 ```bash
 # Clone repository
-git clone https://github.com/hampen2929/dursor.git
-cd dursor
+git clone https://github.com/hampen2929/tazuna.git
+cd tazuna
 
 # Backend setup
 cd apps/api
@@ -56,7 +56,7 @@ flowchart LR
 ### Project Structure
 
 ```
-dursor/
+tazuna/
 ├── apps/
 │   ├── api/          # FastAPI backend
 │   └── web/          # Next.js frontend
@@ -76,5 +76,5 @@ dursor/
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/hampen2929/dursor/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/hampen2929/dursor/discussions)
+- **Issues**: [GitHub Issues](https://github.com/hampen2929/tazuna/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/hampen2929/tazuna/discussions)

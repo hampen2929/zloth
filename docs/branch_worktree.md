@@ -1,10 +1,10 @@
 # ブランチ選択とWorktree管理
 
-このドキュメントでは、dursorにおけるブランチ選択からWorktree作成、PR作成までのフローを説明します。
+このドキュメントでは、tazunaにおけるブランチ選択からWorktree作成、PR作成までのフローを説明します。
 
 ## 概要
 
-dursorでは、ユーザーが選択したブランチを基点として作業を行います。各Runは独立したGit worktreeで実行され、ブランチ情報は`Run.base_ref`に保存されます。
+tazunaでは、ユーザーが選択したブランチを基点として作業を行います。各Runは独立したGit worktreeで実行され、ブランチ情報は`Run.base_ref`に保存されます。
 
 ```mermaid
 flowchart TB
@@ -137,8 +137,8 @@ sequenceDiagram
 ```
 
 **関連ファイル:**
-- `apps/api/src/dursor_api/services/repo_service.py` (select メソッド)
-- `apps/api/src/dursor_api/routes/repos.py`
+- `apps/api/src/tazuna_api/services/repo_service.py` (select メソッド)
+- `apps/api/src/tazuna_api/routes/repos.py`
 
 ### 3. Run作成とWorktree
 
@@ -174,8 +174,8 @@ sequenceDiagram
 3. `repo.default_branch` - GitHubのデフォルトブランチ
 
 **関連ファイル:**
-- `apps/api/src/dursor_api/services/run_service.py` (create_runs メソッド)
-- `apps/api/src/dursor_api/services/git_service.py` (create_worktree メソッド)
+- `apps/api/src/tazuna_api/services/run_service.py` (create_runs メソッド)
+- `apps/api/src/tazuna_api/services/git_service.py` (create_worktree メソッド)
 
 ### 4. PR作成
 
@@ -200,7 +200,7 @@ sequenceDiagram
 **重要:** PRのベースブランチは`run.base_ref`を使用します。これにより、Run作成時に選択されていたブランチが正しくPRのベースになります。
 
 **関連ファイル:**
-- `apps/api/src/dursor_api/services/pr_service.py`
+- `apps/api/src/tazuna_api/services/pr_service.py`
 
 ## ブランチ命名規則
 
@@ -210,10 +210,10 @@ Worktree用の作業ブランチは以下の形式で生成されます：
 {prefix}/{short_run_id}
 ```
 
-- `prefix`: ユーザー設定（デフォルト: `dursor`）
+- `prefix`: ユーザー設定（デフォルト: `tazuna`）
 - `short_run_id`: Run IDの先頭8文字
 
-例: `dursor/a1b2c3d4`
+例: `tazuna/a1b2c3d4`
 
 ## 複数タスクでの挙動
 
@@ -269,8 +269,8 @@ logger.info(f"Creating worktree at {worktree_path} from {base_ref}")
 |---------|----------|------|
 | Frontend | `apps/web/src/components/NewBacklogModal.tsx` | Backlog作成UI |
 | Frontend | `apps/web/src/components/BranchSelector.tsx` | ブランチ選択コンポーネント |
-| Backend | `apps/api/src/dursor_api/services/repo_service.py` | リポジトリ管理 |
-| Backend | `apps/api/src/dursor_api/services/run_service.py` | Run実行管理 |
-| Backend | `apps/api/src/dursor_api/services/git_service.py` | Git操作（Worktree含む） |
-| Backend | `apps/api/src/dursor_api/services/pr_service.py` | PR作成・更新 |
-| Domain | `apps/api/src/dursor_api/domain/models.py` | Repo, Run, PR モデル定義 |
+| Backend | `apps/api/src/tazuna_api/services/repo_service.py` | リポジトリ管理 |
+| Backend | `apps/api/src/tazuna_api/services/run_service.py` | Run実行管理 |
+| Backend | `apps/api/src/tazuna_api/services/git_service.py` | Git操作（Worktree含む） |
+| Backend | `apps/api/src/tazuna_api/services/pr_service.py` | PR作成・更新 |
+| Domain | `apps/api/src/tazuna_api/domain/models.py` | Repo, Run, PR モデル定義 |

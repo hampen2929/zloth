@@ -3,7 +3,7 @@ import './globals.css';
 import ClientLayout from '@/components/ClientLayout';
 
 export const metadata: Metadata = {
-  title: 'dursor - Multi-model Coding Agent',
+  title: 'tazuna - Multi-model Coding Agent',
   description: 'BYO API Key / Multi-model parallel execution / Conversation-driven PR development',
 };
 
