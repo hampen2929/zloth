@@ -80,13 +80,14 @@ class TaskKanbanStatus(str, Enum):
     """Task kanban status.
 
     - backlog, todo, archived: Stored in DB (manually set by human)
-    - in_progress, in_review, done: Dynamically computed from Run/PR (overrides DB)
+    - in_progress, in_review, gating, done: Dynamically computed from Run/PR/CI (overrides DB)
     """
 
     BACKLOG = "backlog"
     TODO = "todo"
     IN_PROGRESS = "in_progress"
     IN_REVIEW = "in_review"
+    GATING = "gating"
     DONE = "done"
     ARCHIVED = "archived"
 

@@ -59,10 +59,19 @@ export interface TaskCreate {
   coding_mode?: CodingMode;
 }
 
+export interface CICheckSummary {
+  id: string;
+  pr_id: string;
+  status: string; // "pending" | "success" | "failure" | "error"
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TaskDetail extends Task {
   messages: Message[];
   runs: RunSummary[];
   prs: PRSummary[];
+  ci_checks: CICheckSummary[];
 }
 
 // Message
@@ -288,6 +297,7 @@ export interface UserPreferences {
   default_coding_mode: CodingMode;
   auto_generate_pr_description: boolean;
   worktrees_dir: string | null;
+  enable_gating_status: boolean;
 }
 
 export interface UserPreferencesSave {
@@ -299,6 +309,7 @@ export interface UserPreferencesSave {
   default_coding_mode?: CodingMode | null;
   auto_generate_pr_description?: boolean | null;
   worktrees_dir?: string | null;
+  enable_gating_status?: boolean | null;
 }
 
 // Task Breakdown
@@ -367,6 +378,7 @@ export type TaskKanbanStatus =
   | 'todo'
   | 'in_progress'
   | 'in_review'
+  | 'gating'
   | 'done'
   | 'archived';
 

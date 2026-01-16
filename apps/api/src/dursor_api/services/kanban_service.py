@@ -10,17 +10,19 @@ from dursor_api.domain.models import (
     TaskWithKanbanStatus,
 )
 from dursor_api.services.github_service import GitHubService
-from dursor_api.storage.dao import PRDAO, ReviewDAO, RunDAO, TaskDAO
+from dursor_api.storage.dao import PRDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
 
 
 class KanbanService:
     """Kanban status management service.
 
     Status calculation priority:
-    1. PR is merged -> Done (highest priority)
-    2. Run is running -> InProgress
-    3. All runs completed -> InReview
-    4. DB stored base status (backlog/todo/archived)
+    1. Archived (highest) - User explicitly archived this task
+    2. Done - PR is merged
+    3. In Progress - Run is running
+    4. Gating - All runs completed + PR is open + CI is pending/null + enable_gating_status
+    5. In Review - All runs completed
+    6. Base Status (lowest) - DB stored status (backlog/todo)
     """
 
     def __init__(
@@ -30,12 +32,14 @@ class KanbanService:
         pr_dao: PRDAO,
         review_dao: ReviewDAO,
         github_service: GitHubService,
+        user_preferences_dao: UserPreferencesDAO,
     ):
         self.task_dao = task_dao
         self.run_dao = run_dao
         self.pr_dao = pr_dao
         self.review_dao = review_dao
         self.github_service = github_service
+        self.user_preferences_dao = user_preferences_dao
 
     def _compute_kanban_status(
         self,
@@ -44,6 +48,8 @@ class KanbanService:
         running_count: int,
         completed_count: int,
         latest_pr_status: str | None,
+        latest_ci_status: str | None = None,
+        enable_gating_status: bool = False,
     ) -> TaskKanbanStatus:
         """Compute final kanban status.
 
@@ -61,8 +67,13 @@ class KanbanService:
         if running_count > 0:
             return TaskKanbanStatus.IN_PROGRESS
 
-        # 4. Runs exist and all completed -> InReview
+        # 4. All runs completed
         if run_count > 0 and completed_count == run_count:
+            # 4a. Gating: All runs completed + PR is open + CI is pending/null + enabled
+            if enable_gating_status and latest_pr_status == "open":
+                if latest_ci_status in ("pending", None):
+                    return TaskKanbanStatus.GATING
+            # 4b. InReview: All runs completed
             return TaskKanbanStatus.IN_REVIEW
 
         # 5. Use base status (backlog/todo)
@@ -72,6 +83,10 @@ class KanbanService:
     async def get_board(self, repo_id: str | None = None) -> KanbanBoard:
         """Get full kanban board."""
         tasks_with_aggregates = await self.task_dao.list_with_aggregates(repo_id)
+
+        # Fetch user preferences for gating status
+        user_prefs = await self.user_preferences_dao.get()
+        enable_gating_status = user_prefs.enable_gating_status if user_prefs else False
 
         # Get task IDs for fetching executor-level run data
         task_ids = [task_data["id"] for task_data in tasks_with_aggregates]
@@ -107,6 +122,8 @@ class KanbanService:
                 running_count=task_data["running_count"],
                 completed_count=task_data["completed_count"],
                 latest_pr_status=task_data["latest_pr_status"],
+                latest_ci_status=task_data.get("latest_ci_status"),
+                enable_gating_status=enable_gating_status,
             )
 
             # Build executor statuses for this task

@@ -4,12 +4,19 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import get_message_dao, get_pr_dao, get_run_dao, get_task_dao
+from dursor_api.dependencies import (
+    get_ci_check_dao,
+    get_message_dao,
+    get_pr_dao,
+    get_run_dao,
+    get_task_dao,
+)
 from dursor_api.domain.enums import CodingMode, TaskBaseKanbanStatus, TaskKanbanStatus
 from dursor_api.domain.models import (
     AgenticStartRequest,
     AgenticStartResponse,
     AgenticStatusResponse,
+    CICheckSummary,
     Message,
     MessageCreate,
     PRSummary,
@@ -21,7 +28,7 @@ from dursor_api.domain.models import (
     TaskCreate,
     TaskDetail,
 )
-from dursor_api.storage.dao import PRDAO, MessageDAO, RunDAO, TaskDAO
+from dursor_api.storage.dao import PRDAO, CICheckDAO, MessageDAO, RunDAO, TaskDAO
 
 
 def _compute_kanban_status(
@@ -122,6 +129,7 @@ async def get_task(
     message_dao: MessageDAO = Depends(get_message_dao),
     run_dao: RunDAO = Depends(get_run_dao),
     pr_dao: PRDAO = Depends(get_pr_dao),
+    ci_check_dao: CICheckDAO = Depends(get_ci_check_dao),
 ) -> TaskDetail:
     """Get a task with details."""
     task = await task_dao.get(task_id)
@@ -131,6 +139,7 @@ async def get_task(
     messages = await message_dao.list(task_id)
     runs = await run_dao.list(task_id)
     prs = await pr_dao.list(task_id)
+    ci_checks = await ci_check_dao.list_by_task_id(task_id)
 
     run_summaries = [
         RunSummary(
@@ -158,6 +167,17 @@ async def get_task(
         for p in prs
     ]
 
+    ci_check_summaries = [
+        CICheckSummary(
+            id=c.id,
+            pr_id=c.pr_id,
+            status=c.status,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        )
+        for c in ci_checks
+    ]
+
     return TaskDetail(
         id=task.id,
         repo_id=task.repo_id,
@@ -167,6 +187,7 @@ async def get_task(
         messages=messages,
         runs=run_summaries,
         prs=pr_summaries,
+        ci_checks=ci_check_summaries,
     )
 
 
