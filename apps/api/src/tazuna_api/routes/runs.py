@@ -7,10 +7,10 @@ from collections.abc import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from dursor_api.dependencies import get_output_manager, get_run_service
-from dursor_api.domain.models import Run, RunCreate, RunsCreated
-from dursor_api.services.output_manager import OutputManager
-from dursor_api.services.run_service import RunService
+from tazuna_api.dependencies import get_output_manager, get_run_service
+from tazuna_api.domain.models import Run, RunCreate, RunsCreated
+from tazuna_api.services.output_manager import OutputManager
+from tazuna_api.services.run_service import RunService
 
 logger = logging.getLogger(__name__)
 

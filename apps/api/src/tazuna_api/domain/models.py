@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from dursor_api.domain.enums import (
+from tazuna_api.domain.enums import (
     AgenticPhase,
     BreakdownStatus,
     BrokenDownTaskType,

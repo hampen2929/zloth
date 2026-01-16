@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode, urlparse
 
-from dursor_api.config import settings
-from dursor_api.domain.enums import ExecutorType, PRUpdateMode
-from dursor_api.domain.models import (
+from tazuna_api.config import settings
+from tazuna_api.domain.enums import ExecutorType, PRUpdateMode
+from tazuna_api.domain.models import (
     PR,
     PRCreate,
     PRCreateAuto,
@@ -32,17 +32,17 @@ from dursor_api.domain.models import (
     Run,
     Task,
 )
-from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
-from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
-from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
-from dursor_api.services.commit_message import ensure_english_commit_message
-from dursor_api.services.git_service import GitService
-from dursor_api.services.model_service import ModelService
-from dursor_api.services.repo_service import RepoService
-from dursor_api.storage.dao import PRDAO, RunDAO, TaskDAO
+from tazuna_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
+from tazuna_api.executors.codex_executor import CodexExecutor, CodexOptions
+from tazuna_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from tazuna_api.services.commit_message import ensure_english_commit_message
+from tazuna_api.services.git_service import GitService
+from tazuna_api.services.model_service import ModelService
+from tazuna_api.services.repo_service import RepoService
+from tazuna_api.storage.dao import PRDAO, RunDAO, TaskDAO
 
 if TYPE_CHECKING:
-    from dursor_api.services.github_service import GitHubService
+    from tazuna_api.services.github_service import GitHubService
 
 logger = logging.getLogger(__name__)
 

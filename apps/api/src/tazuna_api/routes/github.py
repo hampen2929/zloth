@@ -2,13 +2,13 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import get_github_service
-from dursor_api.domain.models import (
+from tazuna_api.dependencies import get_github_service
+from tazuna_api.domain.models import (
     GitHubAppConfig,
     GitHubAppConfigSave,
     GitHubRepository,
 )
-from dursor_api.services.github_service import GitHubService
+from tazuna_api.services.github_service import GitHubService
 
 router = APIRouter(prefix="/github", tags=["github"])
 

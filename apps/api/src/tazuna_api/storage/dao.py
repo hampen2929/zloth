@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from dursor_api.domain.enums import (
+from tazuna_api.domain.enums import (
     AgenticPhase,
     BrokenDownTaskType,
     CodingMode,
@@ -23,7 +23,7 @@ from dursor_api.domain.enums import (
     RunStatus,
     TaskBaseKanbanStatus,
 )
-from dursor_api.domain.models import (
+from tazuna_api.domain.models import (
     PR,
     AgenticState,
     BacklogItem,
@@ -41,7 +41,7 @@ from dursor_api.domain.models import (
     Task,
     UserPreferences,
 )
-from dursor_api.storage.db import Database
+from tazuna_api.storage.db import Database
 
 
 def generate_id() -> str:
@@ -1697,7 +1697,7 @@ class AgenticRunDAO:
 
     def _row_to_model(self, row: Any) -> AgenticState:
         """Convert database row to AgenticState model."""
-        from dursor_api.domain.models import CIResult
+        from tazuna_api.domain.models import CIResult
 
         last_ci_result = None
         if row["last_ci_result"]:

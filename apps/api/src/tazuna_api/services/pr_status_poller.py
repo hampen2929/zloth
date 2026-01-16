@@ -3,8 +3,8 @@
 import asyncio
 import logging
 
-from dursor_api.services.github_service import GitHubService
-from dursor_api.storage.dao import PRDAO
+from tazuna_api.services.github_service import GitHubService
+from tazuna_api.storage.dao import PRDAO
 
 logger = logging.getLogger(__name__)
 

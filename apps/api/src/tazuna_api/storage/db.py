@@ -7,7 +7,7 @@ from typing import Any
 
 import aiosqlite
 
-from dursor_api.config import settings
+from tazuna_api.config import settings
 
 
 class Database:

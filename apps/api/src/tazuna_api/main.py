@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from dursor_api.config import settings
-from dursor_api.dependencies import get_pr_status_poller
-from dursor_api.routes import (
+from tazuna_api.config import settings
+from tazuna_api.dependencies import get_pr_status_poller
+from tazuna_api.routes import (
     backlog_router,
     breakdown_router,
     github_router,
@@ -21,7 +21,7 @@ from dursor_api.routes import (
     runs_router,
     tasks_router,
 )
-from dursor_api.storage.db import get_db
+from tazuna_api.storage.db import get_db
 
 
 @asynccontextmanager

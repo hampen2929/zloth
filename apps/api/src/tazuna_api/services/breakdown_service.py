@@ -14,15 +14,15 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from dursor_api.config import settings
-from dursor_api.domain.enums import (
+from tazuna_api.config import settings
+from tazuna_api.domain.enums import (
     BreakdownStatus,
     BrokenDownTaskType,
     EstimatedSize,
     ExecutorType,
     RoleExecutionStatus,
 )
-from dursor_api.domain.models import (
+from tazuna_api.domain.models import (
     BacklogItem,
     BreakdownExecutionResult,
     BrokenDownSubTask,
@@ -32,13 +32,13 @@ from dursor_api.domain.models import (
     TaskBreakdownRequest,
     TaskBreakdownResponse,
 )
-from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
-from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
-from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
-from dursor_api.roles.base_service import BaseRoleService
-from dursor_api.roles.registry import RoleRegistry
-from dursor_api.services.output_manager import OutputManager
-from dursor_api.storage.dao import BacklogDAO, RepoDAO
+from tazuna_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
+from tazuna_api.executors.codex_executor import CodexExecutor, CodexOptions
+from tazuna_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from tazuna_api.roles.base_service import BaseRoleService
+from tazuna_api.roles.registry import RoleRegistry
+from tazuna_api.services.output_manager import OutputManager
+from tazuna_api.storage.dao import BacklogDAO, RepoDAO
 
 logger = logging.getLogger(__name__)
 

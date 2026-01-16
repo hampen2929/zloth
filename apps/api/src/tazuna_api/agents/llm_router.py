@@ -9,7 +9,7 @@ from anthropic.types import MessageParam
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from dursor_api.domain.enums import Provider
+from tazuna_api.domain.enums import Provider
 
 
 @dataclass

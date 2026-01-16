@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import (
+from tazuna_api.dependencies import (
     get_ci_check_dao,
     get_message_dao,
     get_pr_dao,
@@ -12,8 +12,8 @@ from dursor_api.dependencies import (
     get_task_dao,
     get_user_preferences_dao,
 )
-from dursor_api.domain.enums import CodingMode, TaskBaseKanbanStatus, TaskKanbanStatus
-from dursor_api.domain.models import (
+from tazuna_api.domain.enums import CodingMode, TaskBaseKanbanStatus, TaskKanbanStatus
+from tazuna_api.domain.models import (
     AgenticStartRequest,
     AgenticStartResponse,
     AgenticStatusResponse,
@@ -29,7 +29,7 @@ from dursor_api.domain.models import (
     TaskCreate,
     TaskDetail,
 )
-from dursor_api.storage.dao import (
+from tazuna_api.storage.dao import (
     PRDAO,
     CICheckDAO,
     MessageDAO,
@@ -79,7 +79,7 @@ def _compute_kanban_status(
 
 
 if TYPE_CHECKING:
-    from dursor_api.services.agentic_orchestrator import AgenticOrchestrator
+    from tazuna_api.services.agentic_orchestrator import AgenticOrchestrator
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -294,7 +294,7 @@ async def get_agentic_orchestrator() -> "AgenticOrchestrator":
     Returns:
         AgenticOrchestrator instance.
     """
-    from dursor_api.dependencies import get_agentic_orchestrator
+    from tazuna_api.dependencies import get_agentic_orchestrator
 
     return await get_agentic_orchestrator()
 

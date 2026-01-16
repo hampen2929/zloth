@@ -6,11 +6,11 @@ This service provides on-demand CI status checking for PRs.
 import logging
 from typing import TYPE_CHECKING
 
-from dursor_api.domain.models import CICheck, CICheckResponse, CIJobResult
-from dursor_api.storage.dao import PRDAO, CICheckDAO, RepoDAO, TaskDAO
+from tazuna_api.domain.models import CICheck, CICheckResponse, CIJobResult
+from tazuna_api.storage.dao import PRDAO, CICheckDAO, RepoDAO, TaskDAO
 
 if TYPE_CHECKING:
-    from dursor_api.services.github_service import GitHubService
+    from tazuna_api.services.github_service import GitHubService
 
 logger = logging.getLogger(__name__)
 

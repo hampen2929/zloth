@@ -8,8 +8,8 @@ from pathlib import Path
 
 import git
 
-from dursor_api.config import settings
-from dursor_api.domain.models import Repo
+from tazuna_api.config import settings
+from tazuna_api.domain.models import Repo
 
 
 @dataclass

@@ -7,13 +7,13 @@ from typing import Any
 import httpx
 import jwt
 
-from dursor_api.config import settings
-from dursor_api.domain.models import (
+from tazuna_api.config import settings
+from tazuna_api.domain.models import (
     GitHubAppConfig,
     GitHubAppConfigSave,
     GitHubRepository,
 )
-from dursor_api.storage.db import Database
+from tazuna_api.storage.db import Database
 
 
 class GitHubService:

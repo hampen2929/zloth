@@ -5,9 +5,9 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from dursor_api.config import settings
-from dursor_api.domain.enums import NotificationType
-from dursor_api.domain.models import NotificationEvent
+from tazuna_api.config import settings
+from tazuna_api.domain.enums import NotificationType
+from tazuna_api.domain.models import NotificationEvent
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +242,7 @@ class NotificationService:
         Returns:
             Dictionary mapping channel names to success status.
         """
-        from dursor_api.domain.enums import CodingMode
+        from tazuna_api.domain.enums import CodingMode
 
         event = NotificationEvent(
             type=NotificationType.READY_FOR_MERGE,
@@ -279,7 +279,7 @@ class NotificationService:
         Returns:
             Dictionary mapping channel names to success status.
         """
-        from dursor_api.domain.enums import CodingMode
+        from tazuna_api.domain.enums import CodingMode
 
         event = NotificationEvent(
             type=NotificationType.COMPLETED,
@@ -315,7 +315,7 @@ class NotificationService:
         Returns:
             Dictionary mapping channel names to success status.
         """
-        from dursor_api.domain.enums import CodingMode
+        from tazuna_api.domain.enums import CodingMode
 
         event = NotificationEvent(
             type=NotificationType.FAILED,
@@ -351,7 +351,7 @@ class NotificationService:
         Returns:
             Dictionary mapping channel names to success status.
         """
-        from dursor_api.domain.enums import CodingMode
+        from tazuna_api.domain.enums import CodingMode
 
         event = NotificationEvent(
             type=NotificationType.WARNING,

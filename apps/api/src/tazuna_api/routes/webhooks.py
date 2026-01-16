@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from dursor_api.config import settings
-from dursor_api.domain.models import (
+from tazuna_api.config import settings
+from tazuna_api.domain.models import (
     CIJobResult,
     CIResult,
     CIWebhookPayload,
@@ -16,7 +16,7 @@ from dursor_api.domain.models import (
 )
 
 if TYPE_CHECKING:
-    from dursor_api.services.agentic_orchestrator import AgenticOrchestrator
+    from tazuna_api.services.agentic_orchestrator import AgenticOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ async def get_orchestrator() -> "AgenticOrchestrator":
     Returns:
         AgenticOrchestrator instance.
     """
-    from dursor_api.dependencies import get_agentic_orchestrator
+    from tazuna_api.dependencies import get_agentic_orchestrator
 
     return await get_agentic_orchestrator()
 

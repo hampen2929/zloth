@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import get_kanban_service
-from dursor_api.domain.models import PR, KanbanBoard, Task
-from dursor_api.services.kanban_service import KanbanService
+from tazuna_api.dependencies import get_kanban_service
+from tazuna_api.domain.models import PR, KanbanBoard, Task
+from tazuna_api.services.kanban_service import KanbanService
 
 router = APIRouter(prefix="/kanban", tags=["kanban"])
 

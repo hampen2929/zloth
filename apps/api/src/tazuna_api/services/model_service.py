@@ -2,11 +2,11 @@
 
 from datetime import UTC, datetime
 
-from dursor_api.config import EnvModelConfig, settings
-from dursor_api.domain.enums import Provider
-from dursor_api.domain.models import ModelProfile, ModelProfileCreate
-from dursor_api.services.crypto_service import CryptoService
-from dursor_api.storage.dao import ModelProfileDAO
+from tazuna_api.config import EnvModelConfig, settings
+from tazuna_api.domain.enums import Provider
+from tazuna_api.domain.models import ModelProfile, ModelProfileCreate
+from tazuna_api.services.crypto_service import CryptoService
+from tazuna_api.storage.dao import ModelProfileDAO
 
 # Prefix for environment variable model IDs
 ENV_MODEL_ID_PREFIX = "env-"

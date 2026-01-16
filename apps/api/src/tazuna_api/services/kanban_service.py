@@ -1,7 +1,7 @@
 """Kanban board service for task status management."""
 
-from dursor_api.domain.enums import ExecutorType, RunStatus, TaskBaseKanbanStatus, TaskKanbanStatus
-from dursor_api.domain.models import (
+from tazuna_api.domain.enums import ExecutorType, RunStatus, TaskBaseKanbanStatus, TaskKanbanStatus
+from tazuna_api.domain.models import (
     PR,
     ExecutorRunStatus,
     KanbanBoard,
@@ -9,8 +9,8 @@ from dursor_api.domain.models import (
     Task,
     TaskWithKanbanStatus,
 )
-from dursor_api.services.github_service import GitHubService
-from dursor_api.storage.dao import PRDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
+from tazuna_api.services.github_service import GitHubService
+from tazuna_api.storage.dao import PRDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
 
 
 class KanbanService:

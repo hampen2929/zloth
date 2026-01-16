@@ -1,24 +1,24 @@
 """FastAPI dependency injection."""
 
-from dursor_api.config import settings
-from dursor_api.services.agentic_orchestrator import AgenticOrchestrator
-from dursor_api.services.breakdown_service import BreakdownService
-from dursor_api.services.ci_check_service import CICheckService
-from dursor_api.services.ci_polling_service import CIPollingService
-from dursor_api.services.crypto_service import CryptoService
-from dursor_api.services.git_service import GitService
-from dursor_api.services.github_service import GitHubService
-from dursor_api.services.kanban_service import KanbanService
-from dursor_api.services.merge_gate_service import MergeGateService
-from dursor_api.services.model_service import ModelService
-from dursor_api.services.notification_service import NotificationService
-from dursor_api.services.output_manager import OutputManager
-from dursor_api.services.pr_service import PRService
-from dursor_api.services.pr_status_poller import PRStatusPoller
-from dursor_api.services.repo_service import RepoService
-from dursor_api.services.review_service import ReviewService
-from dursor_api.services.run_service import RunService
-from dursor_api.storage.dao import (
+from tazuna_api.config import settings
+from tazuna_api.services.agentic_orchestrator import AgenticOrchestrator
+from tazuna_api.services.breakdown_service import BreakdownService
+from tazuna_api.services.ci_check_service import CICheckService
+from tazuna_api.services.ci_polling_service import CIPollingService
+from tazuna_api.services.crypto_service import CryptoService
+from tazuna_api.services.git_service import GitService
+from tazuna_api.services.github_service import GitHubService
+from tazuna_api.services.kanban_service import KanbanService
+from tazuna_api.services.merge_gate_service import MergeGateService
+from tazuna_api.services.model_service import ModelService
+from tazuna_api.services.notification_service import NotificationService
+from tazuna_api.services.output_manager import OutputManager
+from tazuna_api.services.pr_service import PRService
+from tazuna_api.services.pr_status_poller import PRStatusPoller
+from tazuna_api.services.repo_service import RepoService
+from tazuna_api.services.review_service import ReviewService
+from tazuna_api.services.run_service import RunService
+from tazuna_api.storage.dao import (
     PRDAO,
     AgenticRunDAO,
     BacklogDAO,
@@ -31,7 +31,7 @@ from dursor_api.storage.dao import (
     TaskDAO,
     UserPreferencesDAO,
 )
-from dursor_api.storage.db import get_db
+from tazuna_api.storage.db import get_db
 
 # Singletons
 _crypto_service: CryptoService | None = None

@@ -5,9 +5,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from dursor_api.dependencies import get_breakdown_service
-from dursor_api.domain.models import TaskBreakdownRequest, TaskBreakdownResponse
-from dursor_api.services.breakdown_service import BreakdownService
+from tazuna_api.dependencies import get_breakdown_service
+from tazuna_api.domain.models import TaskBreakdownRequest, TaskBreakdownResponse
+from tazuna_api.services.breakdown_service import BreakdownService
 
 router = APIRouter(prefix="/breakdown", tags=["breakdown"])
 

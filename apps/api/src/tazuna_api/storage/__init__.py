@@ -1,6 +1,6 @@
 """Storage layer for dursor API."""
 
-from dursor_api.storage.dao import (
+from tazuna_api.storage.dao import (
     PRDAO,
     MessageDAO,
     ModelProfileDAO,
@@ -8,7 +8,7 @@ from dursor_api.storage.dao import (
     RunDAO,
     TaskDAO,
 )
-from dursor_api.storage.db import Database, get_db
+from tazuna_api.storage.db import Database, get_db
 
 __all__ = [
     "Database",

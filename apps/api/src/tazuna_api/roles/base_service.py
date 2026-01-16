@@ -14,15 +14,15 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from dursor_api.config import settings
-from dursor_api.domain.enums import ExecutorType, RoleExecutionStatus
-from dursor_api.domain.models import RoleExecutionResult
-from dursor_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
-from dursor_api.executors.codex_executor import CodexExecutor, CodexOptions
-from dursor_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
+from tazuna_api.config import settings
+from tazuna_api.domain.enums import ExecutorType, RoleExecutionStatus
+from tazuna_api.domain.models import RoleExecutionResult
+from tazuna_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
+from tazuna_api.executors.codex_executor import CodexExecutor, CodexOptions
+from tazuna_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 
 if TYPE_CHECKING:
-    from dursor_api.services.output_manager import OutputLine, OutputManager
+    from tazuna_api.services.output_manager import OutputLine, OutputManager
 
 logger = logging.getLogger(__name__)
 

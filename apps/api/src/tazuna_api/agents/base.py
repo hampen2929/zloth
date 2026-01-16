@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from dursor_api.domain.models import AgentRequest, AgentResult
+from tazuna_api.domain.models import AgentRequest, AgentResult
 
 
 class BaseAgent(ABC):

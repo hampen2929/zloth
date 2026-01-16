@@ -6,9 +6,9 @@ This module provides the base infrastructure for AI Role services:
 - Protocols and types for role execution
 """
 
-from dursor_api.roles.base_service import BaseRoleService
-from dursor_api.roles.protocol import RoleExecutor
-from dursor_api.roles.registry import RoleRegistry
+from tazuna_api.roles.base_service import BaseRoleService
+from tazuna_api.roles.protocol import RoleExecutor
+from tazuna_api.roles.registry import RoleRegistry
 
 __all__ = [
     "BaseRoleService",

@@ -5,13 +5,13 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import (
+from tazuna_api.dependencies import (
     get_ci_check_service,
     get_pr_service,
     get_user_preferences_dao,
 )
-from dursor_api.domain.enums import PRUpdateMode
-from dursor_api.domain.models import (
+from tazuna_api.domain.enums import PRUpdateMode
+from tazuna_api.domain.models import (
     PR,
     CICheck,
     CICheckResponse,
@@ -26,9 +26,9 @@ from dursor_api.domain.models import (
     PRUpdate,
     PRUpdated,
 )
-from dursor_api.services.ci_check_service import CICheckService
-from dursor_api.services.pr_service import GitHubPermissionError, PRService
-from dursor_api.storage.dao import UserPreferencesDAO
+from tazuna_api.services.ci_check_service import CICheckService
+from tazuna_api.services.pr_service import GitHubPermissionError, PRService
+from tazuna_api.storage.dao import UserPreferencesDAO
 
 logger = logging.getLogger(__name__)
 

@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import get_model_service
-from dursor_api.domain.models import ModelProfile, ModelProfileCreate
-from dursor_api.services.model_service import ModelService
+from tazuna_api.dependencies import get_model_service
+from tazuna_api.domain.models import ModelProfile, ModelProfileCreate
+from tazuna_api.services.model_service import ModelService
 
 router = APIRouter(prefix="/models", tags=["models"])
 

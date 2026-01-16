@@ -1,7 +1,7 @@
 """Domain models for dursor API."""
 
-from dursor_api.domain.enums import Provider, RunStatus
-from dursor_api.domain.models import (
+from tazuna_api.domain.enums import Provider, RunStatus
+from tazuna_api.domain.models import (
     PR,
     AgentRequest,
     AgentResult,

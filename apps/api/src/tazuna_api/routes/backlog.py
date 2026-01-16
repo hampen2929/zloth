@@ -2,15 +2,15 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dursor_api.dependencies import get_backlog_dao, get_task_dao
-from dursor_api.domain.enums import TaskBaseKanbanStatus
-from dursor_api.domain.models import (
+from tazuna_api.dependencies import get_backlog_dao, get_task_dao
+from tazuna_api.domain.enums import TaskBaseKanbanStatus
+from tazuna_api.domain.models import (
     BacklogItem,
     BacklogItemCreate,
     BacklogItemUpdate,
     Task,
 )
-from dursor_api.storage.dao import BacklogDAO, TaskDAO
+from tazuna_api.storage.dao import BacklogDAO, TaskDAO
 
 router = APIRouter(prefix="/backlog", tags=["backlog"])
 

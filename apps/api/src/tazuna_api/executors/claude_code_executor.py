@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dursor_api.domain.models import FileDiff
+from tazuna_api.domain.models import FileDiff
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
-from dursor_api.domain.models import AgentConstraints, RoleExecutionResult
+from tazuna_api.domain.models import AgentConstraints, RoleExecutionResult
 
 TResult = TypeVar("TResult", bound=RoleExecutionResult, covariant=True)
 

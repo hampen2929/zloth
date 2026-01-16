@@ -4,9 +4,9 @@ import fnmatch
 import os
 from pathlib import Path
 
-from dursor_api.agents.base import BaseAgent
-from dursor_api.agents.llm_router import LLMClient
-from dursor_api.domain.models import AgentRequest, AgentResult, FileDiff
+from tazuna_api.agents.base import BaseAgent
+from tazuna_api.agents.llm_router import LLMClient
+from tazuna_api.domain.models import AgentRequest, AgentResult, FileDiff
 
 SYSTEM_PROMPT = """You are a code editing assistant that generates unified diff patches.
 

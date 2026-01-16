@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import re
 
-from dursor_api.agents.llm_router import LLMConfig, LLMRouter
-from dursor_api.domain.enums import Provider
+from tazuna_api.agents.llm_router import LLMConfig, LLMRouter
+from tazuna_api.domain.enums import Provider
 
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff66-\uff9f]")
 

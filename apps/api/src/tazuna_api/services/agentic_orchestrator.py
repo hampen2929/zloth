@@ -15,14 +15,14 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from dursor_api.config import settings
-from dursor_api.domain.enums import (
+from tazuna_api.config import settings
+from tazuna_api.domain.enums import (
     AgenticPhase,
     CodingMode,
     ExecutorType,
     ReviewSeverity,
 )
-from dursor_api.domain.models import (
+from tazuna_api.domain.models import (
     AgentConstraints,
     AgenticConfig,
     AgenticState,
@@ -34,14 +34,14 @@ from dursor_api.domain.models import (
 )
 
 if TYPE_CHECKING:
-    from dursor_api.services.ci_polling_service import CIPollingService
-    from dursor_api.services.git_service import GitService
-    from dursor_api.services.github_service import GitHubService
-    from dursor_api.services.merge_gate_service import MergeGateService
-    from dursor_api.services.notification_service import NotificationService
-    from dursor_api.services.review_service import ReviewService
-    from dursor_api.services.run_service import RunService
-    from dursor_api.storage.dao import PRDAO, AgenticRunDAO, TaskDAO
+    from tazuna_api.services.ci_polling_service import CIPollingService
+    from tazuna_api.services.git_service import GitService
+    from tazuna_api.services.github_service import GitHubService
+    from tazuna_api.services.merge_gate_service import MergeGateService
+    from tazuna_api.services.notification_service import NotificationService
+    from tazuna_api.services.review_service import ReviewService
+    from tazuna_api.services.run_service import RunService
+    from tazuna_api.storage.dao import PRDAO, AgenticRunDAO, TaskDAO
 
 logger = logging.getLogger(__name__)
 
@@ -453,7 +453,7 @@ class AgenticOrchestrator:
             full_instruction = self._enhance_instruction(instruction, context, state)
 
             # Create run via RunService
-            from dursor_api.domain.models import RunCreate
+            from tazuna_api.domain.models import RunCreate
 
             run_data = RunCreate(
                 instruction=full_instruction,

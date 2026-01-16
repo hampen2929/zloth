@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Depends
 
-from dursor_api.dependencies import get_user_preferences_dao
-from dursor_api.domain.models import UserPreferences, UserPreferencesSave
-from dursor_api.storage.dao import UserPreferencesDAO
+from tazuna_api.dependencies import get_user_preferences_dao
+from tazuna_api.domain.models import UserPreferences, UserPreferencesSave
+from tazuna_api.storage.dao import UserPreferencesDAO
 
 router = APIRouter(prefix="/preferences", tags=["preferences"])
 

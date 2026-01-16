@@ -10,7 +10,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from dursor_api.roles.base_service import BaseRoleService
+    from tazuna_api.roles.base_service import BaseRoleService
 
 logger = logging.getLogger(__name__)
 

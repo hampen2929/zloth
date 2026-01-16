@@ -4,8 +4,8 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from dursor_api.dependencies import get_output_manager, get_review_service
-from dursor_api.domain.models import (
+from tazuna_api.dependencies import get_output_manager, get_review_service
+from tazuna_api.domain.models import (
     FixInstructionRequest,
     FixInstructionResponse,
     Message,
@@ -14,8 +14,8 @@ from dursor_api.domain.models import (
     ReviewCreated,
     ReviewSummary,
 )
-from dursor_api.services.output_manager import OutputManager
-from dursor_api.services.review_service import ReviewService
+from tazuna_api.services.output_manager import OutputManager
+from tazuna_api.services.review_service import ReviewService
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,8 @@
 """Agent implementations for dursor."""
 
-from dursor_api.agents.base import BaseAgent
-from dursor_api.agents.llm_router import LLMClient, LLMRouter
-from dursor_api.agents.patch_agent import PatchAgent
+from tazuna_api.agents.base import BaseAgent
+from tazuna_api.agents.llm_router import LLMClient, LLMRouter
+from tazuna_api.agents.patch_agent import PatchAgent
 
 __all__ = [
     "BaseAgent",

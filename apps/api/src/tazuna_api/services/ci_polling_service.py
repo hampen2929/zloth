@@ -10,11 +10,11 @@ from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from dursor_api.config import settings
-from dursor_api.domain.models import CIJobResult, CIResult
+from tazuna_api.config import settings
+from tazuna_api.domain.models import CIJobResult, CIResult
 
 if TYPE_CHECKING:
-    from dursor_api.services.github_service import GitHubService
+    from tazuna_api.services.github_service import GitHubService
 
 logger = logging.getLogger(__name__)
 

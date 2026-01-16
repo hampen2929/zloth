@@ -10,12 +10,12 @@ from typing import TYPE_CHECKING
 
 import git
 
-from dursor_api.config import settings
-from dursor_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
-from dursor_api.storage.dao import RepoDAO
+from tazuna_api.config import settings
+from tazuna_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
+from tazuna_api.storage.dao import RepoDAO
 
 if TYPE_CHECKING:
-    from dursor_api.services.github_service import GitHubService
+    from tazuna_api.services.github_service import GitHubService
 
 
 class RepoService:
