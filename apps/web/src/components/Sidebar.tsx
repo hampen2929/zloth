@@ -36,7 +36,7 @@ export default function Sidebar() {
 
   const currentTaskId = pathname?.match(/\/tasks\/(.+)/)?.[1];
 
-  // Filter and sort tasks - only show in_progress and in_review tasks
+  // Filter and sort tasks - only show in_progress, gating, and in_review tasks
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
 
