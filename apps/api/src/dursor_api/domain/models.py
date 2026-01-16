@@ -145,12 +145,23 @@ class KanbanBoard(BaseModel):
     total_tasks: int
 
 
+class CICheckSummary(BaseModel):
+    """CI check summary for task detail view."""
+
+    id: str
+    pr_id: str
+    status: str  # "pending" | "success" | "failure" | "error"
+    created_at: datetime
+    updated_at: datetime
+
+
 class TaskDetail(Task):
     """Task with additional details."""
 
     messages: list["Message"] = []
     runs: list["RunSummary"] = []
     prs: list["PRSummary"] = []
+    ci_checks: list["CICheckSummary"] = []
 
 
 # ============================================================

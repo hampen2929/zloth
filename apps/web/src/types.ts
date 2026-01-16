@@ -59,10 +59,19 @@ export interface TaskCreate {
   coding_mode?: CodingMode;
 }
 
+export interface CICheckSummary {
+  id: string;
+  pr_id: string;
+  status: string; // "pending" | "success" | "failure" | "error"
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TaskDetail extends Task {
   messages: Message[];
   runs: RunSummary[];
   prs: PRSummary[];
+  ci_checks: CICheckSummary[];
 }
 
 // Message
