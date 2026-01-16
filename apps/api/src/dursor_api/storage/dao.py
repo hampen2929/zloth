@@ -390,6 +390,7 @@ class TaskDAO:
                     "completed_count": row["completed_count"],
                     "pr_count": row["pr_count"],
                     "latest_pr_status": row["latest_pr_status"],
+                    "latest_pr_id": row["latest_pr_id"] if "latest_pr_id" in row.keys() else None,
                     "latest_ci_status": (
                         row["latest_ci_status"] if "latest_ci_status" in row.keys() else None
                     ),

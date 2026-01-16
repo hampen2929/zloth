@@ -59,6 +59,7 @@ export function ChatCodeView({
   const [ciCheckExpanded, setCICheckExpanded] = useState<Record<string, boolean>>({});
   const [checkingCI, setCheckingCI] = useState(false);
   const [hasPendingCIChecks, setHasPendingCIChecks] = useState(false);
+  const [recentPRCreation, setRecentPRCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -91,11 +92,12 @@ export function ChatCodeView({
   // Fetch CI checks for the task
   // Auto-poll when:
   // 1. User clicked "Check CI" button (checkingCI=true), OR
-  // 2. There are pending CI checks (from automatic gating)
+  // 2. There are pending CI checks (from automatic gating), OR
+  // 3. PR was recently created (aggressive polling for 10 seconds)
   const { data: ciChecks, mutate: mutateCIChecks } = useSWR<CICheck[]>(
     `ci-checks-${taskId}`,
     () => ciChecksApi.list(taskId),
-    { refreshInterval: checkingCI || hasPendingCIChecks ? 5000 : 0 }
+    { refreshInterval: checkingCI || hasPendingCIChecks || recentPRCreation ? (recentPRCreation ? 1000 : 5000) : 0 }
   );
 
   // Track pending CI checks state for auto-polling
@@ -166,8 +168,10 @@ export function ChatCodeView({
     if (latestPR && !prResult) {
       setPRResult({ url: latestPR.url, number: latestPR.number, pr_id: latestPR.id });
       setPRLinkResult(null);
+      // Immediately refresh CI checks when PR is detected
+      mutateCIChecks();
     }
-  }, [latestPR, prResult]);
+  }, [latestPR, prResult, mutateCIChecks]);
 
   // Reset PR state when switching to a different executor
   // This allows creating a new PR for each executor
@@ -295,6 +299,11 @@ export function ChatCodeView({
         }
         setPRResult({ url: result.url, number: result.number, pr_id: result.pr_id });
         onPRCreated();
+        // Immediately refresh CI checks to show pending CI status
+        mutateCIChecks();
+        // Enable aggressive polling for 10 seconds after PR creation
+        setRecentPRCreation(true);
+        setTimeout(() => setRecentPRCreation(false), 10000);
         success('Pull request created successfully!');
       }
     } catch (err) {

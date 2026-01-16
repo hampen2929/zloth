@@ -1,5 +1,9 @@
 """Kanban board service for task status management."""
 
+import asyncio
+import logging
+from typing import TYPE_CHECKING
+
 from dursor_api.domain.enums import ExecutorType, RunStatus, TaskBaseKanbanStatus, TaskKanbanStatus
 from dursor_api.domain.models import (
     PR,
@@ -10,7 +14,12 @@ from dursor_api.domain.models import (
     TaskWithKanbanStatus,
 )
 from dursor_api.services.github_service import GitHubService
-from dursor_api.storage.dao import PRDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
+from dursor_api.storage.dao import PRDAO, CICheckDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
+
+if TYPE_CHECKING:
+    from dursor_api.services.ci_check_service import CICheckService
+
+logger = logging.getLogger(__name__)
 
 
 class KanbanService:
@@ -33,6 +42,8 @@ class KanbanService:
         review_dao: ReviewDAO,
         github_service: GitHubService,
         user_preferences_dao: UserPreferencesDAO,
+        ci_check_dao: CICheckDAO | None = None,
+        ci_check_service: "CICheckService | None" = None,
     ):
         self.task_dao = task_dao
         self.run_dao = run_dao
@@ -40,6 +51,8 @@ class KanbanService:
         self.review_dao = review_dao
         self.github_service = github_service
         self.user_preferences_dao = user_preferences_dao
+        self.ci_check_dao = ci_check_dao
+        self.ci_check_service = ci_check_service
 
     def _compute_kanban_status(
         self,
@@ -110,6 +123,13 @@ class KanbanService:
             ExecutorType.GEMINI_CLI,
         ]
 
+        # If gating is enabled, refresh CI status for InReview tasks with open PRs
+        # This handles the case where GitHub PR is updated externally
+        if enable_gating_status and self.ci_check_service:
+            await self._refresh_ci_for_in_review_tasks(tasks_with_aggregates)
+            # Re-fetch to get updated CI status
+            tasks_with_aggregates = await self.task_dao.list_with_aggregates(repo_id)
+
         # Group tasks by computed status
         columns: dict[TaskKanbanStatus, list[TaskWithKanbanStatus]] = {
             status: [] for status in TaskKanbanStatus
@@ -173,6 +193,67 @@ class KanbanService:
                 for status, tasks in columns.items()
             ],
             total_tasks=sum(len(tasks) for tasks in columns.values()),
+        )
+
+    async def _refresh_ci_for_in_review_tasks(
+        self, tasks_with_aggregates: list[dict]
+    ) -> None:
+        """Refresh CI status from GitHub for InReview tasks with open PRs.
+
+        This handles the case where a PR is updated externally on GitHub,
+        causing the CI status to change to pending. Without this refresh,
+        the task would stay in InReview instead of transitioning to Gating.
+        """
+        if not self.ci_check_service:
+            return
+
+        # Find tasks that would be InReview and have an open PR with non-pending CI
+        # These are candidates for CI refresh
+        tasks_to_refresh: list[tuple[str, str]] = []  # (task_id, pr_id)
+
+        for task_data in tasks_with_aggregates:
+            # Skip if archived
+            if task_data["kanban_status"] == TaskBaseKanbanStatus.ARCHIVED.value:
+                continue
+
+            # Check if task would be InReview (all runs completed)
+            run_count = task_data["run_count"]
+            completed_count = task_data["completed_count"]
+            running_count = task_data["running_count"]
+
+            if run_count <= 0 or completed_count != run_count or running_count > 0:
+                continue
+
+            # Check if PR is open
+            latest_pr_status = task_data["latest_pr_status"]
+            if latest_pr_status != "open":
+                continue
+
+            # Check if CI is not pending (needs refresh to check if it became pending)
+            latest_ci_status = task_data.get("latest_ci_status")
+            if latest_ci_status == "pending":
+                # Already pending, no need to refresh
+                continue
+
+            # Get latest PR ID for this task
+            latest_pr_id = task_data.get("latest_pr_id")
+            if not latest_pr_id:
+                continue
+
+            tasks_to_refresh.append((task_data["id"], latest_pr_id))
+
+        if not tasks_to_refresh:
+            return
+
+        # Refresh CI status concurrently for all identified tasks
+        async def safe_check_ci(task_id: str, pr_id: str) -> None:
+            try:
+                await self.ci_check_service.check_ci(task_id, pr_id)  # type: ignore
+            except Exception as e:
+                logger.warning(f"Failed to refresh CI for task={task_id}, pr={pr_id}: {e}")
+
+        await asyncio.gather(
+            *[safe_check_ci(task_id, pr_id) for task_id, pr_id in tasks_to_refresh]
         )
 
     async def move_to_todo(self, task_id: str) -> Task:
