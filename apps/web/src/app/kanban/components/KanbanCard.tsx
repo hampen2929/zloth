@@ -201,6 +201,25 @@ export function KanbanCard({
           </div>
         );
 
+      case 'gating':
+        return (
+          <div className="flex gap-2">
+            <span className="text-xs text-orange-400">
+              Gating
+            </span>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onArchive(task.id);
+              }}
+              className="text-xs text-gray-400 hover:text-gray-300 transition-colors"
+            >
+              Archive
+            </button>
+          </div>
+        );
+
       case 'in_review':
         return (
           <div className="flex gap-2">
