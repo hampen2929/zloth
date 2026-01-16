@@ -85,10 +85,18 @@ class CICheckService:
             logger.warning(f"Cannot parse repo URL: {repo.repo_url}")
             raise ValueError(f"Cannot parse repo URL: {repo.repo_url}")
 
-        logger.debug(f"Fetching CI status for {repo_full_name} PR #{pr.number}")
+        logger.info(
+            f"Fetching CI status for {repo_full_name} PR #{pr.number} "
+            f"(branch={pr.branch}, db_commit={pr.latest_commit})"
+        )
 
         # Build detailed CI result first (jobs data)
         ci_data = await self._build_ci_data(pr.number, repo_full_name)
+
+        logger.info(
+            f"CI data from GitHub for PR #{pr.number}: sha={ci_data.get('sha')}, "
+            f"jobs_count={len(ci_data.get('jobs', {}))}"
+        )
 
         # Derive status from jobs data instead of relying on combined status API
         # This ensures consistency between displayed jobs and overall status
@@ -220,7 +228,10 @@ class CICheckService:
 
         head_sha = result["sha"]
         if not head_sha:
+            logger.warning(f"No head SHA found for PR #{pr_number}")
             return result
+
+        logger.info(f"Fetching check runs for {repo_full_name} commit {head_sha[:7]}")
 
         # Get check runs for detailed job info
         # This requires "checks:read" permission on the GitHub App
@@ -230,10 +241,17 @@ class CICheckService:
                 f"/repos/{owner}/{repo}/commits/{head_sha}/check-runs",
             )
 
+            total_count = check_runs_data.get("total_count", 0)
+            check_runs_list = check_runs_data.get("check_runs", [])
+            logger.info(
+                f"GitHub returned {total_count} check runs for {head_sha[:7]}: "
+                f"{[cr.get('name') for cr in check_runs_list]}"
+            )
+
             jobs: dict[str, str] = {}
             failed_jobs: list[CIJobResult] = []
 
-            for check_run in check_runs_data.get("check_runs", []):
+            for check_run in check_runs_list:
                 name = check_run.get("name", "unknown")
                 conclusion = check_run.get("conclusion") or check_run.get("status", "unknown")
                 jobs[name] = conclusion
