@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { KanbanColumn } from './KanbanColumn';
-import { BacklogArchivedColumn } from './BacklogArchivedColumn';
 import { StartTaskModal } from './StartTaskModal';
 import { kanbanApi } from '@/lib/api';
 import type { KanbanBoard as KanbanBoardType, TaskKanbanStatus, TaskWithKanbanStatus } from '@/types';
@@ -13,7 +12,7 @@ interface KanbanBoardProps {
   onUpdate: () => void;
 }
 
-// Order of columns to display (backlog and archived are shown in a separate combined column)
+// Order of columns to display (backlog and archived are excluded from Kanban view)
 const COLUMN_ORDER: TaskKanbanStatus[] = [
   'todo',
   'in_progress',
@@ -85,24 +84,9 @@ export function KanbanBoard({ board, onUpdate }: KanbanBoardProps) {
     }
   };
 
-  // Get backlog and archived columns for the combined view
-  const backlogColumn = board.columns.find((c) => c.status === 'backlog') ?? { status: 'backlog' as const, tasks: [], count: 0 };
-  const archivedColumn = board.columns.find((c) => c.status === 'archived') ?? { status: 'archived' as const, tasks: [], count: 0 };
-
   return (
     <>
       <div className="flex gap-4 h-full">
-        {/* Combined Backlog & Archived column */}
-        <BacklogArchivedColumn
-          backlogColumn={backlogColumn}
-          archivedColumn={archivedColumn}
-          onMoveToTodo={handleMoveToTodo}
-          onMoveToBacklog={handleMoveToBacklog}
-          onArchive={handleArchive}
-          onUnarchive={handleUnarchive}
-          onStartTask={handleStartTask}
-        />
-
         {orderedColumns.map((column) => (
           <KanbanColumn
             key={column.status}
