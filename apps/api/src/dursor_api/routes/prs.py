@@ -284,13 +284,19 @@ async def check_ci(
     task_id: str,
     pr_id: str,
     ci_check_service: CICheckService = Depends(get_ci_check_service),
+    pr_service: PRService = Depends(get_pr_service),
 ) -> CICheckResponse:
     """Check CI status for a PR.
 
     Fetches current CI status from GitHub and returns the result.
     If CI is still pending, is_complete will be false - poll again to check.
+
+    Before checking CI, ensures the PR branch has the latest commits pushed
+    to GitHub so CI can run on the most recent code.
     """
     try:
+        # Ensure latest commits are pushed before checking CI
+        await pr_service.ensure_pr_branch_pushed(task_id, pr_id)
         return await ci_check_service.check_ci(task_id, pr_id)
     except ValueError as e:
         logger.warning(f"CI check validation error for task={task_id}, pr={pr_id}: {e}")

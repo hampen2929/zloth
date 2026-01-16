@@ -1508,3 +1508,58 @@ IMPORTANT INSTRUCTIONS:
             List of PR objects.
         """
         return await self.pr_dao.list(task_id)
+
+    async def ensure_pr_branch_pushed(self, task_id: str, pr_id: str) -> None:
+        """Ensure the PR's branch has the latest commits pushed to GitHub.
+
+        This method finds the latest run associated with the PR's branch
+        and pushes any unpushed commits to ensure CI runs on the latest code.
+
+        Args:
+            task_id: Task ID.
+            pr_id: PR ID.
+
+        Raises:
+            ValueError: If PR or task not found.
+        """
+        pr = await self.pr_dao.get(pr_id)
+        if not pr:
+            raise ValueError(f"PR not found: {pr_id}")
+
+        if pr.task_id != task_id:
+            raise ValueError(f"PR {pr_id} does not belong to task {task_id}")
+
+        task = await self.task_dao.get(task_id)
+        if not task:
+            raise ValueError(f"Task not found: {task_id}")
+
+        repo_obj = await self.repo_service.get(task.repo_id)
+        if not repo_obj:
+            raise ValueError(f"Repo not found: {task.repo_id}")
+
+        # Find the latest run for this PR's branch with a worktree
+        runs = await self.run_dao.list(task_id)
+        latest_run = next(
+            (r for r in runs if r.working_branch == pr.branch and r.worktree_path),
+            None,
+        )
+
+        if not latest_run:
+            logger.debug(f"No run with worktree found for PR branch {pr.branch}")
+            return
+
+        # Parse GitHub info and push
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+        try:
+            await self._ensure_branch_pushed(
+                owner=owner,
+                repo=repo_name,
+                repo_obj=repo_obj,
+                run=latest_run,
+            )
+            logger.info(
+                f"Ensured PR branch {pr.branch} is pushed for PR #{pr.number}"
+            )
+        except Exception as e:
+            # Log but don't fail - CI check can still proceed with whatever is on GitHub
+            logger.warning(f"Failed to push PR branch {pr.branch}: {e}")

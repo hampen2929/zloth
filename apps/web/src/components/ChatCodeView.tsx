@@ -142,7 +142,8 @@ export function ChatCodeView({
 
   // Get branch name from selected run (each executor has its own branch)
   // This ensures PR creation uses the selected executor's run, not any executor
-  const latestSuccessfulRun = runsForSelectedExecutor.find(
+  // Note: sortedRuns is in chronological order (oldest first), so we search from the end
+  const latestSuccessfulRun = [...runsForSelectedExecutor].reverse().find(
     (r) => r.status === 'succeeded' && r.working_branch
   );
 
@@ -152,7 +153,8 @@ export function ChatCodeView({
     .map((r) => r.id);
 
   // Get the latest run for the selected executor (for branch info, PR creation)
-  const latestRunForSelectedExecutor = runsForSelectedExecutor[0];
+  // Note: sortedRuns is in chronological order (oldest first), so we need the last element
+  const latestRunForSelectedExecutor = runsForSelectedExecutor[runsForSelectedExecutor.length - 1];
 
   // Get the PR for the selected executor's branch (each executor has its own PR)
   const selectedExecutorBranch = latestRunForSelectedExecutor?.working_branch;
@@ -330,12 +332,27 @@ export function ChatCodeView({
       const ciCheck = await ciChecksApi.checkWithPolling(taskId, prResult.pr_id, {
         pollInterval: 10000, // 10 seconds
         maxWaitTime: 1800000, // 30 minutes
-        onProgress: () => {
-          mutateCIChecks();
+        onProgress: (updatedCICheck) => {
+          // Update SWR cache with the latest CI check data
+          // This ensures the UI reflects the current status immediately
+          mutateCIChecks(
+            (currentChecks) => {
+              if (!currentChecks) return [updatedCICheck];
+              // Replace or add the updated CI check
+              const existingIndex = currentChecks.findIndex(c => c.id === updatedCICheck.id);
+              if (existingIndex >= 0) {
+                const newChecks = [...currentChecks];
+                newChecks[existingIndex] = updatedCICheck;
+                return newChecks;
+              }
+              return [updatedCICheck, ...currentChecks];
+            },
+            { revalidate: false } // Don't revalidate, we have fresh data
+          );
         },
       });
 
-      // Final refresh
+      // Final refresh - force revalidation to ensure consistency
       mutateCIChecks();
 
       if (ciCheck.status === 'success') {
@@ -476,10 +493,12 @@ export function ChatCodeView({
   };
 
   // Filter CI checks for selected executor's PR
+  // Use prResult.pr_id if available (from active session), fallback to latestPR.id
+  const activePrId = prResult?.pr_id || latestPR?.id;
   const ciChecksForSelectedExecutor = useMemo(() => {
-    if (!ciChecks || !latestPR) return [];
-    return ciChecks.filter((check) => check.pr_id === latestPR.id);
-  }, [ciChecks, latestPR]);
+    if (!ciChecks || !activePrId) return [];
+    return ciChecks.filter((check) => check.pr_id === activePrId);
+  }, [ciChecks, activePrId]);
 
   // Auto-trigger CI check for pending CI checks (gating auto-polling)
   // This ensures that when automatic gating creates a pending CI check,
@@ -551,7 +570,8 @@ export function ChatCodeView({
   // Get aggregate stats for an executor type
   const getExecutorStats = (executorType: ExecutorType) => {
     const executorRuns = sortedRuns.filter((r) => r.executor_type === executorType);
-    const latestRun = executorRuns[0];
+    // sortedRuns is in chronological order (oldest first), so latest is the last element
+    const latestRun = executorRuns[executorRuns.length - 1];
     const totalFiles = executorRuns.reduce((acc, r) => acc + (r.files_changed?.length || 0), 0);
     const totalAdded = executorRuns.reduce(
       (acc, r) => acc + (r.files_changed?.reduce((a, f) => a + f.added_lines, 0) || 0),
