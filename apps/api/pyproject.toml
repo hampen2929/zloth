@@ -2,6 +2,11 @@
 name = "dursor-api"
 version = "0.1.0"
 description = "dursor API Server - Multi-model parallel coding agent"
+license = { text = "Apache-2.0" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+]
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.109.0",

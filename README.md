@@ -1,7 +1,7 @@
 # dursor
 
 [![CI](https://github.com/hampen2929/dursor/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/dursor/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub stars](https://img.shields.io/github/stars/hampen2929/dursor.svg?style=social&label=Star)](https://github.com/hampen2929/dursor)
 [![GitHub issues](https://img.shields.io/github/issues/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/pulls)
@@ -208,6 +208,23 @@ We welcome bug reports and feature requests via [GitHub Issues](https://github.c
 
 > **Note**: This project is primarily developed using AI-assisted coding. Pull requests may not be reviewed or merged. If you have ideas or find bugs, please open an Issue instead.
 
+## Sponsorship
+
+**dursor** is an open source project and free to use for individuals.
+If you find this project useful, please consider sponsoring us to support development!
+
+### For Individuals
+Feel free to use dursor for your personal projects. Sponsorships are appreciated but not required.
+
+### For Enterprise
+We kindly ask enterprises using dursor to consider sponsoring the project.
+This is not a contract or a paid license, but a way to support the maintenance and future development of the tool.
+
+Future Enterprise-grade features (e.g. SaaS support) may be available as paid options.
+
+[Become a Sponsor](https://github.com/sponsors/hampen2929)
+
+
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
