@@ -2,7 +2,7 @@
 
 ## 概要
 
-dursor に看板ページを追加し、タスクの進捗を視覚的に管理できるようにする。
+tazuna に看板ページを追加し、タスクの進捗を視覚的に管理できるようにする。
 
 ## ステータス定義
 
@@ -59,7 +59,7 @@ stateDiagram-v2
 
 ### 既存のデータモデル
 
-#### Task（`apps/api/src/dursor_api/domain/models.py`）
+#### Task（`apps/api/src/tazuna_api/domain/models.py`）
 ```python
 class Task(BaseModel):
     id: str
@@ -114,7 +114,7 @@ class PR(BaseModel):
 #### 1.1 データベーススキーマ変更
 
 ```sql
--- apps/api/src/dursor_api/storage/schema.sql
+-- apps/api/src/tazuna_api/storage/schema.sql
 
 -- tasks テーブルに kanban_status カラムを追加
 -- 保存されるのは 'backlog', 'todo', 'archived' のみ
@@ -128,7 +128,7 @@ ALTER TABLE tasks ADD COLUMN kanban_status TEXT NOT NULL DEFAULT 'backlog';
 #### 1.2 ドメインモデル拡張
 
 ```python
-# apps/api/src/dursor_api/domain/enums.py
+# apps/api/src/tazuna_api/domain/enums.py
 
 class TaskKanbanStatus(str, Enum):
     """Task kanban status.
@@ -159,7 +159,7 @@ class PRStatus(str, Enum):
 ```
 
 ```python
-# apps/api/src/dursor_api/domain/models.py
+# apps/api/src/tazuna_api/domain/models.py
 
 class Task(BaseModel):
     id: str
@@ -196,7 +196,7 @@ class KanbanBoard(BaseModel):
 #### 1.3 DAO拡張
 
 ```python
-# apps/api/src/dursor_api/storage/dao.py
+# apps/api/src/tazuna_api/storage/dao.py
 
 class TaskDAO:
     async def update_kanban_status(
@@ -257,7 +257,7 @@ class PRDAO:
 #### 1.4 看板サービス
 
 ```python
-# apps/api/src/dursor_api/services/kanban_service.py
+# apps/api/src/tazuna_api/services/kanban_service.py
 
 class KanbanService:
     """看板ステータス管理サービス.
@@ -383,7 +383,7 @@ class KanbanService:
 #### 1.5 APIエンドポイント
 
 ```python
-# apps/api/src/dursor_api/routes/kanban.py
+# apps/api/src/tazuna_api/routes/kanban.py
 
 router = APIRouter(prefix="/kanban", tags=["kanban"])
 
@@ -446,7 +446,7 @@ async def sync_pr_status(
 #### 1.6 GitHub Service拡張
 
 ```python
-# apps/api/src/dursor_api/services/github_service.py
+# apps/api/src/tazuna_api/services/github_service.py
 
 class GitHubService:
     async def get_pull_request_status(

@@ -2,7 +2,7 @@
 
 ## 概要
 
-dursorに3つの実装モードを搭載し、プロジェクトの性質やチームの運用方針に応じて最適な開発フローを選択可能にする。
+tazunaに3つの実装モードを搭載し、プロジェクトの性質やチームの運用方針に応じて最適な開発フローを選択可能にする。
 
 ### 3つのモード
 
@@ -57,7 +57,7 @@ graph LR
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant D as dursor
+    participant D as tazuna
     participant AI as AI Agent
     participant GH as GitHub
 
@@ -148,7 +148,7 @@ stateDiagram-v2
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant D as dursor Orchestrator
+    participant D as tazuna Orchestrator
     participant AI as AI Agent (Coder)
     participant R as AI Agent (Reviewer)
     participant GH as GitHub
@@ -274,7 +274,7 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant D as dursor Orchestrator
+    participant D as tazuna Orchestrator
     participant AI as AI Agent (Coder)
     participant R as AI Agent (Reviewer)
     participant GH as GitHub
@@ -457,7 +457,7 @@ flowchart TB
         API_Client[API Client]
     end
 
-    subgraph Orchestrator["dursor Orchestrator"]
+    subgraph Orchestrator["tazuna Orchestrator"]
         ModeSelector[Mode Selector]
         InteractiveCtrl[Interactive Controller]
         SemiAutoCtrl[Semi Auto Controller]
@@ -871,29 +871,29 @@ graph TB
 
 ```bash
 # モード設定
-DURSOR_DEFAULT_CODING_MODE=interactive  # デフォルトモード
+TAZUNA_DEFAULT_CODING_MODE=interactive  # デフォルトモード
 
 # イテレーション制限
-DURSOR_MAX_CI_ITERATIONS=5
-DURSOR_MAX_REVIEW_ITERATIONS=3
-DURSOR_MAX_TOTAL_ITERATIONS=10
+TAZUNA_MAX_CI_ITERATIONS=5
+TAZUNA_MAX_REVIEW_ITERATIONS=3
+TAZUNA_MAX_TOTAL_ITERATIONS=10
 
 # Full Auto専用
-DURSOR_AUTO_MERGE_ENABLED=true
-DURSOR_MIN_REVIEW_SCORE=0.75
-DURSOR_COVERAGE_THRESHOLD=80
+TAZUNA_AUTO_MERGE_ENABLED=true
+TAZUNA_MIN_REVIEW_SCORE=0.75
+TAZUNA_COVERAGE_THRESHOLD=80
 
 # 通知
-DURSOR_SLACK_WEBHOOK_URL=https://hooks.slack.com/...
-DURSOR_NOTIFY_ON_COMPLETE=true
-DURSOR_NOTIFY_ON_FAILURE=true
+TAZUNA_SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+TAZUNA_NOTIFY_ON_COMPLETE=true
+TAZUNA_NOTIFY_ON_FAILURE=true
 
 # タイムアウト
-DURSOR_TIMEOUT_MINUTES=60
-DURSOR_CI_WAIT_TIMEOUT_MINUTES=15
+TAZUNA_TIMEOUT_MINUTES=60
+TAZUNA_CI_WAIT_TIMEOUT_MINUTES=15
 ```
 
-### プロジェクト設定（.dursor.yml）
+### プロジェクト設定（.tazuna.yml）
 
 ```yaml
 coding:
@@ -968,7 +968,7 @@ notifications:
 
 ## 関連ドキュメント
 
-- [Agentic Dursor](./agentic-dursor.md) - Semi Auto / Full Auto の詳細実装
+- [Agentic Tazuna](./agentic-tazuna.md) - Semi Auto / Full Auto の詳細実装
 - [Code Review Feature](./review.md) - ReviewService の詳細仕様
 - [AI Role Refactoring](./refactoring-ai-role.md) - AI Role 共通インターフェース
 - [Architecture](./architecture.md)

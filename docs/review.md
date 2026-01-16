@@ -67,12 +67,12 @@ flowchart TB
 
 | カテゴリ | ファイル | 役割 |
 |----------|----------|------|
-| **Domain** | `apps/api/src/dursor_api/domain/models.py` | Pydanticモデル定義 |
-| **Domain** | `apps/api/src/dursor_api/domain/enums.py` | Enum定義 |
-| **Executor** | `apps/api/src/dursor_api/executors/base_executor.py` | エグゼキューター基底クラス |
-| **Executor** | `apps/api/src/dursor_api/executors/claude_code_executor.py` | Claude Code CLI実行 |
-| **Service** | `apps/api/src/dursor_api/services/run_service.py` | Run作成・実行サービス |
-| **Routes** | `apps/api/src/dursor_api/routes/runs.py` | RunのAPIエンドポイント |
+| **Domain** | `apps/api/src/tazuna_api/domain/models.py` | Pydanticモデル定義 |
+| **Domain** | `apps/api/src/tazuna_api/domain/enums.py` | Enum定義 |
+| **Executor** | `apps/api/src/tazuna_api/executors/base_executor.py` | エグゼキューター基底クラス |
+| **Executor** | `apps/api/src/tazuna_api/executors/claude_code_executor.py` | Claude Code CLI実行 |
+| **Service** | `apps/api/src/tazuna_api/services/run_service.py` | Run作成・実行サービス |
+| **Routes** | `apps/api/src/tazuna_api/routes/runs.py` | RunのAPIエンドポイント |
 | **Frontend** | `apps/web/src/components/ChatCodeView.tsx` | Task UIメインコンポーネント |
 | **Frontend** | `apps/web/src/components/RunDetailPanel.tsx` | Run詳細表示 |
 | **Frontend** | `apps/web/src/lib/api.ts` | APIクライアント |
@@ -119,7 +119,7 @@ flowchart LR
 ### 新規Enum
 
 ```python
-# apps/api/src/dursor_api/domain/enums.py
+# apps/api/src/tazuna_api/domain/enums.py
 
 class ReviewSeverity(str, Enum):
     """Review feedback severity level."""
@@ -152,7 +152,7 @@ class ReviewStatus(str, Enum):
 ### 新規Pydanticモデル
 
 ```python
-# apps/api/src/dursor_api/domain/models.py
+# apps/api/src/tazuna_api/domain/models.py
 
 class ReviewFeedbackItem(BaseModel):
     """Single feedback item in a review."""
@@ -230,7 +230,7 @@ class ReviewCreated(BaseModel):
 ### DBスキーマ
 
 ```sql
--- apps/api/src/dursor_api/storage/schema.sql
+-- apps/api/src/tazuna_api/storage/schema.sql
 
 -- Reviews table
 CREATE TABLE IF NOT EXISTS reviews (
@@ -282,7 +282,7 @@ CREATE INDEX IF NOT EXISTS idx_feedbacks_severity ON review_feedbacks(severity);
 ### 1. ReviewDAO
 
 ```python
-# apps/api/src/dursor_api/storage/dao.py
+# apps/api/src/tazuna_api/storage/dao.py
 
 class ReviewDAO:
     """Data Access Object for Reviews."""
@@ -319,7 +319,7 @@ class ReviewDAO:
 ### 2. ReviewService
 
 ```python
-# apps/api/src/dursor_api/services/review_service.py
+# apps/api/src/tazuna_api/services/review_service.py
 
 class ReviewService:
     """Service for managing code reviews."""
@@ -519,7 +519,7 @@ Provide your detailed review with severity levels and actionable feedback.
 ### 4. APIエンドポイント
 
 ```python
-# apps/api/src/dursor_api/routes/reviews.py
+# apps/api/src/tazuna_api/routes/reviews.py
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -1131,7 +1131,7 @@ flowchart TB
 #### RunCreate への review_id 追加
 
 ```python
-# apps/api/src/dursor_api/domain/models.py
+# apps/api/src/tazuna_api/domain/models.py
 
 class RunCreate(BaseModel):
     """Request for creating Runs."""
@@ -1187,7 +1187,7 @@ class FixInstructionResponse(BaseModel):
 #### ReviewService への修正指示生成メソッド追加
 
 ```python
-# apps/api/src/dursor_api/services/review_service.py
+# apps/api/src/tazuna_api/services/review_service.py
 
 class ReviewService:
     # ... 既存メソッド ...
@@ -1325,7 +1325,7 @@ class ReviewService:
 #### 新規APIエンドポイント
 
 ```python
-# apps/api/src/dursor_api/routes/reviews.py
+# apps/api/src/tazuna_api/routes/reviews.py
 
 @router.post("/reviews/{review_id}/generate-fix")
 async def generate_fix_instruction(
@@ -1688,6 +1688,6 @@ sequenceDiagram
 ## 参考ドキュメント
 
 - [Architecture](./architecture.md)
-- [Agentic Dursor](./agentic-dursor.md) - レビューフェーズの概念
+- [Agentic Tazuna](./agentic-tazuna.md) - レビューフェーズの概念
 - [Multi AI Coding Tool](./ai-coding-tool-multiple.md) - 並列実行パターン
 - [Git Operation Design](./git_operation_design.md)

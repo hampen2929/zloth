@@ -10,9 +10,9 @@ PRが作成済みの場合に「Check CI」ボタンを表示し、CIの状態�
 
 | コンポーネント | ファイル | 説明 |
 |--------------|---------|------|
-| `CIPollingService` | `apps/api/src/dursor_api/services/ci_polling_service.py` | GitHubからCI状態をポーリング |
-| `github_service.get_pr_check_status()` | `apps/api/src/dursor_api/services/github_service.py:435` | PR のCI状態を取得 |
-| `CIResult`, `CIJobResult` | `apps/api/src/dursor_api/domain/models.py:952-989` | CI結果のデータモデル |
+| `CIPollingService` | `apps/api/src/tazuna_api/services/ci_polling_service.py` | GitHubからCI状態をポーリング |
+| `github_service.get_pr_check_status()` | `apps/api/src/tazuna_api/services/github_service.py:435` | PR のCI状態を取得 |
+| `CIResult`, `CIJobResult` | `apps/api/src/tazuna_api/domain/models.py:952-989` | CI結果のデータモデル |
 | Timeline アーキテクチャ | `apps/web/src/components/ChatCodeView.tsx:388` | メッセージ・Run・Review の時系列表示 |
 | `RunResultCard` | `apps/web/src/components/RunResultCard.tsx` | Implementation 表示コンポーネント |
 | `ReviewResultCard` | `apps/web/src/components/ReviewResultCard.tsx` | Code Review 表示コンポーネント |
@@ -64,7 +64,7 @@ sequenceDiagram
 ### Backend: CICheck モデル
 
 ```python
-# apps/api/src/dursor_api/domain/models.py
+# apps/api/src/tazuna_api/domain/models.py
 
 class CICheck(BaseModel):
     """CI check result record for a PR."""
@@ -83,7 +83,7 @@ class CICheck(BaseModel):
 ### Backend: CICheckResponse モデル
 
 ```python
-# apps/api/src/dursor_api/domain/models.py
+# apps/api/src/tazuna_api/domain/models.py
 
 class CICheckResponse(BaseModel):
     """Response for CI check API."""
@@ -128,7 +128,7 @@ export interface CICheckResponse {
 
 #### 1.1 データベーススキーマ追加
 
-**ファイル**: `apps/api/src/dursor_api/storage/schema.sql`
+**ファイル**: `apps/api/src/tazuna_api/storage/schema.sql`
 
 ```sql
 CREATE TABLE IF NOT EXISTS ci_checks (
@@ -152,7 +152,7 @@ CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
 
 #### 1.2 DAO 追加
 
-**ファイル**: `apps/api/src/dursor_api/storage/dao.py`
+**ファイル**: `apps/api/src/tazuna_api/storage/dao.py`
 
 - `CICheckDAO` クラス追加
   - `create()`: CICheck レコード作成
@@ -163,7 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
 
 #### 1.3 サービス追加
 
-**ファイル**: `apps/api/src/dursor_api/services/ci_check_service.py` (新規)
+**ファイル**: `apps/api/src/tazuna_api/services/ci_check_service.py` (新規)
 
 ```python
 class CICheckService:
@@ -184,7 +184,7 @@ class CICheckService:
 
 #### 1.4 API エンドポイント追加
 
-**ファイル**: `apps/api/src/dursor_api/routes/prs.py`
+**ファイル**: `apps/api/src/tazuna_api/routes/prs.py`
 
 ```python
 @router.post("/tasks/{task_id}/prs/{pr_id}/check-ci")
@@ -363,18 +363,18 @@ const timeline = useMemo(() => {
 
 | ファイル | 説明 |
 |---------|------|
-| `apps/api/src/dursor_api/services/ci_check_service.py` | CIチェックサービス |
+| `apps/api/src/tazuna_api/services/ci_check_service.py` | CIチェックサービス |
 | `apps/web/src/components/CIResultCard.tsx` | CI結果表示コンポーネント |
 
 ### 変更
 
 | ファイル | 変更内容 |
 |---------|---------|
-| `apps/api/src/dursor_api/storage/schema.sql` | `ci_checks` テーブル追加 |
-| `apps/api/src/dursor_api/storage/dao.py` | `CICheckDAO` クラス追加 |
-| `apps/api/src/dursor_api/domain/models.py` | `CICheck`, `CICheckResponse` モデル追加 |
-| `apps/api/src/dursor_api/routes/prs.py` | CI チェックエンドポイント追加 |
-| `apps/api/src/dursor_api/dependencies.py` | `CICheckService` の DI 設定 |
+| `apps/api/src/tazuna_api/storage/schema.sql` | `ci_checks` テーブル追加 |
+| `apps/api/src/tazuna_api/storage/dao.py` | `CICheckDAO` クラス追加 |
+| `apps/api/src/tazuna_api/domain/models.py` | `CICheck`, `CICheckResponse` モデル追加 |
+| `apps/api/src/tazuna_api/routes/prs.py` | CI チェックエンドポイント追加 |
+| `apps/api/src/tazuna_api/dependencies.py` | `CICheckService` の DI 設定 |
 | `apps/web/src/types.ts` | `CICheck`, `CICheckResponse` 型追加 |
 | `apps/web/src/lib/api.ts` | `ciChecksApi` 追加 |
 | `apps/web/src/components/ChatCodeView.tsx` | Timeline に CICheck を統合 |

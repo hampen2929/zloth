@@ -9,7 +9,7 @@
 ```
 1. ユーザーがクライアントからヒアリングを実施
 2. ヒアリング内容をテキストとして記録
-3. dursor にヒアリング文章を貼り付け
+3. tazuna にヒアリング文章を貼り付け
 4. Agent tool がコードベースを読み込み、既存実装との整合性を考慮してタスクに分解
 5. 分解されたタスクを確認・編集
 6. 選択したタスクを一括登録
@@ -33,7 +33,7 @@
 
 ```
 ┌─────────────────────┐
-│ dursor             │
+│ tazuna             │
 ├─────────────────────┤
 │ [+ New Task]       │  ← 既存
 │ [✦ Breakdown]      │  ← 新規追加
@@ -285,7 +285,7 @@ Agent tool を使ってヒアリング文章をタスクに分解する。
 ### 1. 新しいサービス: `BreakdownService`
 
 ```
-apps/api/src/dursor_api/services/breakdown_service.py
+apps/api/src/tazuna_api/services/breakdown_service.py
 ```
 
 **責務**:
@@ -344,7 +344,7 @@ class BreakdownService:
 ### 2. 新しいルート: `routes/breakdown.py`
 
 ```
-apps/api/src/dursor_api/routes/breakdown.py
+apps/api/src/tazuna_api/routes/breakdown.py
 ```
 
 **エンドポイント**:
@@ -420,7 +420,7 @@ BREAKDOWN_INSTRUCTION_TEMPLATE = """
 {content}
 
 ## 出力形式
-以下のJSON形式で `.dursor-breakdown.json` ファイルに出力してください:
+以下のJSON形式で `.tazuna-breakdown.json` ファイルに出力してください:
 
 ```json
 {{

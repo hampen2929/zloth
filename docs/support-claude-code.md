@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the design and implementation plan for integrating Claude Code as an agent executor in dursor. Unlike the existing `PatchAgent` which generates patches via LLM API calls, the Claude Code workflow executes the Claude Code CLI directly within isolated git worktrees.
+This document outlines the design and implementation plan for integrating Claude Code as an agent executor in tazuna. Unlike the existing `PatchAgent` which generates patches via LLM API calls, the Claude Code workflow executes the Claude Code CLI directly within isolated git worktrees.
 
 ## Target Workflow
 
@@ -127,7 +127,7 @@ ALTER TABLE runs ADD COLUMN worktree_path TEXT;
 
 ### Phase 1: Backend - WorktreeService
 
-**File**: `apps/api/src/dursor_api/services/worktree_service.py`
+**File**: `apps/api/src/tazuna_api/services/worktree_service.py`
 
 ```python
 class WorktreeService:
@@ -179,7 +179,7 @@ class WorktreeInfo(BaseModel):
 
 ### Phase 2: Backend - ClaudeCodeExecutor
 
-**File**: `apps/api/src/dursor_api/executors/claude_code_executor.py`
+**File**: `apps/api/src/tazuna_api/executors/claude_code_executor.py`
 
 ```python
 class ClaudeCodeExecutor:
@@ -221,7 +221,7 @@ class ClaudeCodeOptions(BaseModel):
 
 ### Phase 3: Backend - RunService Modifications
 
-**File**: `apps/api/src/dursor_api/services/run_service.py`
+**File**: `apps/api/src/tazuna_api/services/run_service.py`
 
 ```python
 class RunService:
@@ -263,7 +263,7 @@ class RunService:
 
 ### Phase 4: API Route Changes
 
-**File**: `apps/api/src/dursor_api/routes/runs.py`
+**File**: `apps/api/src/tazuna_api/routes/runs.py`
 
 ```python
 class RunCreate(BaseModel):
@@ -481,7 +481,7 @@ CLAUDE_CODE_ENV = {
 
 1. **Database migration**: Add new columns to `runs` table
 2. **Backward compatibility**: Existing runs default to `executor_type = 'patch_agent'`
-3. **Feature flag**: Enable Claude Code executor via `DURSOR_ENABLE_CLAUDE_CODE=true`
+3. **Feature flag**: Enable Claude Code executor via `TAZUNA_ENABLE_CLAUDE_CODE=true`
 
 ### Rollback Plan
 
@@ -571,16 +571,16 @@ async def test_full_workflow():
 
 ```bash
 # Enable Claude Code executor
-DURSOR_ENABLE_CLAUDE_CODE=true
+TAZUNA_ENABLE_CLAUDE_CODE=true
 
 # Claude Code CLI path (optional, defaults to 'claude')
-DURSOR_CLAUDE_CLI_PATH=/usr/local/bin/claude
+TAZUNA_CLAUDE_CLI_PATH=/usr/local/bin/claude
 
 # Default timeout for Claude Code execution (seconds)
-DURSOR_CLAUDE_CODE_TIMEOUT=3600
+TAZUNA_CLAUDE_CODE_TIMEOUT=3600
 
 # Maximum concurrent Claude Code runs
-DURSOR_CLAUDE_CODE_MAX_CONCURRENT=5
+TAZUNA_CLAUDE_CODE_MAX_CONCURRENT=5
 ```
 
 ## Open Questions
@@ -599,5 +599,5 @@ DURSOR_CLAUDE_CODE_MAX_CONCURRENT=5
 
 - [Claude Code CLI Documentation](https://docs.anthropic.com/en/docs/claude-code)
 - [Git Worktree Documentation](https://git-scm.com/docs/git-worktree)
-- [dursor Architecture](./architecture.md)
-- [dursor Agents](./agents.md)
+- [tazuna Architecture](./architecture.md)
+- [tazuna Agents](./agents.md)

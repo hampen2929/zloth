@@ -1,5 +1,5 @@
 /**
- * Design Tokens for dursor UI
+ * Design Tokens for tazuna UI
  * Centralized design system values for consistent styling
  */
 

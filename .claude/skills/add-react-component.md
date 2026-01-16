@@ -1,7 +1,7 @@
 # Skill: Add New React Component
 
 ## Description
-Guide for adding a new React component to the dursor frontend.
+Guide for adding a new React component to the tazuna frontend.
 
 ## Steps
 
