@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Run, SummaryType } from '@/types';
 import { cn } from '@/lib/utils';
 import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-utils';
@@ -7,6 +8,7 @@ import { isCLIExecutor, getExecutorDisplayName } from '@/hooks';
 import { StatusBadge, getStatusBorderColor, getStatusBackgroundColor } from './ui/StatusBadge';
 import { DiffViewer } from './DiffViewer';
 import { StreamingLogs } from './StreamingLogs';
+import { useToast } from './ui/Toast';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -25,6 +27,8 @@ import {
   LightBulbIcon,
   DocumentMagnifyingGlassIcon,
   SparklesIcon,
+  ClipboardDocumentIcon,
+  ClipboardDocumentCheckIcon,
 } from '@heroicons/react/24/outline';
 
 export type RunTab = 'summary' | 'diff' | 'logs';
@@ -211,9 +215,32 @@ function getSummaryTypeIcon(type: SummaryType) {
 }
 
 function SummaryTab({ run }: { run: Run }) {
+  const [copied, setCopied] = useState(false);
   const structuredSummary = deriveStructuredSummary(run);
   const typeStyles = getSummaryTypeStyles(structuredSummary.type);
   const typeIcon = getSummaryTypeIcon(structuredSummary.type);
+  const { success, error } = useToast();
+
+  const handleCopyMarkdown = async () => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(structuredSummary.response);
+      } else {
+        // Fallback for non-secure contexts
+        const textarea = document.createElement('textarea');
+        textarea.value = structuredSummary.response;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      success('Summary copied as Markdown!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      error('Failed to copy to clipboard');
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -233,9 +260,28 @@ function SummaryTab({ run }: { run: Run }) {
         typeStyles.bgColor,
         typeStyles.borderColor
       )}>
-        <div className="flex items-center gap-2 mb-2">
-          <SparklesIcon className={cn('w-4 h-4', typeStyles.color)} />
-          <h4 className={cn('text-xs font-medium', typeStyles.color)}>Response</h4>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <SparklesIcon className={cn('w-4 h-4', typeStyles.color)} />
+            <h4 className={cn('text-xs font-medium', typeStyles.color)}>Response</h4>
+          </div>
+          <button
+            onClick={handleCopyMarkdown}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-gray-400 hover:text-gray-200 bg-gray-800/50 hover:bg-gray-700/50 rounded transition-colors"
+            title="Copy as Markdown"
+          >
+            {copied ? (
+              <>
+                <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-green-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <ClipboardDocumentIcon className="w-3.5 h-3.5" />
+                <span>Copy</span>
+              </>
+            )}
+          </button>
         </div>
         <div className="prose prose-sm prose-invert max-w-none text-gray-300 prose-headings:text-gray-200 prose-p:text-gray-300 prose-strong:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-800 prose-ul:text-gray-300 prose-ol:text-gray-300 prose-li:text-gray-300 prose-table:text-gray-300 prose-th:text-gray-200 prose-th:bg-gray-800 prose-td:border-gray-700 prose-th:border-gray-700 prose-thead:border-gray-700 prose-tr:border-gray-700">
           <Markdown remarkPlugins={[remarkGfm]}>{structuredSummary.response}</Markdown>
