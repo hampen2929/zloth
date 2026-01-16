@@ -127,7 +127,7 @@ export default function Sidebar() {
           )}
         >
           <ClipboardDocumentListIcon className="w-4 h-4" />
-          Backlog
+          Backlog & Archived
         </Link>
         <Link
           href="/kanban"

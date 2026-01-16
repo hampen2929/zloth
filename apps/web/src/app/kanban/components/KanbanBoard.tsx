@@ -12,15 +12,13 @@ interface KanbanBoardProps {
   onUpdate: () => void;
 }
 
-// Order of columns to display
+// Order of columns to display (excluding backlog and archived - they are shown in Backlog & Archived page)
 const COLUMN_ORDER: TaskKanbanStatus[] = [
-  'backlog',
   'todo',
   'in_progress',
   'gating',
   'in_review',
   'done',
-  'archived',
 ];
 
 export function KanbanBoard({ board, onUpdate }: KanbanBoardProps) {
