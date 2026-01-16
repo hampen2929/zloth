@@ -172,6 +172,7 @@ LEFT JOIN (
 | `KanbanBoard.tsx` | `COLUMN_ORDER` に `'gating'` を追加 |
 | `KanbanColumn.tsx` | gating列の設定を追加 |
 | `SettingsModal.tsx` | `enable_gating_status` のトグルを追加 |
+| `ChatCodeView.tsx` | pending状態のCIチェック時の自動ポーリング機能を追加 |
 
 ### Gating列の設定
 
@@ -226,6 +227,16 @@ CIチェックのステータス：
 - 手動PR同期 (`POST /tasks/{task_id}/prs/sync`)
 
 これにより、ユーザーが手動で「Check CI」を呼び出す必要なく、タスクが自動的にGating状態に移行します。
+
+### フロントエンドの自動ポーリング
+
+バックエンドで自動CIチェックが開始されると、フロントエンドは以下のメカニズムでCIステータスの更新を取得します：
+
+1. **PR作成/同期後のリフレッシュ**: PR作成または同期が完了した後、フロントエンドは1秒後にCIチェックリストを自動的にリフレッシュし、バックエンドで作成されたCIチェックレコードを取得します。
+
+2. **Pending状態の自動ポーリング**: `enable_gating_status`が有効で、現在のPRにpending状態のCIチェックがある場合、フロントエンドは5秒間隔で自動的にCIチェックリストをポーリングします。CI完了（success/failure/error）になるとポーリングは停止します。
+
+これにより、ユーザーが手動で「Check CI」ボタンを押さなくても、CIステータスの更新がチャット画面に自動的に反映されます。
 
 ## APIエンドポイント
 

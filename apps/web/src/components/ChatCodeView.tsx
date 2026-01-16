@@ -88,10 +88,17 @@ export function ChatCodeView({
   );
 
   // Fetch CI checks for the task
+  // We need to detect when there's a pending CI check to enable auto-polling
+  // This is tracked via ciCheckPollingActive state
+  const [ciCheckPollingActive, setCICheckPollingActive] = useState(false);
+
   const { data: ciChecks, mutate: mutateCIChecks } = useSWR<CICheck[]>(
     `ci-checks-${taskId}`,
     () => ciChecksApi.list(taskId),
-    { refreshInterval: checkingCI ? 5000 : 0 }
+    // Poll for updates when:
+    // 1. User is manually checking CI (checkingCI), OR
+    // 2. Auto-polling is active (pending CI check detected with gating enabled)
+    { refreshInterval: (checkingCI || ciCheckPollingActive) ? 5000 : 0 }
   );
 
   // Determine executor types used in this task
@@ -151,6 +158,22 @@ export function ChatCodeView({
     if (!prs || !selectedExecutorBranch) return null;
     return prs.find((pr) => pr.branch === selectedExecutorBranch) || null;
   }, [prs, selectedExecutorBranch]);
+
+  // Enable/disable CI check polling based on pending CI checks
+  // When gating is enabled and there's a pending CI check, we poll automatically
+  useEffect(() => {
+    if (!preferences?.enable_gating_status || !latestPR || !ciChecks) {
+      setCICheckPollingActive(false);
+      return;
+    }
+
+    // Check if there's a pending CI check for the current PR
+    const hasPendingCheck = ciChecks.some(
+      (check) => check.pr_id === latestPR.id && check.status === 'pending'
+    );
+
+    setCICheckPollingActive(hasPendingCheck);
+  }, [preferences?.enable_gating_status, latestPR, ciChecks]);
 
   // Sync PR result from backend for the selected executor
   useEffect(() => {
@@ -287,6 +310,12 @@ export function ChatCodeView({
         setPRResult({ url: result.url, number: result.number, pr_id: result.pr_id });
         onPRCreated();
         success('Pull request created successfully!');
+
+        // If gating is enabled, refresh CI checks after a brief delay
+        // to pick up the auto-triggered CI check from the backend
+        if (preferences?.enable_gating_status) {
+          setTimeout(() => mutateCIChecks(), 1000);
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create PR';
@@ -357,6 +386,12 @@ export function ChatCodeView({
           setPRLinkResult(null);
           onPRCreated();
           success('PR detected. Opening PR link.');
+
+          // If gating is enabled, refresh CI checks after a brief delay
+          // to pick up the auto-triggered CI check from the backend
+          if (preferences?.enable_gating_status) {
+            setTimeout(() => mutateCIChecks(), 1000);
+          }
         }
       } catch {
         // Ignore transient errors
@@ -367,7 +402,7 @@ export function ChatCodeView({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [prLinkResult, latestSuccessfulRun, prResult, taskId, onPRCreated, success]);
+  }, [prLinkResult, latestSuccessfulRun, prResult, taskId, onPRCreated, success, preferences?.enable_gating_status, mutateCIChecks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
