@@ -1,7 +1,7 @@
 # dursor
 
 [![CI](https://github.com/hampen2929/dursor/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/dursor/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub stars](https://img.shields.io/github/stars/hampen2929/dursor.svg?style=social&label=Star)](https://github.com/hampen2929/dursor)
 [![GitHub issues](https://img.shields.io/github/issues/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/pulls)
@@ -210,7 +210,7 @@ We welcome bug reports and feature requests via [GitHub Issues](https://github.c
 
 ## License & Sponsorship
 
-This project is open source under the [MIT License](LICENSE). We aim to keep dursor free and open for everyone.
+This project is open source under the [Apache License 2.0](LICENSE). We aim to keep dursor free and open for everyone.
 
 ### Individual Use
 
@@ -218,7 +218,7 @@ This project is open source under the [MIT License](LICENSE). We aim to keep dur
 
 ### Enterprise Use
 
-**Sponsorship recommended.** Enterprise usage is free and unrestricted under the MIT license. However, if your company relies on dursor for development, we strongly encourage you to [sponsor the project](https://github.com/sponsors/hampen2929).
+**Sponsorship recommended.** Enterprise usage is free and unrestricted under the Apache 2.0 license. However, if your company relies on dursor for development, we strongly encourage you to [sponsor the project](https://github.com/sponsors/hampen2929).
 
 - **Voluntary**: No contracts or forced payments.
 - **Sustainability**: Your sponsorship helps ensure the project remains maintained and improved.
