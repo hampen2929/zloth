@@ -1,0 +1,1825 @@
+"""Data Access Objects for tazuna storage."""
+
+from __future__ import annotations
+
+import builtins
+import json
+import uuid
+from datetime import datetime
+from typing import Any
+
+from tazuna_api.domain.enums import (
+    AgenticPhase,
+    BrokenDownTaskType,
+    CodingMode,
+    EstimatedSize,
+    ExecutorType,
+    MessageRole,
+    PRCreationMode,
+    Provider,
+    ReviewCategory,
+    ReviewSeverity,
+    ReviewStatus,
+    RunStatus,
+    TaskBaseKanbanStatus,
+)
+from tazuna_api.domain.models import (
+    PR,
+    AgenticState,
+    BacklogItem,
+    CICheck,
+    CIJobResult,
+    FileDiff,
+    Message,
+    ModelProfile,
+    Repo,
+    Review,
+    ReviewFeedbackItem,
+    ReviewSummary,
+    Run,
+    SubTask,
+    Task,
+    UserPreferences,
+)
+from tazuna_api.storage.db import Database
+
+
+def generate_id() -> str:
+    """Generate a unique ID."""
+    return str(uuid.uuid4())
+
+
+def now_iso() -> str:
+    """Get current time as ISO string."""
+    return datetime.utcnow().isoformat()
+
+
+class ModelProfileDAO:
+    """DAO for ModelProfile."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        provider: Provider,
+        model_name: str,
+        api_key_encrypted: str,
+        display_name: str | None = None,
+    ) -> ModelProfile:
+        """Create a new model profile."""
+        id = generate_id()
+        created_at = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO model_profiles
+            (id, provider, model_name, display_name, api_key_encrypted, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (id, provider.value, model_name, display_name, api_key_encrypted, created_at),
+        )
+        await self.db.connection.commit()
+
+        return ModelProfile(
+            id=id,
+            provider=provider,
+            model_name=model_name,
+            display_name=display_name,
+            created_at=datetime.fromisoformat(created_at),
+        )
+
+    async def get(self, id: str) -> ModelProfile | None:
+        """Get a model profile by ID."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM model_profiles WHERE id = ?", (id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list(self) -> list[ModelProfile]:
+        """List all model profiles."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM model_profiles ORDER BY created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def delete(self, id: str) -> bool:
+        """Delete a model profile."""
+        cursor = await self.db.connection.execute("DELETE FROM model_profiles WHERE id = ?", (id,))
+        await self.db.connection.commit()
+        return cursor.rowcount > 0
+
+    async def get_encrypted_key(self, id: str) -> str | None:
+        """Get the encrypted API key for a model profile."""
+        cursor = await self.db.connection.execute(
+            "SELECT api_key_encrypted FROM model_profiles WHERE id = ?", (id,)
+        )
+        row = await cursor.fetchone()
+        return row["api_key_encrypted"] if row else None
+
+    def _row_to_model(self, row: Any) -> ModelProfile:
+        return ModelProfile(
+            id=row["id"],
+            provider=Provider(row["provider"]),
+            model_name=row["model_name"],
+            display_name=row["display_name"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+
+class RepoDAO:
+    """DAO for Repo."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        repo_url: str,
+        default_branch: str,
+        latest_commit: str,
+        workspace_path: str,
+        selected_branch: str | None = None,
+    ) -> Repo:
+        """Create a new repo."""
+        id = generate_id()
+        created_at = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO repos
+            (id, repo_url, default_branch, selected_branch,
+             latest_commit, workspace_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                repo_url,
+                default_branch,
+                selected_branch,
+                latest_commit,
+                workspace_path,
+                created_at,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return Repo(
+            id=id,
+            repo_url=repo_url,
+            default_branch=default_branch,
+            selected_branch=selected_branch,
+            latest_commit=latest_commit,
+            workspace_path=workspace_path,
+            created_at=datetime.fromisoformat(created_at),
+        )
+
+    async def get(self, id: str) -> Repo | None:
+        """Get a repo by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM repos WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def find_by_url(self, repo_url: str) -> Repo | None:
+        """Find a repo by URL."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM repos WHERE repo_url = ? ORDER BY created_at DESC LIMIT 1",
+            (repo_url,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def update_selected_branch(self, id: str, selected_branch: str | None) -> None:
+        """Update the selected branch for a repo."""
+        await self.db.connection.execute(
+            "UPDATE repos SET selected_branch = ? WHERE id = ?",
+            (selected_branch, id),
+        )
+        await self.db.connection.commit()
+
+    def _row_to_model(self, row: Any) -> Repo:
+        return Repo(
+            id=row["id"],
+            repo_url=row["repo_url"],
+            default_branch=row["default_branch"],
+            selected_branch=row["selected_branch"],
+            latest_commit=row["latest_commit"],
+            workspace_path=row["workspace_path"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+
+class TaskDAO:
+    """DAO for Task."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        repo_id: str,
+        title: str | None = None,
+        coding_mode: CodingMode = CodingMode.INTERACTIVE,
+    ) -> Task:
+        """Create a new task."""
+        id = generate_id()
+        now = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO tasks (id, repo_id, title, coding_mode, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (id, repo_id, title, coding_mode.value, now, now),
+        )
+        await self.db.connection.commit()
+
+        return Task(
+            id=id,
+            repo_id=repo_id,
+            title=title,
+            coding_mode=coding_mode,
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> Task | None:
+        """Get a task by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM tasks WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list(self, repo_id: str | None = None) -> list[Task]:
+        """List tasks, optionally filtered by repo."""
+        if repo_id:
+            cursor = await self.db.connection.execute(
+                "SELECT * FROM tasks WHERE repo_id = ? ORDER BY updated_at DESC",
+                (repo_id,),
+            )
+        else:
+            cursor = await self.db.connection.execute(
+                "SELECT * FROM tasks ORDER BY updated_at DESC"
+            )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update_timestamp(self, id: str) -> None:
+        """Update the task's updated_at timestamp."""
+        await self.db.connection.execute(
+            "UPDATE tasks SET updated_at = ? WHERE id = ?",
+            (now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_kanban_status(self, task_id: str, status: TaskBaseKanbanStatus) -> None:
+        """Update task kanban status (backlog/todo/archived only)."""
+        await self.db.connection.execute(
+            "UPDATE tasks SET kanban_status = ?, updated_at = ? WHERE id = ?",
+            (status.value, now_iso(), task_id),
+        )
+        await self.db.connection.commit()
+
+    async def list_with_aggregates(
+        self, repo_id: str | None = None
+    ) -> builtins.list[dict[str, Any]]:
+        """List tasks with run/PR aggregation for kanban status calculation.
+
+        Returns tasks with:
+        - run_count: total runs
+        - running_count: runs with status='running'
+        - completed_count: runs with status in (succeeded, failed, canceled)
+        - pr_count: total PRs
+        - latest_pr_status: most recent PR status
+        """
+        query = """
+            SELECT
+                t.*,
+                COALESCE(r.run_count, 0) as run_count,
+                COALESCE(r.running_count, 0) as running_count,
+                COALESCE(r.completed_count, 0) as completed_count,
+                COALESCE(p.pr_count, 0) as pr_count,
+                p.latest_pr_status
+            FROM tasks t
+            LEFT JOIN (
+                SELECT
+                    task_id,
+                    COUNT(*) as run_count,
+                    SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END)
+                        as running_count,
+                    SUM(CASE WHEN status IN ('succeeded', 'failed', 'canceled')
+                        THEN 1 ELSE 0 END) as completed_count
+                FROM runs
+                GROUP BY task_id
+            ) r ON t.id = r.task_id
+            LEFT JOIN (
+                SELECT
+                    task_id,
+                    COUNT(*) as pr_count,
+                    (SELECT status FROM prs WHERE task_id = p2.task_id
+                        ORDER BY created_at DESC LIMIT 1) as latest_pr_status
+                FROM prs p2
+                GROUP BY task_id
+            ) p ON t.id = p.task_id
+        """
+        params: list[Any] = []
+
+        if repo_id:
+            query += " WHERE t.repo_id = ?"
+            params.append(repo_id)
+
+        query += " ORDER BY t.updated_at DESC"
+
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+
+        result: builtins.list[dict[str, Any]] = []
+        for row in rows:
+            # Handle kanban_status for backward compatibility
+            kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
+            # Handle coding_mode for backward compatibility
+            coding_mode_str = (
+                row["coding_mode"]
+                if "coding_mode" in row.keys() and row["coding_mode"]
+                else "interactive"
+            )
+            result.append(
+                {
+                    "id": row["id"],
+                    "repo_id": row["repo_id"],
+                    "title": row["title"],
+                    "coding_mode": CodingMode(coding_mode_str),
+                    "kanban_status": kanban_status,
+                    "created_at": datetime.fromisoformat(row["created_at"]),
+                    "updated_at": datetime.fromisoformat(row["updated_at"]),
+                    "run_count": row["run_count"],
+                    "running_count": row["running_count"],
+                    "completed_count": row["completed_count"],
+                    "pr_count": row["pr_count"],
+                    "latest_pr_status": row["latest_pr_status"],
+                }
+            )
+        return result
+
+    def _row_to_model(self, row: Any) -> Task:
+        # Handle kanban_status for backward compatibility
+        kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
+        # Handle coding_mode for backward compatibility
+        coding_mode_str = (
+            row["coding_mode"]
+            if "coding_mode" in row.keys() and row["coding_mode"]
+            else "interactive"
+        )
+        return Task(
+            id=row["id"],
+            repo_id=row["repo_id"],
+            title=row["title"],
+            coding_mode=CodingMode(coding_mode_str),
+            kanban_status=kanban_status,
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class MessageDAO:
+    """DAO for Message."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(self, task_id: str, role: MessageRole, content: str) -> Message:
+        """Create a new message."""
+        id = generate_id()
+        created_at = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO messages (id, task_id, role, content, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (id, task_id, role.value, content, created_at),
+        )
+        await self.db.connection.commit()
+
+        return Message(
+            id=id,
+            task_id=task_id,
+            role=role,
+            content=content,
+            created_at=datetime.fromisoformat(created_at),
+        )
+
+    async def list(self, task_id: str) -> list[Message]:
+        """List messages for a task."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM messages WHERE task_id = ? ORDER BY created_at ASC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    def _row_to_model(self, row: Any) -> Message:
+        return Message(
+            id=row["id"],
+            task_id=row["task_id"],
+            role=MessageRole(row["role"]),
+            content=row["content"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+
+class RunDAO:
+    """DAO for Run."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        task_id: str,
+        instruction: str,
+        executor_type: ExecutorType = ExecutorType.PATCH_AGENT,
+        message_id: str | None = None,
+        model_id: str | None = None,
+        model_name: str | None = None,
+        provider: Provider | None = None,
+        base_ref: str | None = None,
+        working_branch: str | None = None,
+        worktree_path: str | None = None,
+        session_id: str | None = None,
+    ) -> Run:
+        """Create a new run.
+
+        Args:
+            task_id: Task ID.
+            instruction: Task instruction.
+            executor_type: Type of executor (patch_agent or claude_code).
+            message_id: ID of the triggering message.
+            model_id: Model profile ID (required for patch_agent).
+            model_name: Model name (required for patch_agent).
+            provider: Model provider (required for patch_agent).
+            base_ref: Base git ref.
+            working_branch: Git branch for worktree (claude_code).
+            worktree_path: Filesystem path to worktree (claude_code).
+            session_id: CLI session ID for conversation persistence.
+
+        Returns:
+            Created Run object.
+        """
+        id = generate_id()
+        created_at = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO runs (
+                id, task_id, message_id, model_id, model_name, provider, executor_type,
+                working_branch, worktree_path, session_id, instruction,
+                base_ref, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                task_id,
+                message_id,
+                model_id,
+                model_name,
+                provider.value if provider else None,
+                executor_type.value,
+                working_branch,
+                worktree_path,
+                session_id,
+                instruction,
+                base_ref,
+                RunStatus.QUEUED.value,
+                created_at,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return Run(
+            id=id,
+            task_id=task_id,
+            message_id=message_id,
+            model_id=model_id,
+            model_name=model_name,
+            provider=provider,
+            executor_type=executor_type,
+            working_branch=working_branch,
+            worktree_path=worktree_path,
+            session_id=session_id,
+            instruction=instruction,
+            base_ref=base_ref,
+            status=RunStatus.QUEUED,
+            created_at=datetime.fromisoformat(created_at),
+        )
+
+    async def get(self, id: str) -> Run | None:
+        """Get a run by ID."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM runs WHERE id = ?",
+            (id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list(self, task_id: str) -> list[Run]:
+        """List runs for a task."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM runs WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update_status(
+        self,
+        id: str,
+        status: RunStatus,
+        summary: str | None = None,
+        patch: str | None = None,
+        files_changed: builtins.list[FileDiff] | None = None,
+        logs: builtins.list[str] | None = None,
+        warnings: builtins.list[str] | None = None,
+        error: str | None = None,
+        commit_sha: str | None = None,
+        session_id: str | None = None,
+    ) -> None:
+        """Update run status and results."""
+        updates = ["status = ?"]
+        params: list[Any] = [status.value]
+
+        if status == RunStatus.RUNNING:
+            updates.append("started_at = ?")
+            params.append(now_iso())
+        elif status in (RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED):
+            updates.append("completed_at = ?")
+            params.append(now_iso())
+
+        if summary is not None:
+            updates.append("summary = ?")
+            params.append(summary)
+        if patch is not None:
+            updates.append("patch = ?")
+            params.append(patch)
+        if files_changed is not None:
+            updates.append("files_changed = ?")
+            params.append(json.dumps([f.model_dump() for f in files_changed]))
+        if logs is not None:
+            updates.append("logs = ?")
+            params.append(json.dumps(logs))
+        if warnings is not None:
+            updates.append("warnings = ?")
+            params.append(json.dumps(warnings))
+        if error is not None:
+            updates.append("error = ?")
+            params.append(error)
+        if commit_sha is not None:
+            updates.append("commit_sha = ?")
+            params.append(commit_sha)
+        if session_id is not None:
+            updates.append("session_id = ?")
+            params.append(session_id)
+
+        params.append(id)
+
+        await self.db.connection.execute(
+            f"UPDATE runs SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.connection.commit()
+
+    async def update_worktree(
+        self,
+        id: str,
+        working_branch: str,
+        worktree_path: str,
+    ) -> None:
+        """Update run with worktree information.
+
+        Args:
+            id: Run ID.
+            working_branch: Git branch name.
+            worktree_path: Filesystem path to worktree.
+        """
+        await self.db.connection.execute(
+            "UPDATE runs SET working_branch = ?, worktree_path = ? WHERE id = ?",
+            (working_branch, worktree_path, id),
+        )
+        await self.db.connection.commit()
+
+    async def update_session_id(self, id: str, session_id: str) -> None:
+        """Update run with session ID.
+
+        Args:
+            id: Run ID.
+            session_id: CLI session ID for conversation persistence.
+        """
+        await self.db.connection.execute(
+            "UPDATE runs SET session_id = ? WHERE id = ?",
+            (session_id, id),
+        )
+        await self.db.connection.commit()
+
+    async def get_latest_session_id(
+        self,
+        task_id: str,
+        executor_type: ExecutorType,
+    ) -> str | None:
+        """Get the latest session ID for a task and executor type.
+
+        Args:
+            task_id: Task ID.
+            executor_type: Type of executor.
+
+        Returns:
+            Session ID if found, None otherwise.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT session_id FROM runs
+            WHERE task_id = ? AND executor_type = ? AND session_id IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (task_id, executor_type.value),
+        )
+        row = await cursor.fetchone()
+        return row["session_id"] if row else None
+
+    async def get_latest_worktree_run(
+        self,
+        task_id: str,
+        executor_type: ExecutorType,
+    ) -> Run | None:
+        """Get the latest run with a valid worktree for a task and executor type.
+
+        This is used to reuse an existing worktree for subsequent runs in the
+        same task, enabling conversation continuation in the same working directory.
+
+        Args:
+            task_id: Task ID.
+            executor_type: Type of executor.
+
+        Returns:
+            Run with worktree if found, None otherwise.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM runs
+            WHERE task_id = ? AND executor_type = ?
+                AND worktree_path IS NOT NULL
+                AND status IN ('succeeded', 'failed', 'running', 'queued')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (task_id, executor_type.value),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    def _row_to_model(self, row: Any) -> Run:
+        files_changed = []
+        if row["files_changed"]:
+            files_changed = [FileDiff(**f) for f in json.loads(row["files_changed"])]
+
+        logs = []
+        if row["logs"]:
+            logs = json.loads(row["logs"])
+
+        warnings = []
+        if row["warnings"]:
+            warnings = json.loads(row["warnings"])
+
+        # Handle nullable provider
+        provider = Provider(row["provider"]) if row["provider"] else None
+
+        # Handle executor_type with default for backward compatibility
+        executor_type = (
+            ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
+        )
+
+        # Handle message_id for backward compatibility
+        message_id = row["message_id"] if "message_id" in row.keys() else None
+
+        return Run(
+            id=row["id"],
+            task_id=row["task_id"],
+            message_id=message_id,
+            model_id=row["model_id"],
+            model_name=row["model_name"],
+            provider=provider,
+            executor_type=executor_type,
+            working_branch=row["working_branch"],
+            worktree_path=row["worktree_path"],
+            session_id=row["session_id"],
+            instruction=row["instruction"],
+            base_ref=row["base_ref"],
+            commit_sha=row["commit_sha"] if "commit_sha" in row.keys() else None,
+            status=RunStatus(row["status"]),
+            summary=row["summary"],
+            patch=row["patch"],
+            files_changed=files_changed,
+            logs=logs,
+            warnings=warnings,
+            error=row["error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            ),
+        )
+
+    async def get_latest_runs_by_executor_for_tasks(
+        self, task_ids: builtins.list[str]
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        """Get latest run per executor type for each task.
+
+        For kanban board display, fetches the most recent run for each
+        executor type (claude_code, codex_cli, gemini_cli) per task.
+
+        Args:
+            task_ids: List of task IDs to fetch runs for.
+
+        Returns:
+            Dict mapping task_id -> executor_type -> run info dict
+            {
+                "task_id_1": {
+                    "claude_code": {"run_id": "...", "status": "succeeded"},
+                    "codex_cli": {"run_id": "...", "status": "running"},
+                },
+                ...
+            }
+        """
+        if not task_ids:
+            return {}
+
+        placeholders = ",".join("?" * len(task_ids))
+        query = f"""
+            SELECT r.task_id, r.id as run_id, r.executor_type, r.status
+            FROM runs r
+            INNER JOIN (
+                SELECT task_id, executor_type, MAX(created_at) as max_created
+                FROM runs
+                WHERE task_id IN ({placeholders})
+                GROUP BY task_id, executor_type
+            ) latest
+            ON r.task_id = latest.task_id
+                AND r.executor_type = latest.executor_type
+                AND r.created_at = latest.max_created
+        """
+        cursor = await self.db.connection.execute(query, task_ids)
+        rows = await cursor.fetchall()
+
+        result: dict[str, dict[str, dict[str, Any]]] = {}
+        for row in rows:
+            task_id = row["task_id"]
+            executor_type = row["executor_type"]
+            if task_id not in result:
+                result[task_id] = {}
+            result[task_id][executor_type] = {
+                "run_id": row["run_id"],
+                "status": row["status"],
+            }
+        return result
+
+
+class PRDAO:
+    """DAO for PR."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        task_id: str,
+        number: int,
+        url: str,
+        branch: str,
+        title: str,
+        body: str | None,
+        latest_commit: str,
+    ) -> PR:
+        """Create a new PR record."""
+        id = generate_id()
+        now = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO prs (
+                id, task_id, number, url, branch, title, body,
+                latest_commit, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (id, task_id, number, url, branch, title, body, latest_commit, "open", now, now),
+        )
+        await self.db.connection.commit()
+
+        return PR(
+            id=id,
+            task_id=task_id,
+            number=number,
+            url=url,
+            branch=branch,
+            title=title,
+            body=body,
+            latest_commit=latest_commit,
+            status="open",
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> PR | None:
+        """Get a PR by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM prs WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_task_and_number(self, task_id: str, number: int) -> PR | None:
+        """Get a PR by task and PR number."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM prs WHERE task_id = ? AND number = ? LIMIT 1",
+            (task_id, number),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_number(self, number: int) -> PR | None:
+        """Get a PR by PR number (across all tasks)."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM prs WHERE number = ? ORDER BY created_at DESC LIMIT 1",
+            (number,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list(self, task_id: str) -> list[PR]:
+        """List PRs for a task."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM prs WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update(self, id: str, latest_commit: str) -> None:
+        """Update PR's latest commit."""
+        await self.db.connection.execute(
+            "UPDATE prs SET latest_commit = ?, updated_at = ? WHERE id = ?",
+            (latest_commit, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_body(self, id: str, body: str) -> None:
+        """Update PR's body/description."""
+        await self.db.connection.execute(
+            "UPDATE prs SET body = ?, updated_at = ? WHERE id = ?",
+            (body, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_title_and_body(self, id: str, title: str, body: str) -> None:
+        """Update PR's title and body/description."""
+        await self.db.connection.execute(
+            "UPDATE prs SET title = ?, body = ?, updated_at = ? WHERE id = ?",
+            (title, body, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_title(self, id: str, title: str) -> None:
+        """Update PR's title only."""
+        await self.db.connection.execute(
+            "UPDATE prs SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_status(self, id: str, status: str) -> None:
+        """Update PR status (open/merged/closed)."""
+        await self.db.connection.execute(
+            "UPDATE prs SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def list_open(self) -> builtins.list[PR]:
+        """List all PRs with status='open'.
+
+        Used by the PR status poller to check for merge status updates.
+        """
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM prs WHERE status = 'open' ORDER BY created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    def _row_to_model(self, row: Any) -> PR:
+        return PR(
+            id=row["id"],
+            task_id=row["task_id"],
+            number=row["number"],
+            url=row["url"],
+            branch=row["branch"],
+            title=row["title"],
+            body=row["body"],
+            latest_commit=row["latest_commit"],
+            status=row["status"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class UserPreferencesDAO:
+    """DAO for UserPreferences (singleton)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def get(self) -> UserPreferences | None:
+        """Get user preferences."""
+        cursor = await self.db.connection.execute("SELECT * FROM user_preferences WHERE id = 1")
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def save(
+        self,
+        default_repo_owner: str | None = None,
+        default_repo_name: str | None = None,
+        default_branch: str | None = None,
+        default_branch_prefix: str | None = None,
+        default_pr_creation_mode: str | None = None,
+        default_coding_mode: str | None = None,
+        auto_generate_pr_description: bool | None = None,
+        worktrees_dir: str | None = None,
+    ) -> UserPreferences:
+        """Save user preferences (upsert)."""
+        now = now_iso()
+        auto_gen = 1 if auto_generate_pr_description else 0
+
+        # Try to update first
+        cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")
+        exists = await cursor.fetchone()
+
+        if exists:
+            await self.db.connection.execute(
+                """
+                UPDATE user_preferences
+                SET default_repo_owner = ?,
+                    default_repo_name = ?,
+                    default_branch = ?,
+                    default_branch_prefix = ?,
+                    default_pr_creation_mode = ?,
+                    default_coding_mode = ?,
+                    auto_generate_pr_description = ?,
+                    worktrees_dir = ?,
+                    updated_at = ?
+                WHERE id = 1
+                """,
+                (
+                    default_repo_owner,
+                    default_repo_name,
+                    default_branch,
+                    default_branch_prefix,
+                    default_pr_creation_mode,
+                    default_coding_mode,
+                    auto_gen,
+                    worktrees_dir,
+                    now,
+                ),
+            )
+        else:
+            await self.db.connection.execute(
+                """
+                INSERT INTO user_preferences (
+                    id,
+                    default_repo_owner,
+                    default_repo_name,
+                    default_branch,
+                    default_branch_prefix,
+                    default_pr_creation_mode,
+                    default_coding_mode,
+                    auto_generate_pr_description,
+                    worktrees_dir,
+                    created_at,
+                    updated_at
+                )
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    default_repo_owner,
+                    default_repo_name,
+                    default_branch,
+                    default_branch_prefix,
+                    default_pr_creation_mode,
+                    default_coding_mode,
+                    auto_gen,
+                    worktrees_dir,
+                    now,
+                    now,
+                ),
+            )
+
+        await self.db.connection.commit()
+
+        return UserPreferences(
+            default_repo_owner=default_repo_owner,
+            default_repo_name=default_repo_name,
+            default_branch=default_branch,
+            default_branch_prefix=default_branch_prefix,
+            default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
+            default_coding_mode=CodingMode(default_coding_mode or "interactive"),
+            auto_generate_pr_description=auto_generate_pr_description or False,
+            worktrees_dir=worktrees_dir,
+        )
+
+    def _row_to_model(self, row: Any) -> UserPreferences:
+        return UserPreferences(
+            default_repo_owner=row["default_repo_owner"],
+            default_repo_name=row["default_repo_name"],
+            default_branch=row["default_branch"],
+            default_branch_prefix=(
+                row["default_branch_prefix"] if "default_branch_prefix" in row.keys() else None
+            ),
+            default_pr_creation_mode=PRCreationMode(
+                row["default_pr_creation_mode"]
+                if "default_pr_creation_mode" in row.keys() and row["default_pr_creation_mode"]
+                else "create"
+            ),
+            default_coding_mode=CodingMode(
+                row["default_coding_mode"]
+                if "default_coding_mode" in row.keys() and row["default_coding_mode"]
+                else "interactive"
+            ),
+            auto_generate_pr_description=bool(
+                row["auto_generate_pr_description"]
+                if "auto_generate_pr_description" in row.keys()
+                else False
+            ),
+            worktrees_dir=(row["worktrees_dir"] if "worktrees_dir" in row.keys() else None),
+        )
+
+
+class BacklogDAO:
+    """DAO for BacklogItem."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        repo_id: str,
+        title: str,
+        description: str = "",
+        type: BrokenDownTaskType = BrokenDownTaskType.FEATURE,
+        estimated_size: EstimatedSize = EstimatedSize.MEDIUM,
+        target_files: list[str] | None = None,
+        implementation_hint: str | None = None,
+        tags: list[str] | None = None,
+        subtasks: list[dict[str, Any]] | None = None,
+    ) -> BacklogItem:
+        """Create a new backlog item.
+
+        Args:
+            repo_id: Repository ID.
+            title: Item title.
+            description: Item description.
+            type: Task type.
+            estimated_size: Size estimate.
+            target_files: Target files list.
+            implementation_hint: Implementation hints.
+            tags: Tags list.
+            subtasks: List of subtasks with title.
+
+        Returns:
+            Created BacklogItem.
+        """
+        id = generate_id()
+        now = now_iso()
+
+        # Generate IDs for subtasks
+        subtask_list = []
+        if subtasks:
+            for st in subtasks:
+                subtask_list.append(
+                    {
+                        "id": generate_id(),
+                        "title": st.get("title", ""),
+                        "completed": False,
+                    }
+                )
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO backlog_items (
+                id, repo_id, title, description, type, estimated_size,
+                target_files, implementation_hint, tags, subtasks,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                repo_id,
+                title,
+                description,
+                type.value,
+                estimated_size.value,
+                json.dumps(target_files or []),
+                implementation_hint,
+                json.dumps(tags or []),
+                json.dumps(subtask_list),
+                now,
+                now,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return BacklogItem(
+            id=id,
+            repo_id=repo_id,
+            title=title,
+            description=description,
+            type=type,
+            estimated_size=estimated_size,
+            target_files=target_files or [],
+            implementation_hint=implementation_hint,
+            tags=tags or [],
+            subtasks=[SubTask(**st) for st in subtask_list],
+            task_id=None,
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> BacklogItem | None:
+        """Get a backlog item by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM backlog_items WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list(
+        self,
+        repo_id: str | None = None,
+    ) -> list[BacklogItem]:
+        """List backlog items with optional filters.
+
+        Args:
+            repo_id: Filter by repository ID.
+
+        Returns:
+            List of BacklogItem.
+        """
+        query = "SELECT * FROM backlog_items WHERE 1=1"
+        params: list[Any] = []
+
+        if repo_id:
+            query += " AND repo_id = ?"
+            params.append(repo_id)
+
+        query += " ORDER BY created_at DESC"
+
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update(
+        self,
+        id: str,
+        title: str | None = None,
+        description: str | None = None,
+        type: BrokenDownTaskType | None = None,
+        estimated_size: EstimatedSize | None = None,
+        target_files: builtins.list[str] | None = None,
+        implementation_hint: str | None = None,
+        tags: builtins.list[str] | None = None,
+        subtasks: builtins.list[dict[str, Any]] | None = None,
+        task_id: str | None = None,
+    ) -> BacklogItem | None:
+        """Update a backlog item.
+
+        Args:
+            id: Backlog item ID.
+            **kwargs: Fields to update.
+
+        Returns:
+            Updated BacklogItem or None if not found.
+        """
+        updates = ["updated_at = ?"]
+        params: list[Any] = [now_iso()]
+
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title)
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+        if type is not None:
+            updates.append("type = ?")
+            params.append(type.value)
+        if estimated_size is not None:
+            updates.append("estimated_size = ?")
+            params.append(estimated_size.value)
+        if target_files is not None:
+            updates.append("target_files = ?")
+            params.append(json.dumps(target_files))
+        if implementation_hint is not None:
+            updates.append("implementation_hint = ?")
+            params.append(implementation_hint)
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags))
+        if subtasks is not None:
+            updates.append("subtasks = ?")
+            params.append(json.dumps(subtasks))
+        if task_id is not None:
+            updates.append("task_id = ?")
+            params.append(task_id)
+
+        params.append(id)
+
+        await self.db.connection.execute(
+            f"UPDATE backlog_items SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.connection.commit()
+
+        return await self.get(id)
+
+    async def delete(self, id: str) -> bool:
+        """Delete a backlog item.
+
+        Args:
+            id: Backlog item ID.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        cursor = await self.db.connection.execute("DELETE FROM backlog_items WHERE id = ?", (id,))
+        await self.db.connection.commit()
+        return cursor.rowcount > 0
+
+    def _row_to_model(self, row: Any) -> BacklogItem:
+        """Convert database row to BacklogItem model."""
+        target_files = []
+        if row["target_files"]:
+            target_files = json.loads(row["target_files"])
+
+        tags = []
+        if row["tags"]:
+            tags = json.loads(row["tags"])
+
+        subtasks = []
+        if row["subtasks"]:
+            subtask_data = json.loads(row["subtasks"])
+            subtasks = [SubTask(**st) for st in subtask_data]
+
+        return BacklogItem(
+            id=row["id"],
+            repo_id=row["repo_id"],
+            title=row["title"],
+            description=row["description"],
+            type=BrokenDownTaskType(row["type"]),
+            estimated_size=EstimatedSize(row["estimated_size"]),
+            target_files=target_files,
+            implementation_hint=row["implementation_hint"],
+            tags=tags,
+            subtasks=subtasks,
+            task_id=row["task_id"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class ReviewDAO:
+    """DAO for Review."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    async def create(self, review: Review) -> Review:
+        """Create a new review."""
+        await self.db.connection.execute(
+            """
+            INSERT INTO reviews (
+                id, task_id, target_run_ids, executor_type, model_id, model_name,
+                status, logs, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                review.id,
+                review.task_id,
+                json.dumps(review.target_run_ids),
+                review.executor_type.value,
+                review.model_id,
+                review.model_name,
+                review.status.value,
+                json.dumps(review.logs),
+                review.created_at.isoformat(),
+            ),
+        )
+        await self.db.connection.commit()
+        return review
+
+    async def get(self, review_id: str) -> Review | None:
+        """Get a review by ID."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM reviews WHERE id = ?", (review_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+
+        # Get feedbacks
+        feedbacks = await self._get_feedbacks(review_id)
+        return self._row_to_model(row, feedbacks)
+
+    async def list_by_task(self, task_id: str) -> builtins.list[ReviewSummary]:
+        """List reviews for a task."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT r.*, COUNT(f.id) as feedback_count,
+                SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) as critical_count,
+                SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) as high_count,
+                SUM(CASE WHEN f.severity = 'medium' THEN 1 ELSE 0 END) as medium_count,
+                SUM(CASE WHEN f.severity = 'low' THEN 1 ELSE 0 END) as low_count
+            FROM reviews r
+            LEFT JOIN review_feedbacks f ON r.id = f.review_id
+            WHERE r.task_id = ?
+            GROUP BY r.id
+            ORDER BY r.created_at DESC
+            """,
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_summary(row) for row in rows]
+
+    async def update_status(
+        self,
+        review_id: str,
+        status: ReviewStatus,
+        summary: str | None = None,
+        score: float | None = None,
+        feedbacks: builtins.list[ReviewFeedbackItem] | None = None,
+        logs: builtins.list[str] | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update review status and results."""
+        updates = ["status = ?"]
+        params: builtins.list[Any] = [status.value]
+
+        if status == ReviewStatus.RUNNING:
+            updates.append("started_at = ?")
+            params.append(now_iso())
+        elif status in (ReviewStatus.SUCCEEDED, ReviewStatus.FAILED):
+            updates.append("completed_at = ?")
+            params.append(now_iso())
+
+        if summary is not None:
+            updates.append("overall_summary = ?")
+            params.append(summary)
+        if score is not None:
+            updates.append("overall_score = ?")
+            params.append(score)
+        if logs is not None:
+            updates.append("logs = ?")
+            params.append(json.dumps(logs))
+        if error is not None:
+            updates.append("error = ?")
+            params.append(error)
+
+        params.append(review_id)
+
+        await self.db.connection.execute(
+            f"UPDATE reviews SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+
+        # Save feedbacks if provided
+        if feedbacks is not None:
+            # Clear existing feedbacks
+            await self.db.connection.execute(
+                "DELETE FROM review_feedbacks WHERE review_id = ?",
+                (review_id,),
+            )
+            # Insert new feedbacks
+            for fb in feedbacks:
+                await self.db.connection.execute(
+                    """
+                    INSERT INTO review_feedbacks (
+                        id, review_id, file_path, line_start, line_end,
+                        severity, category, title, description, suggestion, code_snippet
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        fb.id,
+                        review_id,
+                        fb.file_path,
+                        fb.line_start,
+                        fb.line_end,
+                        fb.severity.value,
+                        fb.category.value,
+                        fb.title,
+                        fb.description,
+                        fb.suggestion,
+                        fb.code_snippet,
+                    ),
+                )
+
+        await self.db.connection.commit()
+
+    async def _get_feedbacks(self, review_id: str) -> builtins.list[ReviewFeedbackItem]:
+        """Get feedbacks for a review."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM review_feedbacks WHERE review_id = ? ORDER BY severity",
+            (review_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            ReviewFeedbackItem(
+                id=row["id"],
+                file_path=row["file_path"],
+                line_start=row["line_start"],
+                line_end=row["line_end"],
+                severity=ReviewSeverity(row["severity"]),
+                category=ReviewCategory(row["category"]),
+                title=row["title"],
+                description=row["description"],
+                suggestion=row["suggestion"],
+                code_snippet=row["code_snippet"],
+            )
+            for row in rows
+        ]
+
+    def _row_to_model(self, row: Any, feedbacks: builtins.list[ReviewFeedbackItem]) -> Review:
+        """Convert database row to Review model."""
+        target_run_ids = json.loads(row["target_run_ids"]) if row["target_run_ids"] else []
+        logs = json.loads(row["logs"]) if row["logs"] else []
+
+        return Review(
+            id=row["id"],
+            task_id=row["task_id"],
+            target_run_ids=target_run_ids,
+            executor_type=ExecutorType(row["executor_type"]),
+            model_id=row["model_id"],
+            model_name=row["model_name"],
+            status=ReviewStatus(row["status"]),
+            overall_summary=row["overall_summary"],
+            overall_score=row["overall_score"],
+            feedbacks=feedbacks,
+            logs=logs,
+            error=row["error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            ),
+        )
+
+    def _row_to_summary(self, row: Any) -> ReviewSummary:
+        """Convert database row to ReviewSummary model."""
+        return ReviewSummary(
+            id=row["id"],
+            task_id=row["task_id"],
+            status=ReviewStatus(row["status"]),
+            executor_type=ExecutorType(row["executor_type"]),
+            feedback_count=row["feedback_count"] or 0,
+            critical_count=row["critical_count"] or 0,
+            high_count=row["high_count"] or 0,
+            medium_count=row["medium_count"] or 0,
+            low_count=row["low_count"] or 0,
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    async def get_reviewed_run_ids(self, run_ids: builtins.list[str]) -> set[str]:
+        """Get the set of run IDs that have been reviewed.
+
+        Args:
+            run_ids: List of run IDs to check.
+
+        Returns:
+            Set of run IDs that have completed reviews.
+        """
+        if not run_ids:
+            return set()
+
+        # Get all reviews that have succeeded
+        cursor = await self.db.connection.execute(
+            "SELECT target_run_ids FROM reviews WHERE status = 'succeeded'"
+        )
+        rows = await cursor.fetchall()
+
+        reviewed_run_ids: set[str] = set()
+        run_ids_set = set(run_ids)
+        for row in rows:
+            target_ids = json.loads(row["target_run_ids"]) if row["target_run_ids"] else []
+            for target_id in target_ids:
+                if target_id in run_ids_set:
+                    reviewed_run_ids.add(target_id)
+
+        return reviewed_run_ids
+
+
+class AgenticRunDAO:
+    """DAO for AgenticRun (agentic execution state)."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    async def create(self, state: AgenticState) -> AgenticState:
+        """Create a new agentic run record."""
+        await self.db.connection.execute(
+            """
+            INSERT INTO agentic_runs (
+                id, task_id, mode, phase, iteration, ci_iterations, review_iterations,
+                started_at, last_activity, pr_number, current_sha, last_ci_result,
+                last_review_score, error, human_approved
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                state.id,
+                state.task_id,
+                state.mode.value,
+                state.phase.value,
+                state.iteration,
+                state.ci_iterations,
+                state.review_iterations,
+                state.started_at.isoformat(),
+                state.last_activity.isoformat(),
+                state.pr_number,
+                state.current_sha,
+                json.dumps(state.last_ci_result.model_dump()) if state.last_ci_result else None,
+                state.last_review_score,
+                state.error,
+                1 if state.human_approved else 0,
+            ),
+        )
+        await self.db.connection.commit()
+        return state
+
+    async def get(self, id: str) -> AgenticState | None:
+        """Get an agentic run by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM agentic_runs WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_task_id(self, task_id: str) -> AgenticState | None:
+        """Get the latest agentic run for a task."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM agentic_runs
+            WHERE task_id = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_by_pr_number(self, pr_number: int) -> AgenticState | None:
+        """Get an agentic run by PR number."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM agentic_runs WHERE pr_number = ? ORDER BY started_at DESC LIMIT 1",
+            (pr_number,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def update(self, state: AgenticState) -> None:
+        """Update an agentic run record."""
+        await self.db.connection.execute(
+            """
+            UPDATE agentic_runs SET
+                mode = ?, phase = ?, iteration = ?, ci_iterations = ?, review_iterations = ?,
+                last_activity = ?, pr_number = ?, current_sha = ?, last_ci_result = ?,
+                last_review_score = ?, error = ?, human_approved = ?
+            WHERE id = ?
+            """,
+            (
+                state.mode.value,
+                state.phase.value,
+                state.iteration,
+                state.ci_iterations,
+                state.review_iterations,
+                state.last_activity.isoformat(),
+                state.pr_number,
+                state.current_sha,
+                json.dumps(state.last_ci_result.model_dump()) if state.last_ci_result else None,
+                state.last_review_score,
+                state.error,
+                1 if state.human_approved else 0,
+                state.id,
+            ),
+        )
+        await self.db.connection.commit()
+
+    async def list_active(self) -> builtins.list[AgenticState]:
+        """List all active (non-completed, non-failed) agentic runs."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM agentic_runs
+            WHERE phase NOT IN ('completed', 'failed')
+            ORDER BY started_at DESC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    def _row_to_model(self, row: Any) -> AgenticState:
+        """Convert database row to AgenticState model."""
+        from tazuna_api.domain.models import CIResult
+
+        last_ci_result = None
+        if row["last_ci_result"]:
+            ci_data = json.loads(row["last_ci_result"])
+            last_ci_result = CIResult(**ci_data)
+
+        return AgenticState(
+            id=row["id"],
+            task_id=row["task_id"],
+            mode=CodingMode(row["mode"]),
+            phase=AgenticPhase(row["phase"]),
+            iteration=row["iteration"],
+            ci_iterations=row["ci_iterations"],
+            review_iterations=row["review_iterations"],
+            started_at=datetime.fromisoformat(row["started_at"]),
+            last_activity=datetime.fromisoformat(row["last_activity"]),
+            pr_number=row["pr_number"],
+            current_sha=row["current_sha"],
+            last_ci_result=last_ci_result,
+            last_review_score=row["last_review_score"],
+            error=row["error"],
+            human_approved=bool(row["human_approved"]),
+        )
+
+
+class CICheckDAO:
+    """DAO for CICheck."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        task_id: str,
+        pr_id: str,
+        status: str,
+        workflow_run_id: int | None = None,
+        sha: str | None = None,
+        jobs: dict[str, str] | None = None,
+        failed_jobs: builtins.list[CIJobResult] | None = None,
+    ) -> CICheck:
+        """Create a new CI check record."""
+        id = generate_id()
+        now = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO ci_checks (
+                id, task_id, pr_id, status, workflow_run_id, sha,
+                jobs, failed_jobs, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                task_id,
+                pr_id,
+                status,
+                workflow_run_id,
+                sha,
+                json.dumps(jobs or {}),
+                json.dumps([fj.model_dump() for fj in (failed_jobs or [])]),
+                now,
+                now,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return CICheck(
+            id=id,
+            task_id=task_id,
+            pr_id=pr_id,
+            status=status,
+            workflow_run_id=workflow_run_id,
+            sha=sha,
+            jobs=jobs or {},
+            failed_jobs=failed_jobs or [],
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> CICheck | None:
+        """Get a CI check by ID."""
+        cursor = await self.db.connection.execute("SELECT * FROM ci_checks WHERE id = ?", (id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def get_latest_by_pr_id(self, pr_id: str) -> CICheck | None:
+        """Get the latest CI check for a PR."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM ci_checks WHERE pr_id = ? ORDER BY created_at DESC LIMIT 1",
+            (pr_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list_by_task_id(self, task_id: str) -> builtins.list[CICheck]:
+        """List all CI checks for a task."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM ci_checks WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update(
+        self,
+        id: str,
+        status: str,
+        workflow_run_id: int | None = None,
+        sha: str | None = None,
+        jobs: dict[str, str] | None = None,
+        failed_jobs: builtins.list[CIJobResult] | None = None,
+    ) -> CICheck | None:
+        """Update a CI check record."""
+        updates = ["status = ?", "updated_at = ?"]
+        params: builtins.list[Any] = [status, now_iso()]
+
+        if workflow_run_id is not None:
+            updates.append("workflow_run_id = ?")
+            params.append(workflow_run_id)
+        if sha is not None:
+            updates.append("sha = ?")
+            params.append(sha)
+        if jobs is not None:
+            updates.append("jobs = ?")
+            params.append(json.dumps(jobs))
+        if failed_jobs is not None:
+            updates.append("failed_jobs = ?")
+            params.append(json.dumps([fj.model_dump() for fj in failed_jobs]))
+
+        params.append(id)
+
+        await self.db.connection.execute(
+            f"UPDATE ci_checks SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.connection.commit()
+
+        return await self.get(id)
+
+    def _row_to_model(self, row: Any) -> CICheck:
+        """Convert database row to CICheck model."""
+        jobs = json.loads(row["jobs"]) if row["jobs"] else {}
+        failed_jobs_data = json.loads(row["failed_jobs"]) if row["failed_jobs"] else []
+        failed_jobs = [CIJobResult(**fj) for fj in failed_jobs_data]
+
+        return CICheck(
+            id=row["id"],
+            task_id=row["task_id"],
+            pr_id=row["pr_id"],
+            status=row["status"],
+            workflow_run_id=row["workflow_run_id"],
+            sha=row["sha"],
+            jobs=jobs,
+            failed_jobs=failed_jobs,
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
