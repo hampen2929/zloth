@@ -223,6 +223,7 @@ class RunSummary(BaseModel):
     model_name: str | None
     provider: Provider | None
     executor_type: ExecutorType
+    branch_number: int | None = None
     working_branch: str | None = None
     status: RunStatus
     created_at: datetime
@@ -248,6 +249,7 @@ class Run(BaseModel):
     model_name: str | None
     provider: Provider | None
     executor_type: ExecutorType = ExecutorType.PATCH_AGENT
+    branch_number: int | None = None
     working_branch: str | None = None
     worktree_path: str | None = None
     session_id: str | None = None  # CLI session ID for conversation persistence

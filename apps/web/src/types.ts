@@ -96,6 +96,7 @@ export interface RunSummary {
   model_name: string | null;
   provider: Provider | null;
   executor_type: ExecutorType;
+  branch_number: number | null;
   working_branch: string | null;
   status: RunStatus;
   created_at: string;
@@ -136,6 +137,7 @@ export interface Run {
   model_name: string | null;
   provider: Provider | null;
   executor_type: ExecutorType;
+  branch_number: number | null;
   working_branch: string | null;
   worktree_path: string | null;
   instruction: string;

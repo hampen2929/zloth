@@ -471,6 +471,28 @@ class RunDAO:
     def __init__(self, db: Database):
         self.db = db
 
+    async def get_next_branch_number(self, task_id: str) -> int:
+        """Get the next branch number for a task.
+
+        Branch numbers are sequential within a task, starting from 1.
+
+        Args:
+            task_id: Task ID.
+
+        Returns:
+            Next branch number (1 for first run, 2 for second, etc.).
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT MAX(branch_number) as max_num FROM runs
+            WHERE task_id = ? AND branch_number IS NOT NULL
+            """,
+            (task_id,),
+        )
+        row = await cursor.fetchone()
+        max_num = row["max_num"] if row and row["max_num"] is not None else 0
+        return max_num + 1
+
     async def create(
         self,
         task_id: str,
@@ -481,6 +503,7 @@ class RunDAO:
         model_name: str | None = None,
         provider: Provider | None = None,
         base_ref: str | None = None,
+        branch_number: int | None = None,
         working_branch: str | None = None,
         worktree_path: str | None = None,
         session_id: str | None = None,
@@ -496,6 +519,7 @@ class RunDAO:
             model_name: Model name (required for patch_agent).
             provider: Model provider (required for patch_agent).
             base_ref: Base git ref.
+            branch_number: Sequential branch number within task.
             working_branch: Git branch for worktree (claude_code).
             worktree_path: Filesystem path to worktree (claude_code).
             session_id: CLI session ID for conversation persistence.
@@ -510,10 +534,10 @@ class RunDAO:
             """
             INSERT INTO runs (
                 id, task_id, message_id, model_id, model_name, provider, executor_type,
-                working_branch, worktree_path, session_id, instruction,
+                branch_number, working_branch, worktree_path, session_id, instruction,
                 base_ref, status, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 id,
@@ -523,6 +547,7 @@ class RunDAO:
                 model_name,
                 provider.value if provider else None,
                 executor_type.value,
+                branch_number,
                 working_branch,
                 worktree_path,
                 session_id,
@@ -542,6 +567,7 @@ class RunDAO:
             model_name=model_name,
             provider=provider,
             executor_type=executor_type,
+            branch_number=branch_number,
             working_branch=working_branch,
             worktree_path=worktree_path,
             session_id=session_id,
@@ -743,6 +769,9 @@ class RunDAO:
         # Handle message_id for backward compatibility
         message_id = row["message_id"] if "message_id" in row.keys() else None
 
+        # Handle branch_number with backward compatibility
+        branch_number = row["branch_number"] if "branch_number" in row.keys() else None
+
         return Run(
             id=row["id"],
             task_id=row["task_id"],
@@ -751,6 +780,7 @@ class RunDAO:
             model_name=row["model_name"],
             provider=provider,
             executor_type=executor_type,
+            branch_number=branch_number,
             working_branch=row["working_branch"],
             worktree_path=row["worktree_path"],
             session_id=row["session_id"],

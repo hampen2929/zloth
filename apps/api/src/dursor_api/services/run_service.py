@@ -301,6 +301,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         )
 
         worktree_info = None
+        branch_number: int | None = None
 
         if existing_run and existing_run.worktree_path:
             # Verify worktree is still valid (exists and is a valid git repo)
@@ -331,6 +332,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                             base_branch=existing_run.base_ref or base_ref,
                             created_at=existing_run.created_at,
                         )
+                        branch_number = existing_run.branch_number
                         logger.info(f"Reusing existing worktree: {worktree_path}")
                 else:
                     # Reuse existing worktree (no default-base freshness check)
@@ -340,9 +342,14 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                         base_branch=existing_run.base_ref or base_ref,
                         created_at=existing_run.created_at,
                     )
+                    branch_number = existing_run.branch_number
                     logger.info(f"Reusing existing worktree: {worktree_path}")
             else:
                 logger.warning(f"Worktree invalid or broken, will create new: {worktree_path}")
+
+        # Get next branch number if not reusing
+        if branch_number is None:
+            branch_number = await self.run_dao.get_next_branch_number(task_id)
 
         # Create the run record
         run = await self.run_dao.create(
@@ -351,6 +358,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             executor_type=executor_type,
             message_id=message_id,
             base_ref=base_ref,
+            branch_number=branch_number,
         )
 
         if not worktree_info:
@@ -975,11 +983,11 @@ The following files have merge conflicts that MUST be resolved before proceeding
 
 ### Conflict Marker Format:
 ```
-<<<<<<< HEAD
+<​<<<<<< HEAD
 (your local changes)
-=======
+==​=====
 (incoming changes from remote)
->>>>>>> branch-name
+>>​>>>>> branch-name
 ```
 
 After resolving ALL conflicts, proceed with the original task below.

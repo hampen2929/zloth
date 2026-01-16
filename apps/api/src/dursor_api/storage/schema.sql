@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS runs (
     model_name TEXT,                 -- denormalized for env model support
     provider TEXT,                   -- denormalized for env model support
     executor_type TEXT NOT NULL DEFAULT 'patch_agent',  -- patch_agent, claude_code
+    branch_number INTEGER,           -- sequential branch number within task (1, 2, 3...)
     working_branch TEXT,             -- git branch for worktree (claude_code)
     worktree_path TEXT,              -- filesystem path to worktree (claude_code)
     session_id TEXT,                 -- CLI session ID for conversation persistence
