@@ -1810,25 +1810,14 @@ class CICheckDAO:
         return self._row_to_model(row)
 
     async def list_by_task_id(self, task_id: str) -> builtins.list[CICheck]:
-        """List all CI checks for a task, deduplicated by SHA.
+        """List all CI checks for a task.
 
-        Returns only the latest CI check for each unique SHA to avoid
-        duplicate entries in the UI.
+        Note: Deduplication by SHA is handled in the frontend to avoid
+        complex SQL that may cause issues in some scenarios.
         """
         cursor = await self.db.connection.execute(
-            """
-            SELECT c1.*
-            FROM ci_checks c1
-            INNER JOIN (
-                SELECT COALESCE(sha, id) as sha_key, MAX(updated_at) as max_updated
-                FROM ci_checks
-                WHERE task_id = ?
-                GROUP BY COALESCE(sha, id)
-            ) c2 ON COALESCE(c1.sha, c1.id) = c2.sha_key AND c1.updated_at = c2.max_updated
-            WHERE c1.task_id = ?
-            ORDER BY c1.created_at DESC
-            """,
-            (task_id, task_id),
+            "SELECT * FROM ci_checks WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
         )
         rows = await cursor.fetchall()
         return [self._row_to_model(row) for row in rows]
