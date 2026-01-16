@@ -289,6 +289,14 @@ class TaskDAO:
         )
         await self.db.connection.commit()
 
+    async def update_title(self, id: str, title: str) -> None:
+        """Update the task's title."""
+        await self.db.connection.execute(
+            "UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
     async def list_with_aggregates(
         self, repo_id: str | None = None
     ) -> builtins.list[dict[str, Any]]:

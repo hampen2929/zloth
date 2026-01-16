@@ -1239,6 +1239,8 @@ IMPORTANT INSTRUCTIONS:
             )
             # Update database
             await self.pr_dao.update_title_and_body(pr_id, new_title, new_description)
+            # Also update Task title to match PR title
+            await self.task_dao.update_title(task_id, new_title)
         elif mode == PRUpdateMode.TITLE and latest_run:
             # Generate title only
             new_title = await self._generate_title(
@@ -1255,6 +1257,8 @@ IMPORTANT INSTRUCTIONS:
             )
             # Update database
             await self.pr_dao.update_title(pr_id, new_title)
+            # Also update Task title to match PR title
+            await self.task_dao.update_title(task_id, new_title)
         else:
             # Generate description only (mode == DESCRIPTION or no latest_run)
             new_description = await self._generate_description(
