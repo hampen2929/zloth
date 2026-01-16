@@ -97,7 +97,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "dursor_api.main:app",
+        "tazuna_api.main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
