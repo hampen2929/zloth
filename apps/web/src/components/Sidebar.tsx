@@ -19,6 +19,7 @@ import {
   ViewColumnsIcon,
   CogIcon,
   EyeIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 
 type SortOption = 'newest' | 'oldest' | 'alphabetical';
@@ -35,15 +36,15 @@ export default function Sidebar() {
 
   const currentTaskId = pathname?.match(/\/tasks\/(.+)/)?.[1];
 
-  // Filter and sort tasks - only show in_progress and in_review tasks
+  // Filter and sort tasks - only show in_progress, gating, and in_review tasks
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
 
     let result = [...tasks];
 
-    // Filter by kanban status - only show in_progress and in_review tasks
+    // Filter by kanban status - only show in_progress, gating, and in_review tasks
     result = result.filter(
-      (task) => task.kanban_status === 'in_progress' || task.kanban_status === 'in_review'
+      (task) => task.kanban_status === 'in_progress' || task.kanban_status === 'gating' || task.kanban_status === 'in_review'
     );
 
     // Filter by search query
@@ -268,7 +269,7 @@ export default function Sidebar() {
                 <>
                   <CogIcon className="w-8 h-8 text-gray-700 mb-2" />
                   <p className="text-gray-500 text-sm">No active tasks</p>
-                  <p className="text-gray-600 text-xs mt-1">Tasks in progress or review will appear here</p>
+                  <p className="text-gray-600 text-xs mt-1">Tasks in progress, gating, or review will appear here</p>
                 </>
               )}
             </div>
@@ -290,6 +291,8 @@ export default function Sidebar() {
                     {/* Status indicator */}
                     {task.kanban_status === 'in_progress' ? (
                       <CogIcon className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0 animate-spin" style={{ animationDuration: '3s' }} />
+                    ) : task.kanban_status === 'gating' ? (
+                      <ClockIcon className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
                     ) : task.kanban_status === 'in_review' ? (
                       <EyeIcon className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
                     ) : null}
@@ -304,6 +307,11 @@ export default function Sidebar() {
                     {task.kanban_status === 'in_progress' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-400">
                         Running
+                      </span>
+                    )}
+                    {task.kanban_status === 'gating' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-900/50 text-orange-400">
+                        Gating
                       </span>
                     )}
                     {task.kanban_status === 'in_review' && (

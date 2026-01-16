@@ -10,6 +10,7 @@ from dursor_api.dependencies import (
     get_pr_dao,
     get_run_dao,
     get_task_dao,
+    get_user_preferences_dao,
 )
 from dursor_api.domain.enums import CodingMode, TaskBaseKanbanStatus, TaskKanbanStatus
 from dursor_api.domain.models import (
@@ -28,7 +29,14 @@ from dursor_api.domain.models import (
     TaskCreate,
     TaskDetail,
 )
-from dursor_api.storage.dao import PRDAO, CICheckDAO, MessageDAO, RunDAO, TaskDAO
+from dursor_api.storage.dao import (
+    PRDAO,
+    CICheckDAO,
+    MessageDAO,
+    RunDAO,
+    TaskDAO,
+    UserPreferencesDAO,
+)
 
 
 def _compute_kanban_status(
@@ -37,6 +45,8 @@ def _compute_kanban_status(
     running_count: int,
     completed_count: int,
     latest_pr_status: str | None,
+    latest_ci_status: str | None = None,
+    enable_gating_status: bool = False,
 ) -> TaskKanbanStatus:
     """Compute final kanban status.
 
@@ -55,8 +65,13 @@ def _compute_kanban_status(
     if running_count > 0:
         return TaskKanbanStatus.IN_PROGRESS
 
-    # 4. Runs exist and all completed -> InReview
+    # 4. All runs completed
     if run_count > 0 and completed_count == run_count:
+        # 4a. Gating: All runs completed + PR is open + CI is pending/null + enabled
+        if enable_gating_status and latest_pr_status == "open":
+            if latest_ci_status in ("pending", None):
+                return TaskKanbanStatus.GATING
+        # 4b. InReview: All runs completed
         return TaskKanbanStatus.IN_REVIEW
 
     # 5. Use base status (backlog/todo)
@@ -86,16 +101,22 @@ async def create_task(
 async def list_tasks(
     repo_id: str | None = None,
     task_dao: TaskDAO = Depends(get_task_dao),
+    user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
 ) -> list[Task]:
     """List tasks, optionally filtered by repo.
 
     Returns tasks with computed kanban_status based on run/PR state:
     - in_progress: if any run is currently running
+    - gating: if all runs completed, PR is open, CI is pending (when enabled)
     - in_review: if all runs are completed
     - done: if PR is merged
     - backlog/todo/archived: base status from DB
     """
     tasks_with_aggregates = await task_dao.list_with_aggregates(repo_id=repo_id)
+
+    # Fetch user preferences for gating status
+    user_prefs = await user_preferences_dao.get()
+    enable_gating_status = user_prefs.enable_gating_status if user_prefs else False
 
     result: list[Task] = []
     for task_data in tasks_with_aggregates:
@@ -105,6 +126,8 @@ async def list_tasks(
             running_count=task_data["running_count"],
             completed_count=task_data["completed_count"],
             latest_pr_status=task_data["latest_pr_status"],
+            latest_ci_status=task_data.get("latest_ci_status"),
+            enable_gating_status=enable_gating_status,
         )
 
         result.append(
