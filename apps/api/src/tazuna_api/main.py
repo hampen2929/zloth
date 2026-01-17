@@ -1,4 +1,4 @@
-"""dursor API - FastAPI application entry point."""
+"""tazuna API - FastAPI application entry point."""
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(
-    title="dursor API",
+    title="tazuna API",
     description="Multi-model parallel coding agent API",
     version="0.1.0",
     lifespan=lifespan,
@@ -86,7 +86,7 @@ async def health_check() -> dict[str, str]:
 async def root() -> dict[str, str]:
     """Root endpoint with API info."""
     return {
-        "name": "dursor API",
+        "name": "tazuna API",
         "version": "0.1.0",
         "docs": "/docs",
         "openapi": "/openapi.json",

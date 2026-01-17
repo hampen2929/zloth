@@ -1,4 +1,4 @@
-"""Enums for dursor domain models."""
+"""Enums for tazuna domain models."""
 
 from enum import Enum
 

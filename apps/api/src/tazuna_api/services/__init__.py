@@ -1,4 +1,4 @@
-"""Services for dursor API."""
+"""Services for tazuna API."""
 
 from tazuna_api.services.crypto_service import CryptoService
 from tazuna_api.services.git_service import GitService

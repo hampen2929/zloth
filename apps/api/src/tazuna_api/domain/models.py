@@ -1,4 +1,4 @@
-"""Pydantic domain models for dursor API."""
+"""Pydantic domain models for tazuna API."""
 
 from datetime import datetime
 from typing import Any
@@ -330,7 +330,7 @@ class PR(BaseModel):
 
 
 # Summary file path constant (outside Pydantic model to avoid field issues)
-SUMMARY_FILE_PATH = ".dursor-summary.md"
+SUMMARY_FILE_PATH = ".tazuna-summary.md"
 
 
 class AgentConstraints(BaseModel):
@@ -338,7 +338,7 @@ class AgentConstraints(BaseModel):
 
     This model defines constraints that are passed to AI Agents to ensure
     they only perform file editing operations, while git operations are
-    managed by dursor (orchestrator management pattern).
+    managed by tazuna (orchestrator management pattern).
     """
 
     max_files_changed: int | None = Field(None, description="Max number of files to change")

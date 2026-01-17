@@ -1,4 +1,4 @@
-"""Domain models for dursor API."""
+"""Domain models for tazuna API."""
 
 from tazuna_api.domain.enums import Provider, RunStatus
 from tazuna_api.domain.models import (

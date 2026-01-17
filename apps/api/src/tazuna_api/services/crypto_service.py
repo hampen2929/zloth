@@ -33,7 +33,7 @@ class CryptoService:
             Fernet instance.
         """
         # Use PBKDF2 to derive a proper key
-        salt = b"dursor_salt_v1"  # Fixed salt for consistency
+        salt = b"tazuna_salt_v1"  # Fixed salt for consistency
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,

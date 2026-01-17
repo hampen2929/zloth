@@ -1,8 +1,8 @@
 """Base executor interface for all CLI executors.
 
-This module defines the abstract base class for all executors in dursor,
+This module defines the abstract base class for all executors in tazuna,
 following the orchestrator management pattern where AI Agents only edit
-files and dursor manages git operations.
+files and tazuna manages git operations.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ class BaseExecutor(ABC):
     1. Only allow agents to edit files
     2. Pass constraints to agents via instructions
     3. Not perform any git commit/push operations
-    4. Return ExecutorResult with file changes for dursor to process
+    4. Return ExecutorResult with file changes for tazuna to process
 
     Git operations (commit, push, etc.) are handled by GitService after
     executor completion.

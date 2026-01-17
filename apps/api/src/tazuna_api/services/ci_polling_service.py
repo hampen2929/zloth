@@ -1,7 +1,7 @@
 """CI Polling Service for polling GitHub CI status.
 
 This service polls GitHub API to check CI status instead of relying on webhooks.
-This is useful for self-hosted dursor instances that are not exposed to the internet.
+This is useful for self-hosted tazuna instances that are not exposed to the internet.
 """
 
 import asyncio
