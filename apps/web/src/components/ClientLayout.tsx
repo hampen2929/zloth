@@ -114,7 +114,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             )}
           </button>
           <span className="ml-3 text-lg font-bold text-white">
-            <span className="text-blue-500">d</span>ursor
+            <span className="text-blue-500">t</span>azuna
           </span>
         </div>
 

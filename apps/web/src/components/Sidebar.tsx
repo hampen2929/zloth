@@ -97,7 +97,7 @@ export default function Sidebar() {
           href="/"
           className="text-xl font-bold text-white hover:text-gray-300 transition-colors inline-flex items-center gap-2"
         >
-          <span className="text-blue-500">d</span>ursor
+          <span className="text-blue-500">t</span>azuna
         </Link>
       </div>
       {/* Mobile spacing to account for mobile header */}
