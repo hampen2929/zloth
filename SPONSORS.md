@@ -1,6 +1,6 @@
 # Sponsors
 
-Thank you to all our sponsors who help make dursor possible!
+Thank you to all our sponsors who help make tazuna possible!
 
 ## Enterprise Sponsors
 
@@ -41,7 +41,7 @@ Supporters ($5+/month) are listed here.
 ## Become a Sponsor
 
 Your sponsorship helps:
-- Maintain and improve dursor
+- Maintain and improve tazuna
 - Add new features and integrations
 - Provide documentation and support
 - Keep the project open source

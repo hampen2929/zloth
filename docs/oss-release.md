@@ -1,13 +1,13 @@
-# dursor OSS公開要件
+# tazuna OSS公開要件
 
 ## 概要
 
-dursor を OSS として公開するための要件と計画をまとめたドキュメント。
+tazuna を OSS として公開するための要件と計画をまとめたドキュメント。
 
 ### 背景
 
 - 類似プロジェクト（AI coding agent）がパブリックリポジトリで増加
-- dursor の差別化ポイントを活かしてOSS公開を決定
+- tazuna の差別化ポイントを活かしてOSS公開を決定
 - 将来的な SaaS オプションも視野に入れる
 
 ---
@@ -150,14 +150,14 @@ Discord サーバー内のスポンサー限定チャンネル：
 ### Open Core モデル設計
 
 ```
-dursor (Apache 2.0 - OSS)
+tazuna (Apache 2.0 - OSS)
 ├── Core機能（無料）
 │   ├── マルチモデル並列実行
 │   ├── セルフホスト
 │   ├── 基本 UI
 │   └── GitHub PR 連携
 │
-└── dursor Cloud（有料 SaaS）- 将来検討
+└── tazuna Cloud（有料 SaaS）- 将来検討
     ├── マネージドホスティング
     ├── チーム管理機能
     ├── SSO/SAML 認証
@@ -244,7 +244,7 @@ dursor (Apache 2.0 - OSS)
 | Continue.dev | ~20k | IDE 拡張 |
 | SWE-agent | ~15k | 研究発 |
 
-### dursor の差別化ポイント
+### tazuna の差別化ポイント
 
 1. **マルチモデル並列実行**（ユニーク）
 2. **Web UI + セルフホスト**
