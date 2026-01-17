@@ -15,6 +15,10 @@ import {
   ClockIcon,
   CodeBracketIcon,
   CpuChipIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  StarIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 
 type PeriodOption = '1d' | '7d' | '30d' | '90d' | 'all';
@@ -34,11 +38,52 @@ const EXECUTOR_LABELS: Record<ExecutorType, string> = {
   gemini_cli: 'Gemini CLI',
 };
 
+// Alert thresholds
+const THRESHOLDS = {
+  mergeRate: { warning: 60, critical: 40 },
+  runSuccessRate: { warning: 75, critical: 50 },
+  cycleTimeHours: { warning: 12, critical: 24 },
+  firstTimeSuccess: { warning: 30, critical: 15 },
+};
+
+function getAlertLevel(
+  value: number | null,
+  threshold: { warning: number; critical: number },
+  higherIsBetter = true
+): 'normal' | 'warning' | 'critical' {
+  if (value === null) return 'normal';
+  if (higherIsBetter) {
+    if (value < threshold.critical) return 'critical';
+    if (value < threshold.warning) return 'warning';
+  } else {
+    if (value > threshold.critical) return 'critical';
+    if (value > threshold.warning) return 'warning';
+  }
+  return 'normal';
+}
+
+function AlertBadge({ level }: { level: 'normal' | 'warning' | 'critical' }) {
+  if (level === 'normal') return null;
+  return (
+    <span
+      className={`ml-2 px-1.5 py-0.5 text-xs rounded ${
+        level === 'critical'
+          ? 'bg-red-500/20 text-red-400'
+          : 'bg-yellow-500/20 text-yellow-400'
+      }`}
+    >
+      {level === 'critical' ? 'Critical' : 'Warning'}
+    </span>
+  );
+}
+
 export default function MetricsPage() {
   const [metrics, setMetrics] = useState<MetricsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<PeriodOption>('30d');
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
+  const [showExploratory, setShowExploratory] = useState(false);
 
   const fetchMetrics = useCallback(async () => {
     setLoading(true);
@@ -71,6 +116,30 @@ export default function MetricsPage() {
     return num.toFixed(decimals);
   };
 
+  // Calculate alert levels
+  const alerts = metrics
+    ? {
+        mergeRate: getAlertLevel(metrics.summary.merge_rate, THRESHOLDS.mergeRate),
+        runSuccess: getAlertLevel(metrics.summary.run_success_rate, THRESHOLDS.runSuccessRate),
+        cycleTime: getAlertLevel(
+          metrics.summary.avg_cycle_time_hours,
+          THRESHOLDS.cycleTimeHours,
+          false
+        ),
+        firstTimeSuccess: getAlertLevel(
+          metrics.productivity_metrics.first_time_success_rate,
+          THRESHOLDS.firstTimeSuccess
+        ),
+      }
+    : null;
+
+  const hasAlerts =
+    alerts &&
+    (alerts.mergeRate !== 'normal' ||
+      alerts.runSuccess !== 'normal' ||
+      alerts.cycleTime !== 'normal' ||
+      alerts.firstTimeSuccess !== 'normal');
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* Header */}
@@ -80,9 +149,14 @@ export default function MetricsPage() {
             <div className="flex items-center gap-3">
               <ChartBarIcon className="h-6 w-6 text-blue-400" />
               <h1 className="text-xl font-semibold">Development Metrics</h1>
+              {hasAlerts && (
+                <span className="flex items-center gap-1 px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs rounded">
+                  <ExclamationTriangleIcon className="h-3.5 w-3.5" />
+                  Alerts
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-4">
-              {/* Period Selector */}
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-400">Period:</span>
                 <select
@@ -97,7 +171,6 @@ export default function MetricsPage() {
                   ))}
                 </select>
               </div>
-              {/* Refresh Button */}
               <button
                 onClick={fetchMetrics}
                 disabled={loading}
@@ -119,37 +192,181 @@ export default function MetricsPage() {
           </div>
         )}
 
-        {/* Headline Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <MetricCard
-            title="Merge Rate"
-            value={metrics ? `${metrics.summary.merge_rate.toFixed(1)}%` : '-'}
-            change={metrics?.summary.merge_rate_change}
-            loading={loading}
-          />
-          <MetricCard
-            title="Cycle Time"
-            value={metrics ? formatDuration(metrics.summary.avg_cycle_time_hours) : '-'}
-            change={metrics?.summary.cycle_time_change}
-            loading={loading}
-          />
-          <MetricCard
-            title="Throughput"
-            value={metrics ? formatNumber(metrics.summary.throughput) : '-'}
-            unit="PRs/week"
-            change={metrics?.summary.throughput_change}
-            loading={loading}
-          />
-          <MetricCard
-            title="Run Success Rate"
-            value={metrics ? `${metrics.summary.run_success_rate.toFixed(1)}%` : '-'}
-            loading={loading}
-          />
+        {/* ============================================ */}
+        {/* NORTH STAR - Throughput */}
+        {/* ============================================ */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <StarIcon className="h-5 w-5 text-yellow-400" />
+            <span className="text-sm font-medium text-yellow-400">NORTH STAR</span>
+            <span className="text-xs text-gray-500">- 価値の定義</span>
+          </div>
+          <div className="bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-700/50 rounded-xl p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-gray-400 mb-1">Throughput</div>
+                <div className="flex items-baseline gap-3">
+                  <span className="text-5xl font-bold text-white">
+                    {metrics ? formatNumber(metrics.summary.throughput) : '-'}
+                  </span>
+                  <span className="text-xl text-gray-400">PRs/week</span>
+                </div>
+                {metrics?.summary.throughput_change !== null &&
+                  metrics?.summary.throughput_change !== undefined && (
+                    <div
+                      className={`mt-2 text-sm ${
+                        metrics.summary.throughput_change > 0
+                          ? 'text-green-400'
+                          : metrics.summary.throughput_change < 0
+                            ? 'text-red-400'
+                            : 'text-gray-400'
+                      }`}
+                    >
+                      {metrics.summary.throughput_change > 0 ? '+' : ''}
+                      {metrics.summary.throughput_change.toFixed(1)} vs previous period
+                    </div>
+                  )}
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-gray-500 mb-2">Realtime</div>
+                <div className="flex items-center gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-400">
+                      {metrics?.realtime.prs_merged_today ?? '-'}
+                    </div>
+                    <div className="text-xs text-gray-500">Merged Today</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-400">
+                      {metrics?.realtime.open_prs ?? '-'}
+                    </div>
+                    <div className="text-xs text-gray-500">Open PRs</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Realtime Stats */}
+        {/* ============================================ */}
+        {/* CORE KPI - 6 Metrics */}
+        {/* ============================================ */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <ChartBarIcon className="h-5 w-5 text-blue-400" />
+            <span className="text-sm font-medium text-blue-400">CORE KPI</span>
+            <span className="text-xs text-gray-500">- 改善の意思決定（6指標）</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {/* 1. Merge Rate */}
+            <div
+              className={`rounded-lg border p-4 ${
+                alerts?.mergeRate === 'critical'
+                  ? 'border-red-500/50 bg-red-900/20'
+                  : alerts?.mergeRate === 'warning'
+                    ? 'border-yellow-500/50 bg-yellow-900/20'
+                    : 'border-gray-700 bg-gray-800'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Merge Rate</span>
+                <AlertBadge level={alerts?.mergeRate ?? 'normal'} />
+              </div>
+              <div className="text-2xl font-bold">
+                {metrics ? `${metrics.summary.merge_rate.toFixed(1)}%` : '-'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">↑ Higher is better</div>
+            </div>
+
+            {/* 2. Cycle Time */}
+            <div
+              className={`rounded-lg border p-4 ${
+                alerts?.cycleTime === 'critical'
+                  ? 'border-red-500/50 bg-red-900/20'
+                  : alerts?.cycleTime === 'warning'
+                    ? 'border-yellow-500/50 bg-yellow-900/20'
+                    : 'border-gray-700 bg-gray-800'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Cycle Time</span>
+                <AlertBadge level={alerts?.cycleTime ?? 'normal'} />
+              </div>
+              <div className="text-2xl font-bold">
+                {metrics ? formatDuration(metrics.summary.avg_cycle_time_hours) : '-'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">↓ Lower is better</div>
+            </div>
+
+            {/* 3. Run Success Rate */}
+            <div
+              className={`rounded-lg border p-4 ${
+                alerts?.runSuccess === 'critical'
+                  ? 'border-red-500/50 bg-red-900/20'
+                  : alerts?.runSuccess === 'warning'
+                    ? 'border-yellow-500/50 bg-yellow-900/20'
+                    : 'border-gray-700 bg-gray-800'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Run Success</span>
+                <AlertBadge level={alerts?.runSuccess ?? 'normal'} />
+              </div>
+              <div className="text-2xl font-bold">
+                {metrics ? `${metrics.summary.run_success_rate.toFixed(1)}%` : '-'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">↑ Higher is better</div>
+            </div>
+
+            {/* 4. First-Time Success Rate */}
+            <div
+              className={`rounded-lg border p-4 ${
+                alerts?.firstTimeSuccess === 'critical'
+                  ? 'border-red-500/50 bg-red-900/20'
+                  : alerts?.firstTimeSuccess === 'warning'
+                    ? 'border-yellow-500/50 bg-yellow-900/20'
+                    : 'border-gray-700 bg-gray-800'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">First-Time Success</span>
+                <AlertBadge level={alerts?.firstTimeSuccess ?? 'normal'} />
+              </div>
+              <div className="text-2xl font-bold">
+                {metrics
+                  ? `${metrics.productivity_metrics.first_time_success_rate.toFixed(1)}%`
+                  : '-'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">↑ Higher is better</div>
+            </div>
+
+            {/* 5. Agentic Completion Rate */}
+            <div className="rounded-lg border border-gray-700 bg-gray-800 p-4">
+              <div className="text-xs text-gray-400 mb-1">Agentic Completion</div>
+              <div className="text-2xl font-bold">
+                {metrics
+                  ? `${metrics.agentic_metrics.agentic_completion_rate.toFixed(1)}%`
+                  : '-'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">↑ Higher is better</div>
+            </div>
+
+            {/* 6. Messages per Task */}
+            <div className="rounded-lg border border-gray-700 bg-gray-800 p-4">
+              <div className="text-xs text-gray-400 mb-1">Messages/Task</div>
+              <div className="text-2xl font-bold">
+                {metrics
+                  ? metrics.conversation_metrics.avg_messages_per_task.toFixed(1)
+                  : '-'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">↓ Lower is better</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Realtime Activity */}
         {metrics && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div className="flex items-center gap-3 px-4 py-3 bg-gray-800 rounded-lg border border-gray-700">
               <div className="p-2 bg-blue-500/20 rounded-lg">
                 <CommandLineIcon className="h-5 w-5 text-blue-400" />
@@ -173,8 +390,8 @@ export default function MetricsPage() {
                 <CodeBracketIcon className="h-5 w-5 text-purple-400" />
               </div>
               <div>
-                <div className="text-2xl font-bold">{metrics.realtime.open_prs}</div>
-                <div className="text-xs text-gray-400">Open PRs</div>
+                <div className="text-2xl font-bold">{metrics.realtime.active_tasks}</div>
+                <div className="text-xs text-gray-400">Active Tasks</div>
               </div>
             </div>
             <div className="flex items-center gap-3 px-4 py-3 bg-gray-800 rounded-lg border border-gray-700">
@@ -182,67 +399,190 @@ export default function MetricsPage() {
                 <CheckCircleIcon className="h-5 w-5 text-green-400" />
               </div>
               <div>
-                <div className="text-2xl font-bold">{metrics.realtime.prs_merged_today}</div>
-                <div className="text-xs text-gray-400">Merged Today</div>
+                <div className="text-2xl font-bold">{metrics.realtime.runs_completed_today}</div>
+                <div className="text-xs text-gray-400">Runs Today</div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* PR Metrics */}
-          <MetricsSection title="Pull Requests">
-            {metrics && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-2xl font-bold text-white">
-                      {metrics.pr_metrics.total_prs}
-                    </div>
-                    <div className="text-xs text-gray-400">Total PRs</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-2xl font-bold text-green-400">
-                      {metrics.pr_metrics.merged_prs}
-                    </div>
-                    <div className="text-xs text-gray-400">Merged</div>
-                  </div>
-                </div>
-                <ProgressBar
-                  label="Merged"
-                  value={metrics.pr_metrics.merged_prs}
-                  total={metrics.pr_metrics.total_prs}
-                  color="green"
-                />
-                <ProgressBar
-                  label="Open"
-                  value={metrics.pr_metrics.open_prs}
-                  total={metrics.pr_metrics.total_prs}
-                  color="blue"
-                />
-                <ProgressBar
-                  label="Closed"
-                  value={metrics.pr_metrics.closed_prs}
-                  total={metrics.pr_metrics.total_prs}
-                  color="red"
-                />
-                {metrics.pr_metrics.avg_time_to_merge_hours !== null && (
-                  <div className="mt-4 text-sm text-gray-400">
-                    Avg Time to Merge:{' '}
-                    <span className="text-white">
-                      {formatDuration(metrics.pr_metrics.avg_time_to_merge_hours)}
-                    </span>
-                  </div>
-                )}
-              </div>
+        {/* ============================================ */}
+        {/* DIAGNOSTIC KPI - Collapsible */}
+        {/* ============================================ */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowDiagnostic(!showDiagnostic)}
+            className="flex items-center gap-2 mb-3 hover:opacity-80 transition-opacity"
+          >
+            {showDiagnostic ? (
+              <ChevronDownIcon className="h-5 w-5 text-orange-400" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-orange-400" />
             )}
-          </MetricsSection>
+            <span className="text-sm font-medium text-orange-400">DIAGNOSTIC KPI</span>
+            <span className="text-xs text-gray-500">- 原因分析（7指標）</span>
+          </button>
 
-          {/* Run Metrics */}
-          <MetricsSection title="Run Execution">
-            {metrics && (
-              <div className="space-y-4">
+          {showDiagnostic && metrics && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* 1. Time to Merge */}
+              <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                <div className="text-xs text-gray-400 mb-1">Time to Merge</div>
+                <div className="text-xl font-bold">
+                  {formatDuration(metrics.pr_metrics.avg_time_to_merge_hours)}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Related: Merge Rate, Cycle Time
+                </div>
+              </div>
+
+              {/* 2. CI Success Rate */}
+              <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                <div className="text-xs text-gray-400 mb-1">CI Success Rate</div>
+                <div className="text-xl font-bold">
+                  {metrics.ci_metrics.ci_success_rate.toFixed(1)}%
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Related: Run Success Rate</div>
+              </div>
+
+              {/* 3. Avg Run Duration */}
+              <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                <div className="text-xs text-gray-400 mb-1">Avg Run Duration</div>
+                <div className="text-xl font-bold">
+                  {formatDuration(
+                    metrics.run_metrics.avg_run_duration_seconds
+                      ? metrics.run_metrics.avg_run_duration_seconds / 3600
+                      : null
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Related: Cycle Time</div>
+              </div>
+
+              {/* 4. CI Fix Iterations */}
+              <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                <div className="text-xs text-gray-400 mb-1">CI Fix Iterations</div>
+                <div className="text-xl font-bold">
+                  {metrics.agentic_metrics.avg_ci_iterations.toFixed(1)}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Related: Run Success Rate
+                </div>
+              </div>
+
+              {/* 5. Review Fix Iterations */}
+              <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                <div className="text-xs text-gray-400 mb-1">Review Fix Iterations</div>
+                <div className="text-xl font-bold">
+                  {metrics.agentic_metrics.avg_review_iterations.toFixed(1)}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Related: Run Success Rate
+                </div>
+              </div>
+
+              {/* 6. Avg Review Score */}
+              <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                <div className="text-xs text-gray-400 mb-1">Avg Review Score</div>
+                <div className="text-xl font-bold">
+                  {metrics.review_metrics.avg_review_score !== null
+                    ? `${(metrics.review_metrics.avg_review_score * 100).toFixed(0)}%`
+                    : '-'}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Related: Merge Rate</div>
+              </div>
+
+              {/* 7. Queue Wait Time */}
+              <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                <div className="text-xs text-gray-400 mb-1">Queue Wait Time</div>
+                <div className="text-xl font-bold">
+                  {formatDuration(
+                    metrics.run_metrics.avg_queue_wait_seconds
+                      ? metrics.run_metrics.avg_queue_wait_seconds / 3600
+                      : null
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Related: Cycle Time</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ============================================ */}
+        {/* EXPLORATORY - Collapsible */}
+        {/* ============================================ */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowExploratory(!showExploratory)}
+            className="flex items-center gap-2 mb-3 hover:opacity-80 transition-opacity"
+          >
+            {showExploratory ? (
+              <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-gray-400" />
+            )}
+            <span className="text-sm font-medium text-gray-400">EXPLORATORY</span>
+            <span className="text-xs text-gray-500">- 仮説検証（必要時）</span>
+          </button>
+
+          {showExploratory && metrics && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* Executor Distribution */}
+              <MetricsSection title="Executor Distribution">
+                <div className="space-y-3">
+                  {metrics.executor_distribution.length > 0 ? (
+                    metrics.executor_distribution.map((item) => (
+                      <div key={item.executor_type} className="flex items-center gap-3">
+                        <CpuChipIcon className="h-5 w-5 text-gray-400" />
+                        <div className="flex-1">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-gray-300">
+                              {EXECUTOR_LABELS[item.executor_type] || item.executor_type}
+                            </span>
+                            <span className="text-gray-400">
+                              {item.count} ({item.percentage.toFixed(1)}%)
+                            </span>
+                          </div>
+                          <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 transition-all duration-300"
+                              style={{ width: `${item.percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-gray-500 text-sm">No run data available</div>
+                  )}
+                </div>
+              </MetricsSection>
+
+              {/* PR Status Distribution */}
+              <MetricsSection title="PR Status Distribution">
+                <div className="space-y-4">
+                  <ProgressBar
+                    label="Merged"
+                    value={metrics.pr_metrics.merged_prs}
+                    total={metrics.pr_metrics.total_prs}
+                    color="green"
+                  />
+                  <ProgressBar
+                    label="Open"
+                    value={metrics.pr_metrics.open_prs}
+                    total={metrics.pr_metrics.total_prs}
+                    color="blue"
+                  />
+                  <ProgressBar
+                    label="Closed"
+                    value={metrics.pr_metrics.closed_prs}
+                    total={metrics.pr_metrics.total_prs}
+                    color="red"
+                  />
+                </div>
+              </MetricsSection>
+
+              {/* Run Status */}
+              <MetricsSection title="Run Status Distribution">
                 <div className="grid grid-cols-3 gap-2">
                   <div className="text-center p-2 bg-gray-900/50 rounded">
                     <div className="text-xl font-bold text-green-400">
@@ -263,143 +603,10 @@ export default function MetricsPage() {
                     <div className="text-xs text-gray-400">Canceled</div>
                   </div>
                 </div>
-                <ProgressBar
-                  label="Success Rate"
-                  value={metrics.run_metrics.succeeded_runs}
-                  total={metrics.run_metrics.total_runs}
-                  color="green"
-                />
-                {metrics.run_metrics.avg_run_duration_seconds !== null && (
-                  <div className="text-sm text-gray-400">
-                    Avg Duration:{' '}
-                    <span className="text-white">
-                      {formatDuration(metrics.run_metrics.avg_run_duration_seconds / 3600)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </MetricsSection>
+              </MetricsSection>
 
-          {/* Conversation Metrics */}
-          <MetricsSection title="Conversations">
-            {metrics && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-4">
-                  <ChatBubbleLeftRightIcon className="h-8 w-8 text-blue-400" />
-                  <div>
-                    <div className="text-2xl font-bold">
-                      {metrics.conversation_metrics.total_messages}
-                    </div>
-                    <div className="text-xs text-gray-400">Total Messages</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-gray-900/50 rounded">
-                    <div className="text-lg font-semibold">
-                      {metrics.conversation_metrics.avg_messages_per_task.toFixed(1)}
-                    </div>
-                    <div className="text-xs text-gray-400">Avg Messages/Task</div>
-                  </div>
-                  <div className="p-3 bg-gray-900/50 rounded">
-                    <div className="text-lg font-semibold">
-                      {metrics.conversation_metrics.avg_user_messages_per_task.toFixed(1)}
-                    </div>
-                    <div className="text-xs text-gray-400">Avg User Messages/Task</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </MetricsSection>
-
-          {/* Executor Distribution */}
-          <MetricsSection title="Executor Distribution">
-            {metrics && (
-              <div className="space-y-3">
-                {metrics.executor_distribution.length > 0 ? (
-                  metrics.executor_distribution.map((item) => (
-                    <div key={item.executor_type} className="flex items-center gap-3">
-                      <CpuChipIcon className="h-5 w-5 text-gray-400" />
-                      <div className="flex-1">
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-300">
-                            {EXECUTOR_LABELS[item.executor_type] || item.executor_type}
-                          </span>
-                          <span className="text-gray-400">
-                            {item.count} ({item.percentage.toFixed(1)}%)
-                          </span>
-                        </div>
-                        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-blue-500 transition-all duration-300"
-                            style={{ width: `${item.percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-gray-500 text-sm">No run data available</div>
-                )}
-              </div>
-            )}
-          </MetricsSection>
-
-          {/* CI Metrics */}
-          <MetricsSection title="CI/CD">
-            {metrics && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-2xl font-bold">
-                      {metrics.ci_metrics.total_ci_checks}
-                    </div>
-                    <div className="text-xs text-gray-400">Total Checks</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-2xl font-bold text-green-400">
-                      {metrics.ci_metrics.ci_success_rate.toFixed(1)}%
-                    </div>
-                    <div className="text-xs text-gray-400">Success Rate</div>
-                  </div>
-                </div>
-                <ProgressBar
-                  label="Passed"
-                  value={metrics.ci_metrics.passed_ci_checks}
-                  total={metrics.ci_metrics.total_ci_checks}
-                  color="green"
-                />
-                <ProgressBar
-                  label="Failed"
-                  value={metrics.ci_metrics.failed_ci_checks}
-                  total={metrics.ci_metrics.total_ci_checks}
-                  color="red"
-                />
-              </div>
-            )}
-          </MetricsSection>
-
-          {/* Review Metrics */}
-          <MetricsSection title="Code Reviews">
-            {metrics && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-2xl font-bold">
-                      {metrics.review_metrics.total_reviews}
-                    </div>
-                    <div className="text-xs text-gray-400">Total Reviews</div>
-                  </div>
-                  {metrics.review_metrics.avg_review_score !== null && (
-                    <div className="text-right">
-                      <div className="text-2xl font-bold text-blue-400">
-                        {(metrics.review_metrics.avg_review_score * 100).toFixed(0)}%
-                      </div>
-                      <div className="text-xs text-gray-400">Avg Score</div>
-                    </div>
-                  )}
-                </div>
-                <div className="text-sm text-gray-400">Issues by Severity</div>
+              {/* Review Issues by Severity */}
+              <MetricsSection title="Review Issues by Severity">
                 <div className="grid grid-cols-4 gap-2">
                   <div className="text-center p-2 bg-red-900/30 rounded">
                     <div className="text-lg font-bold text-red-400">
@@ -426,85 +633,15 @@ export default function MetricsPage() {
                     <div className="text-xs text-gray-400">Low</div>
                   </div>
                 </div>
-              </div>
-            )}
-          </MetricsSection>
-
-          {/* Agentic Metrics */}
-          <MetricsSection title="Agentic Execution">
-            {metrics && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-2xl font-bold">
-                      {metrics.agentic_metrics.total_agentic_runs}
-                    </div>
-                    <div className="text-xs text-gray-400">Total Runs</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-2xl font-bold text-green-400">
-                      {metrics.agentic_metrics.agentic_completion_rate.toFixed(1)}%
-                    </div>
-                    <div className="text-xs text-gray-400">Completion Rate</div>
-                  </div>
-                </div>
-                <div className="text-sm text-gray-400">Average Iterations</div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="text-center p-2 bg-gray-900/50 rounded">
-                    <div className="text-lg font-semibold">
-                      {metrics.agentic_metrics.avg_total_iterations.toFixed(1)}
-                    </div>
-                    <div className="text-xs text-gray-400">Total</div>
-                  </div>
-                  <div className="text-center p-2 bg-gray-900/50 rounded">
-                    <div className="text-lg font-semibold">
-                      {metrics.agentic_metrics.avg_ci_iterations.toFixed(1)}
-                    </div>
-                    <div className="text-xs text-gray-400">CI Fix</div>
-                  </div>
-                  <div className="text-center p-2 bg-gray-900/50 rounded">
-                    <div className="text-lg font-semibold">
-                      {metrics.agentic_metrics.avg_review_iterations.toFixed(1)}
-                    </div>
-                    <div className="text-xs text-gray-400">Review Fix</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </MetricsSection>
-
-          {/* Productivity Metrics */}
-          <MetricsSection title="Productivity">
-            {metrics && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-xl font-bold">
-                      {formatDuration(metrics.productivity_metrics.avg_cycle_time_hours)}
-                    </div>
-                    <div className="text-xs text-gray-400">Avg Cycle Time</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-xl font-bold">
-                      {metrics.productivity_metrics.throughput_per_week.toFixed(1)}
-                    </div>
-                    <div className="text-xs text-gray-400">PRs/Week</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-900/50 rounded">
-                    <div className="text-xl font-bold text-green-400">
-                      {metrics.productivity_metrics.first_time_success_rate.toFixed(1)}%
-                    </div>
-                    <div className="text-xs text-gray-400">First-Time Success</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </MetricsSection>
+              </MetricsSection>
+            </div>
+          )}
         </div>
 
         {/* Summary Stats */}
         {metrics && (
-          <div className="mt-6 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+          <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+            <div className="text-xs text-gray-500 mb-3">Period Summary</div>
             <div className="grid grid-cols-4 gap-4 text-center">
               <div>
                 <div className="text-2xl font-bold">{metrics.summary.total_tasks}</div>
