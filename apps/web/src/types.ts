@@ -568,3 +568,123 @@ export interface CICheckResponse {
   ci_check: CICheck;
   is_complete: boolean;
 }
+
+// Development Metrics
+
+export interface PRMetrics {
+  total_prs: number;
+  merged_prs: number;
+  closed_prs: number;
+  open_prs: number;
+  merge_rate: number;
+  avg_time_to_merge_hours: number | null;
+}
+
+export interface ConversationMetrics {
+  total_messages: number;
+  user_messages: number;
+  assistant_messages: number;
+  avg_messages_per_task: number;
+  avg_user_messages_per_task: number;
+}
+
+export interface RunMetrics {
+  total_runs: number;
+  succeeded_runs: number;
+  failed_runs: number;
+  canceled_runs: number;
+  run_success_rate: number;
+  avg_run_duration_seconds: number | null;
+  avg_queue_wait_seconds: number | null;
+}
+
+export interface ExecutorDistribution {
+  executor_type: ExecutorType;
+  count: number;
+  percentage: number;
+}
+
+export interface CIMetrics {
+  total_ci_checks: number;
+  passed_ci_checks: number;
+  failed_ci_checks: number;
+  ci_success_rate: number;
+  avg_ci_fix_iterations: number;
+}
+
+export interface ReviewMetrics {
+  total_reviews: number;
+  avg_review_score: number | null;
+  critical_issues: number;
+  high_issues: number;
+  medium_issues: number;
+  low_issues: number;
+}
+
+export interface AgenticMetrics {
+  total_agentic_runs: number;
+  completed_agentic_runs: number;
+  failed_agentic_runs: number;
+  agentic_completion_rate: number;
+  avg_total_iterations: number;
+  avg_ci_iterations: number;
+  avg_review_iterations: number;
+}
+
+export interface ProductivityMetrics {
+  avg_cycle_time_hours: number | null;
+  throughput_per_week: number;
+  first_time_success_rate: number;
+}
+
+export interface MetricsSummary {
+  period: string;
+  period_start: string;
+  period_end: string;
+  merge_rate: number;
+  avg_cycle_time_hours: number | null;
+  throughput: number;
+  run_success_rate: number;
+  total_tasks: number;
+  total_prs: number;
+  total_runs: number;
+  total_messages: number;
+  merge_rate_change: number | null;
+  cycle_time_change: number | null;
+  throughput_change: number | null;
+}
+
+export interface MetricsDataPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface MetricsTrend {
+  metric_name: string;
+  data_points: MetricsDataPoint[];
+  trend: 'up' | 'down' | 'stable';
+  change_percentage: number;
+}
+
+export interface RealtimeMetrics {
+  active_tasks: number;
+  running_runs: number;
+  pending_ci_checks: number;
+  open_prs: number;
+  tasks_created_today: number;
+  runs_completed_today: number;
+  prs_merged_today: number;
+}
+
+export interface MetricsDetail {
+  summary: MetricsSummary;
+  pr_metrics: PRMetrics;
+  conversation_metrics: ConversationMetrics;
+  run_metrics: RunMetrics;
+  executor_distribution: ExecutorDistribution[];
+  ci_metrics: CIMetrics;
+  review_metrics: ReviewMetrics;
+  agentic_metrics: AgenticMetrics;
+  productivity_metrics: ProductivityMetrics;
+  realtime: RealtimeMetrics;
+}
