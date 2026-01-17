@@ -1,5 +1,5 @@
 /**
- * Type definitions for dursor frontend
+ * Type definitions for tazuna frontend
  */
 
 // Enums

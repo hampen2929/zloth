@@ -2,7 +2,7 @@
 
 ## 概要
 
-現在、dursor のトップページで New Task を作成する際、AI Coding Tool（Claude Code, Codex, Gemini CLI）は1つしか選択できない。本機能では、複数の AI Coding Tool を同時に選択し、並列実行できるようにする。
+現在、tazuna のトップページで New Task を作成する際、AI Coding Tool（Claude Code, Codex, Gemini CLI）は1つしか選択できない。本機能では、複数の AI Coding Tool を同時に選択し、並列実行できるようにする。
 
 ### 期待される動作
 
@@ -70,10 +70,10 @@ graph TB
 | `apps/web/src/components/ExecutorSelector.tsx` | エグゼキューター選択UI |
 | `apps/web/src/app/page.tsx` | タスク作成ページ |
 | `apps/web/src/types.ts` | TypeScript型定義 |
-| `apps/api/src/dursor_api/domain/models.py` | Pydanticモデル |
-| `apps/api/src/dursor_api/domain/enums.py` | Enum定義 |
-| `apps/api/src/dursor_api/services/run_service.py` | ラン作成・実行サービス |
-| `apps/api/src/dursor_api/routes/runs.py` | APIエンドポイント |
+| `apps/api/src/tazuna_api/domain/models.py` | Pydanticモデル |
+| `apps/api/src/tazuna_api/domain/enums.py` | Enum定義 |
+| `apps/api/src/tazuna_api/services/run_service.py` | ラン作成・実行サービス |
+| `apps/api/src/tazuna_api/routes/runs.py` | APIエンドポイント |
 
 ---
 
@@ -120,7 +120,7 @@ export interface RunCreate {
 }
 ```
 
-#### Python (apps/api/src/dursor_api/domain/models.py)
+#### Python (apps/api/src/tazuna_api/domain/models.py)
 
 ```python
 # Before

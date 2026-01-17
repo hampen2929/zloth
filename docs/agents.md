@@ -2,7 +2,7 @@
 
 ## Overview
 
-dursor agents generate code changes (Unified diff) from natural language instructions.
+tazuna agents generate code changes (Unified diff) from natural language instructions.
 
 ## Architecture
 
@@ -269,10 +269,10 @@ async def _generate_google(self, messages, system):
 ### 1. Inherit BaseAgent
 
 ```python
-# apps/api/src/dursor_api/agents/new_agent.py
+# apps/api/src/tazuna_api/agents/new_agent.py
 
-from dursor_api.agents.base import BaseAgent
-from dursor_api.domain.models import AgentRequest, AgentResult
+from tazuna_api.agents.base import BaseAgent
+from tazuna_api.domain.models import AgentRequest, AgentResult
 
 class NewAgent(BaseAgent):
     def __init__(self, llm_client: LLMClient):
@@ -286,9 +286,9 @@ class NewAgent(BaseAgent):
 ### 2. Use in RunService
 
 ```python
-# apps/api/src/dursor_api/services/run_service.py
+# apps/api/src/tazuna_api/services/run_service.py
 
-from dursor_api.agents.new_agent import NewAgent
+from tazuna_api.agents.new_agent import NewAgent
 
 # Inside _execute_run
 agent = NewAgent(llm_client)  # or PatchAgent

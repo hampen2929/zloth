@@ -194,7 +194,7 @@ class XxxService:
 ReviewService は現在、RunService と同様のパターンでストリーミングログを実装済み：
 
 ```python
-# apps/api/src/dursor_api/services/review_service.py
+# apps/api/src/tazuna_api/services/review_service.py
 
 class ReviewService:
     def __init__(self, ..., output_manager: OutputManager | None = None):
@@ -298,7 +298,7 @@ flowchart TB
 各Roleで異なるステータスEnumを使用しているが、ライフサイクルは同一。共通Enumを定義する。
 
 ```python
-# apps/api/src/dursor_api/domain/enums.py
+# apps/api/src/tazuna_api/domain/enums.py
 
 class RoleExecutionStatus(str, Enum):
     """AI Role実行のステータス。すべてのRoleで共通。"""
@@ -317,7 +317,7 @@ BreakdownStatus = RoleExecutionStatus
 #### 1.2 共通結果モデルの定義
 
 ```python
-# apps/api/src/dursor_api/domain/models.py
+# apps/api/src/tazuna_api/domain/models.py
 
 class RoleExecutionResult(BaseModel):
     """AI Role実行結果の共通インターフェース。"""
@@ -349,7 +349,7 @@ class BreakdownResult(RoleExecutionResult):
 #### 2.1 RoleExecutor Protocol
 
 ```python
-# apps/api/src/dursor_api/roles/protocol.py
+# apps/api/src/tazuna_api/roles/protocol.py
 
 from typing import Protocol, TypeVar, Generic
 from abc import ABC, abstractmethod
@@ -375,7 +375,7 @@ class RoleExecutor(Protocol[TResult]):
 #### 2.2 BaseRoleService 抽象基底クラス
 
 ```python
-# apps/api/src/dursor_api/roles/base_service.py
+# apps/api/src/tazuna_api/roles/base_service.py
 
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
@@ -533,7 +533,7 @@ class BaseRoleService(ABC, Generic[TRecord, TCreate, TResult]):
 #### 3.1 RunService（実装Role）
 
 ```python
-# apps/api/src/dursor_api/services/run_service.py
+# apps/api/src/tazuna_api/services/run_service.py
 
 class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
     """コード生成（実装）を担当するRoleサービス。"""
@@ -601,7 +601,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 #### 3.2 ReviewService（レビューRole）
 
 ```python
-# apps/api/src/dursor_api/services/review_service.py
+# apps/api/src/tazuna_api/services/review_service.py
 
 class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewResult]):
     """コードレビューを担当するRoleサービス。"""
@@ -639,7 +639,7 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewResult]):
 新しいRoleを動的に登録できる仕組みを導入。
 
 ```python
-# apps/api/src/dursor_api/roles/registry.py
+# apps/api/src/tazuna_api/roles/registry.py
 
 from typing import Type
 
@@ -916,7 +916,7 @@ export function ReviewResultCard({ review }: { review: Review }) {
 ### 1. ドメインモデル定義
 
 ```python
-# apps/api/src/dursor_api/domain/models.py
+# apps/api/src/tazuna_api/domain/models.py
 
 class MyNewRoleResult(RoleExecutionResult):
     """新規Role特有の結果。"""
@@ -931,7 +931,7 @@ class MyNewRoleCreate(BaseModel):
 ### 2. DAOの実装
 
 ```python
-# apps/api/src/dursor_api/storage/dao.py
+# apps/api/src/tazuna_api/storage/dao.py
 
 class MyNewRoleDAO:
     async def create(self, record: MyNewRole) -> MyNewRole: ...
@@ -943,7 +943,7 @@ class MyNewRoleDAO:
 ### 3. サービスの実装
 
 ```python
-# apps/api/src/dursor_api/services/my_new_role_service.py
+# apps/api/src/tazuna_api/services/my_new_role_service.py
 
 @RoleRegistry.register("my_new_role")
 class MyNewRoleService(BaseRoleService[MyNewRole, MyNewRoleCreate, MyNewRoleResult]):
@@ -959,7 +959,7 @@ class MyNewRoleService(BaseRoleService[MyNewRole, MyNewRoleCreate, MyNewRoleResu
 ### 4. APIエンドポイント追加
 
 ```python
-# apps/api/src/dursor_api/routes/my_new_role.py
+# apps/api/src/tazuna_api/routes/my_new_role.py
 
 router = APIRouter(prefix="/v1", tags=["my_new_role"])
 
@@ -1011,6 +1011,6 @@ export function MyNewRoleResultCard({ record }: { record: MyNewRole }) {
 ## 関連ドキュメント
 
 - [Architecture](./architecture.md)
-- [Agentic Dursor](./agentic-dursor.md)
+- [Agentic Tazuna](./agentic-tazuna.md)
 - [Code Review Feature](./review.md)
 - [Multi AI Coding Tool](./ai-coding-tool-multiple.md)

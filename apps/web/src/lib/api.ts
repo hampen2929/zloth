@@ -1,5 +1,5 @@
 /**
- * API client for dursor backend
+ * API client for tazuna backend
  */
 
 import type {

@@ -218,7 +218,7 @@ GET /tasks/{task_id}
       "id": "uuid",
       "number": 123,
       "url": "https://github.com/owner/repo/pull/123",
-      "branch": "dursor/abc123",
+      "branch": "tazuna/abc123",
       "status": "open"
     }
   ]
@@ -376,7 +376,7 @@ Content-Type: application/json
 {
   "pr_id": "uuid",
   "url": "https://github.com/owner/repo/pull/123",
-  "branch": "dursor/abc123",
+  "branch": "tazuna/abc123",
   "number": 123
 }
 ```
@@ -421,7 +421,7 @@ GET /tasks/{task_id}/prs/{pr_id}
   "task_id": "uuid",
   "number": 123,
   "url": "https://github.com/owner/repo/pull/123",
-  "branch": "dursor/abc123",
+  "branch": "tazuna/abc123",
   "title": "Add input validation",
   "body": "This PR adds validation...",
   "latest_commit": "def456...",
@@ -445,7 +445,7 @@ GET /tasks/{task_id}/prs
     "task_id": "uuid",
     "number": 123,
     "url": "https://github.com/owner/repo/pull/123",
-    "branch": "dursor/abc123",
+    "branch": "tazuna/abc123",
     "title": "Add input validation",
     "body": "...",
     "latest_commit": "def456...",

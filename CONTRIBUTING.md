@@ -1,12 +1,12 @@
-# Contributing to dursor
+# Contributing to tazuna
 
-Thank you for your interest in dursor!
+Thank you for your interest in tazuna!
 
 ## How to Contribute
 
 ### Bug Reports & Feature Requests (Welcome!)
 
-We actively welcome bug reports and feature requests via [GitHub Issues](https://github.com/hampen2929/dursor/issues).
+We actively welcome bug reports and feature requests via [GitHub Issues](https://github.com/hampen2929/tazuna/issues).
 
 #### Bug Reports
 
@@ -35,14 +35,14 @@ If you still wish to submit a PR:
 
 ## Development Reference
 
-If you want to run dursor locally for testing or personal use:
+If you want to run tazuna locally for testing or personal use:
 
 ### Setup
 
 ```bash
 # Clone
-git clone https://github.com/hampen2929/dursor.git
-cd dursor
+git clone https://github.com/hampen2929/tazuna.git
+cd tazuna
 
 # Backend
 cd apps/api
@@ -78,4 +78,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Questions
 
-For questions and discussions, please use [GitHub Issues](https://github.com/hampen2929/dursor/issues).
+For questions and discussions, please use [GitHub Issues](https://github.com/hampen2929/tazuna/issues).
