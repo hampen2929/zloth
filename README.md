@@ -1,7 +1,8 @@
 # dursor
 
 [![CI](https://github.com/hampen2929/dursor/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/dursor/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/hampen2929?style=social)](https://github.com/sponsors/hampen2929)
 [![GitHub stars](https://img.shields.io/github/stars/hampen2929/dursor.svg?style=social&label=Star)](https://github.com/hampen2929/dursor)
 [![GitHub issues](https://img.shields.io/github/issues/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/dursor.svg)](https://github.com/hampen2929/dursor/pulls)
@@ -208,6 +209,25 @@ We welcome bug reports and feature requests via [GitHub Issues](https://github.c
 
 > **Note**: This project is primarily developed using AI-assisted coding. Pull requests may not be reviewed or merged. If you have ideas or find bugs, please open an Issue instead.
 
+## Support & Sponsorship
+
+If you find dursor useful, please consider supporting its development:
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?style=for-the-badge)](https://github.com/sponsors/hampen2929)
+
+### For Individuals
+- **Free to use** - dursor is open source and always will be
+- **Sponsorship appreciated** - Even $5/month helps maintain and improve the project
+
+### For Enterprises
+- **Free to use** - No license fees or contracts required
+- **Sponsorship encouraged** - Help ensure long-term maintenance and priority support
+- **Custom support available** - Contact for enterprise support options
+
+See [SPONSORS.md](SPONSORS.md) for our amazing sponsors!
+
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
+
+This project is free to use for both personal and commercial purposes.
