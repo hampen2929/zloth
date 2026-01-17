@@ -1,4 +1,4 @@
-"""API routes for dursor."""
+"""API routes for tazuna."""
 
 from tazuna_api.routes.backlog import router as backlog_router
 from tazuna_api.routes.breakdown import router as breakdown_router

@@ -1,4 +1,4 @@
-"""Base agent interface for dursor."""
+"""Base agent interface for tazuna."""
 
 from abc import ABC, abstractmethod
 

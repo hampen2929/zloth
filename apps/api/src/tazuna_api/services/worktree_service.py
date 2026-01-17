@@ -61,10 +61,10 @@ class WorktreeService:
             run_id: Run ID.
 
         Returns:
-            Branch name in format: dursor/{short_id}
+            Branch name in format: tazuna/{short_id}
         """
         short_id = run_id[:8]
-        return f"dursor/{short_id}"
+        return f"tazuna/{short_id}"
 
     async def create_worktree(
         self,

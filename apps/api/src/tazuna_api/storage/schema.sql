@@ -1,4 +1,4 @@
--- dursor v0.1 SQLite Schema
+-- tazuna v0.1 SQLite Schema
 
 -- Model profiles (provider + model + encrypted API key)
 CREATE TABLE IF NOT EXISTS model_profiles (
@@ -114,12 +114,12 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     default_repo_owner TEXT,                -- Default repository owner (e.g., "anthropics")
     default_repo_name TEXT,                 -- Default repository name (e.g., "claude-code")
     default_branch TEXT,                    -- Default branch (e.g., "main")
-    default_branch_prefix TEXT,             -- Default branch prefix for work branches (e.g., "dursor")
+    default_branch_prefix TEXT,             -- Default branch prefix for work branches (e.g., "tazuna")
     default_pr_creation_mode TEXT,          -- Default PR creation behavior: create|link
     default_coding_mode TEXT,               -- Default coding mode: interactive|semi_auto|full_auto
     auto_generate_pr_description INTEGER DEFAULT 0,  -- Auto-generate PR description: 0=no, 1=yes
     update_pr_title_on_regenerate INTEGER DEFAULT 1, -- Update PR title when regenerating: 0=no, 1=yes
-    worktrees_dir TEXT,                     -- Custom worktrees directory (e.g., "~/.dursor/worktrees")
+    worktrees_dir TEXT,                     -- Custom worktrees directory (e.g., "~/.tazuna/worktrees")
     enable_gating_status INTEGER DEFAULT 0, -- Enable gating status for CI waiting: 0=disabled, 1=enabled
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))

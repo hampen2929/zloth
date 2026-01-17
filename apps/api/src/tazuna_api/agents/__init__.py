@@ -1,4 +1,4 @@
-"""Agent implementations for dursor."""
+"""Agent implementations for tazuna."""
 
 from tazuna_api.agents.base import BaseAgent
 from tazuna_api.agents.llm_router import LLMClient, LLMRouter
