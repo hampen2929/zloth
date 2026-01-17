@@ -12,6 +12,156 @@ tazunaにおけるAIエージェント活用の効果測定と開発プロセス
 2. **ボトルネック発見**: 開発プロセスの課題を可視化
 3. **改善サイクル**: データに基づく継続的改善を支援
 
+## Metrics Hierarchy
+
+メトリクスを4階層に分類し、目的に応じた適切な活用を促進する。
+
+| レイヤ | KPI数の目安 | 役割 |
+|--------|------------|------|
+| **North Star** | 1 | 価値の定義 |
+| **Core KPI** | 5〜8 | 改善の意思決定 |
+| **Diagnostic KPI** | 5〜10 | 原因分析 |
+| **Exploratory** | 必要時 | 仮説検証 |
+
+```mermaid
+flowchart TB
+    subgraph NorthStar["North Star (1)"]
+        NS[Throughput<br/>週あたりのマージPR数]
+    end
+
+    subgraph CoreKPI["Core KPI (6)"]
+        C1[Merge Rate]
+        C2[Cycle Time]
+        C3[Run Success Rate]
+        C4[First-Time Success Rate]
+        C5[Agentic Completion Rate]
+        C6[Messages per Task]
+    end
+
+    subgraph DiagnosticKPI["Diagnostic KPI (7)"]
+        D1[Time to Merge]
+        D2[CI Success Rate]
+        D3[Avg Run Duration]
+        D4[CI Fix Iterations]
+        D5[Review Fix Iterations]
+        D6[Avg Review Score]
+        D7[Queue Wait Time]
+    end
+
+    subgraph Exploratory["Exploratory (必要時)"]
+        E1[Executor別成功率]
+        E2[Model別コスト効率]
+        E3[時間帯別スループット]
+        E4[タスクサイズ別完了率]
+    end
+
+    NS --> C1 & C2 & C3
+    C1 --> D1 & D2
+    C2 --> D3 & D7
+    C3 --> D4 & D5 & D6
+```
+
+### North Star（最重要）- 1指標
+
+プロダクト全体の成功を定義する最も重要な指標。
+
+| Metric | Definition | Target | Why |
+|--------|------------|--------|-----|
+| **Throughput** | 週あたりにMergeされたPR数 | 継続的な向上 | AIエージェント活用の最終的な成果を表す |
+
+> **選定理由**: tazunaの価値は「AIエージェントによる開発生産性向上」であり、実際にMergeされたPR数がその成果を最も直接的に表す。品質を伴わないスループットは意味がないため、Merge Rate や Review Score と併せて監視する。
+
+### Core KPI（常時監視）- 6指標
+
+日常的に監視し、改善施策の意思決定に使用する指標。
+
+| # | Metric | Definition | Good Direction | UI表示位置 |
+|---|--------|------------|----------------|-----------|
+| 1 | **Merge Rate** | PRがMergeに至る割合 | ↑ Higher | ダッシュボード上部 |
+| 2 | **Cycle Time** | Task作成からPRマージまでの時間 | ↓ Lower | ダッシュボード上部 |
+| 3 | **Run Success Rate** | AIエージェント実行の成功率 | ↑ Higher | ダッシュボード上部 |
+| 4 | **First-Time Success Rate** | 1回のRunで成功したTaskの割合 | ↑ Higher | Productivity |
+| 5 | **Agentic Completion Rate** | Full/Semi Auto モードの完了率 | ↑ Higher | Agentic |
+| 6 | **Messages per Task** | Task毎の平均メッセージ数 | ↓ Lower | Conversation |
+
+**アラート閾値（推奨）**:
+
+| Metric | Warning | Critical |
+|--------|---------|----------|
+| Merge Rate | < 60% | < 40% |
+| Run Success Rate | < 75% | < 50% |
+| Cycle Time | > 12h | > 24h |
+| First-Time Success | < 30% | < 15% |
+
+### Diagnostic KPI（原因分析）- 7指標
+
+Core KPIの変動原因を特定するための補助指標。異常検知時にドリルダウンして確認する。
+
+| # | Metric | 関連Core KPI | 分析用途 |
+|---|--------|-------------|---------|
+| 1 | **Time to Merge** | Merge Rate, Cycle Time | マージまでの時間ボトルネック特定 |
+| 2 | **CI Success Rate** | Run Success Rate | CI起因の失敗割合の把握 |
+| 3 | **Avg Run Duration** | Cycle Time | 実行時間のボトルネック特定 |
+| 4 | **CI Fix Iterations** | Run Success Rate | CI修正の手戻り回数 |
+| 5 | **Review Fix Iterations** | Run Success Rate | レビュー指摘による手戻り回数 |
+| 6 | **Avg Review Score** | Merge Rate | コード品質の傾向把握 |
+| 7 | **Queue Wait Time** | Cycle Time | キュー待ちによる遅延の把握 |
+
+**ドリルダウン例**:
+
+```
+問題: Run Success Rate が 70% → 55% に低下
+
+調査フロー:
+1. CI Success Rate 確認 → 60% に低下（CI起因の可能性）
+2. CI Fix Iterations 確認 → 平均 3.2 回（通常 1.5 回）
+3. 失敗CI詳細確認 → 特定のテストスイートが頻繁に失敗
+4. 原因特定: 新しく追加されたE2Eテストが不安定
+
+アクション: E2Eテストの安定化対応
+```
+
+### Exploratory（一時的調査）- 必要時
+
+特定の仮説検証や一時的な調査に使用する指標。常時監視はせず、必要時にオンデマンドで取得・分析する。
+
+| Metric | 調査目的 | 取得タイミング |
+|--------|---------|--------------|
+| **Executor別成功率** | どのExecutorが最も効果的か | Executor選定・比較時 |
+| **Model別コスト効率** | コスト対効果の比較 | モデル選定・コスト最適化時 |
+| **時間帯別スループット** | 最適な実行タイミング | 運用最適化時 |
+| **タスクサイズ別完了率** | タスク粒度の最適化 | プロセス改善時 |
+| **ファイル変更数別成功率** | 適切な変更範囲の特定 | 品質改善時 |
+| **Critical Issue発生率** | セキュリティ/品質リスク | 品質監査時 |
+| **リポジトリ別傾向** | リポジトリ特性の把握 | 新規リポジトリ導入時 |
+
+### Hierarchy Summary
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    North Star (価値の定義)                       │
+│                         Throughput                               │
+│                    "週あたりのマージPR数"                        │
+├─────────────────────────────────────────────────────────────────┤
+│                   Core KPI (改善の意思決定)                      │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │
+│  │Merge Rate│ │Cycle Time│ │Run Success│ │First-Time Success│   │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │
+│  ┌────────────────────┐ ┌──────────────────┐                    │
+│  │Agentic Completion  │ │Messages per Task │                    │
+│  └────────────────────┘ └──────────────────┘                    │
+├─────────────────────────────────────────────────────────────────┤
+│                  Diagnostic KPI (原因分析)                       │
+│  Time to Merge │ CI Success Rate │ Avg Run Duration              │
+│  CI Fix Iters  │ Review Fix Iters │ Avg Review Score             │
+│  Queue Wait Time                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                   Exploratory (仮説検証)                         │
+│  Executor別成功率 │ Model別コスト効率 │ 時間帯別スループット     │
+│  タスクサイズ別完了率 │ ファイル変更数別成功率 │ etc.            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ## Metrics Categories
 
 ### 1. PR Metrics（PRメトリクス）
