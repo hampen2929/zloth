@@ -1,4 +1,4 @@
-"""GitHub App service for dursor API."""
+"""GitHub App service for tazuna API."""
 
 import base64
 import time

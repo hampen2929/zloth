@@ -1,4 +1,4 @@
-"""Configuration for dursor API."""
+"""Configuration for tazuna API."""
 
 import os
 from pathlib import Path
@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     workspaces_dir: Path | None = Field(default=None)
     worktrees_dir: Path | None = Field(
         default=None,
-        description="Directory for git worktrees. Defaults to ~/.dursor/worktrees "
+        description="Directory for git worktrees. Defaults to ~/.tazuna/worktrees "
         "to avoid inheriting parent directory's CLAUDE.md",
     )
     data_dir: Path | None = Field(default=None)
@@ -171,13 +171,13 @@ class Settings(BaseSettings):
         if self.workspaces_dir is None:
             self.workspaces_dir = self.base_dir / "workspaces"
         if self.worktrees_dir is None:
-            # Default to ~/.dursor/worktrees to avoid inheriting
+            # Default to ~/.tazuna/worktrees to avoid inheriting
             # parent directory's CLAUDE.md when CLI agents run in worktrees
-            self.worktrees_dir = Path.home() / ".dursor" / "worktrees"
+            self.worktrees_dir = Path.home() / ".tazuna" / "worktrees"
         if self.data_dir is None:
             self.data_dir = self.base_dir / "data"
         if self.database_url is None:
-            self.database_url = f"sqlite+aiosqlite:///{self.data_dir}/dursor.db"
+            self.database_url = f"sqlite+aiosqlite:///{self.data_dir}/tazuna.db"
 
         # Ensure directories exist and are writable
         for dir_path, dir_name in [

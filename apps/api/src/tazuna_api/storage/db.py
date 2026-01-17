@@ -17,7 +17,7 @@ class Database:
         if db_path:
             self.db_path = db_path
         elif settings.data_dir:
-            self.db_path = settings.data_dir / "dursor.db"
+            self.db_path = settings.data_dir / "tazuna.db"
         else:
             raise ValueError("data_dir must be set in settings")
         self._connection: aiosqlite.Connection | None = None

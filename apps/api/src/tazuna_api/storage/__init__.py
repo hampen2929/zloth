@@ -1,4 +1,4 @@
-"""Storage layer for dursor API."""
+"""Storage layer for tazuna API."""
 
 from tazuna_api.storage.dao import (
     PRDAO,

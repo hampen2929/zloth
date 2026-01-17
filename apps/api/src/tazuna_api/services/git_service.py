@@ -70,9 +70,9 @@ class PushResult:
 class GitService:
     """Service for centralized git operation management.
 
-    This service handles all git operations in dursor, ensuring consistent
+    This service handles all git operations in tazuna, ensuring consistent
     behavior across different execution flows. AI Agents should only edit
-    files, while dursor manages all git operations through this service.
+    files, while tazuna manages all git operations through this service.
     """
 
     def __init__(
@@ -129,26 +129,26 @@ class GitService:
         """Normalize a user-provided branch prefix.
 
         Rules:
-        - If empty/None after trimming -> 'dursor'
+        - If empty/None after trimming -> 'tazuna'
         - Trim whitespace
         - Strip leading/trailing slashes
         - Collapse whitespace runs into '-'
         """
         if prefix is None:
-            return "dursor"
+            return "tazuna"
         cleaned = prefix.strip()
         if not cleaned:
-            return "dursor"
+            return "tazuna"
         cleaned = re.sub(r"\s+", "-", cleaned)
         cleaned = cleaned.strip("/")
-        return cleaned or "dursor"
+        return cleaned or "tazuna"
 
     def _generate_branch_name(self, run_id: str, branch_prefix: str | None = None) -> str:
         """Generate a unique branch name for a run.
 
         Args:
             run_id: Run ID.
-            branch_prefix: Optional branch prefix (defaults to 'dursor').
+            branch_prefix: Optional branch prefix (defaults to 'tazuna').
 
         Returns:
             Branch name in format: <prefix>/{short_id}

@@ -43,7 +43,7 @@ from tazuna_api.storage.dao import BacklogDAO, RepoDAO
 logger = logging.getLogger(__name__)
 
 # JSON file name for breakdown result
-BREAKDOWN_RESULT_FILE = ".dursor-breakdown.json"
+BREAKDOWN_RESULT_FILE = ".tazuna-breakdown.json"
 
 # Prompt template for task breakdown (v1 - deprecated)
 BREAKDOWN_INSTRUCTION_TEMPLATE = """
@@ -59,7 +59,7 @@ Break down the following requirements into specific development tasks.
 {content}
 
 ## Output Format
-Output the result as a JSON file at `.dursor-breakdown.json`:
+Output the result as a JSON file at `.tazuna-breakdown.json`:
 
 ```json
 {{
@@ -93,7 +93,7 @@ Output the result as a JSON file at `.dursor-breakdown.json`:
    - small: 1-2 file changes, few hours
    - medium: 3-5 file changes, about 1 day
    - large: Multiple modules, several days
-8. IMPORTANT: Create the `.dursor-breakdown.json` file with your analysis
+8. IMPORTANT: Create the `.tazuna-breakdown.json` file with your analysis
 """
 
 # Prompt template for task breakdown v2 (feature-level granularity)
@@ -132,7 +132,7 @@ Organize the following requirements into **feature-level** development tasks.
 {content}
 
 ## Output Format
-Output the result as a JSON file at `.dursor-breakdown.json`:
+Output the result as a JSON file at `.tazuna-breakdown.json`:
 
 ```json
 {{
@@ -168,7 +168,7 @@ Output the result as a JSON file at `.dursor-breakdown.json`:
 1. **Read existing code first** before creating tasks
 2. target_files must be actual existing file paths
 3. implementation_hint should reference existing code patterns
-4. IMPORTANT: Create the `.dursor-breakdown.json` file with your analysis
+4. IMPORTANT: Create the `.tazuna-breakdown.json` file with your analysis
 """
 
 

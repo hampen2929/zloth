@@ -1,4 +1,4 @@
-"""Data Access Objects for dursor storage."""
+"""Data Access Objects for tazuna storage."""
 
 from __future__ import annotations
 

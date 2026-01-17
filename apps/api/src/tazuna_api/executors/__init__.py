@@ -1,4 +1,4 @@
-"""Executors for dursor runs."""
+"""Executors for tazuna runs."""
 
 from tazuna_api.executors.base_executor import BaseExecutor, ExecutorResult
 from tazuna_api.executors.claude_code_executor import ClaudeCodeExecutor

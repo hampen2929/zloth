@@ -1,7 +1,7 @@
 """Run execution service.
 
 This service manages the execution of AI Agent runs following the
-orchestrator management pattern where dursor centrally manages git
+orchestrator management pattern where tazuna centrally manages git
 operations while AI Agents only edit files.
 """
 
