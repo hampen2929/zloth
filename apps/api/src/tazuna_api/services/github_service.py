@@ -308,12 +308,14 @@ class GitHubService:
     async def list_repos(self) -> list[GitHubRepository]:
         """List repositories accessible to the GitHub App.
 
-        If GitHub App is not configured, falls back to listing locally cloned repos.
+        If GitHub App installation_id is not configured, falls back to listing
+        locally cloned repos.
         """
         config = await self.get_config()
 
-        if config.is_configured:
-            # GitHub App is configured, use GitHub API
+        # Only use GitHub API if installation_id is set
+        if config.installation_id:
+            # GitHub App is fully configured, use GitHub API
             data = await self._github_request(
                 "GET", "/installation/repositories", params={"per_page": 100}
             )
@@ -333,7 +335,7 @@ class GitHubService:
 
             return repos
 
-        # GitHub App not configured, fall back to locally cloned repos
+        # GitHub App installation_id not configured, fall back to locally cloned repos
         if not self._repo_dao:
             return []
 
