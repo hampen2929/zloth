@@ -239,6 +239,93 @@ class GitHubService:
 
         return (app_id, private_key, installation_id)
 
+    async def _get_app_credentials_without_installation(self) -> tuple[str, str] | None:
+        """Get app ID and private key (without requiring installation ID).
+
+        Used for listing all installations of the app.
+        """
+        config = await self.get_config()
+
+        private_key = await self._get_private_key()
+        if not private_key:
+            return None
+
+        app_id: str | None
+        if config.source == "env":
+            app_id = settings.github_app_id
+        elif config.app_id:
+            app_id = config.app_id
+        else:
+            return None
+
+        if not app_id:
+            return None
+
+        return (app_id, private_key)
+
+    async def _list_installations(self) -> list[dict[str, Any]]:
+        """List all installations of the GitHub App.
+
+        Returns:
+            List of installation objects from GitHub API.
+        """
+        creds = await self._get_app_credentials_without_installation()
+        if not creds:
+            return []
+
+        app_id, private_key = creds
+        jwt_token = self._generate_jwt(app_id, private_key)
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.github.com/app/installations",
+                headers={
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            if response.status_code != 200:
+                return []
+            return response.json()
+
+    async def _get_installation_token_for_id(self, installation_id: str) -> str | None:
+        """Get installation access token for a specific installation ID."""
+        creds = await self._get_app_credentials_without_installation()
+        if not creds:
+            return None
+
+        app_id, private_key = creds
+        cache_key = f"{app_id}:{installation_id}"
+
+        # Check cache
+        if cache_key in self._token_cache:
+            token, expires_at = self._token_cache[cache_key]
+            if time.time() < expires_at - 60:  # 1 minute buffer
+                return token
+
+        # Generate new token
+        jwt_token = self._generate_jwt(app_id, private_key)
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+                headers={
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            if response.status_code != 201:
+                return None
+            data = response.json()
+
+        token = data["token"]
+        # GitHub tokens expire in 1 hour, cache for slightly less
+        self._token_cache[cache_key] = (token, time.time() + 3500)
+
+        return token
+
     def _generate_jwt(self, app_id: str, private_key: str) -> str:
         """Generate JWT for GitHub App authentication."""
         now = int(time.time())
@@ -308,42 +395,70 @@ class GitHubService:
     async def list_repos(self) -> list[GitHubRepository]:
         """List repositories accessible to the GitHub App.
 
-        If GitHub App installation_id is not configured, falls back to listing
-        locally cloned repos.
+        Lists repos from all installations where the app is installed.
+        Falls back to locally cloned repos if GitHub App is not configured.
         """
-        config = await self.get_config()
+        # Check if we have app credentials (app_id and private_key)
+        creds = await self._get_app_credentials_without_installation()
+        if creds:
+            # GitHub App is configured, list repos from all installations
+            installations = await self._list_installations()
+            if installations:
+                all_repos: list[GitHubRepository] = []
+                seen_full_names: set[str] = set()
 
-        # Only use GitHub API if installation_id is set
-        if config.installation_id:
-            # GitHub App is fully configured, use GitHub API
-            data = await self._github_request(
-                "GET", "/installation/repositories", params={"per_page": 100}
-            )
+                for installation in installations:
+                    installation_id = str(installation.get("id", ""))
+                    if not installation_id:
+                        continue
 
-            repos = []
-            for repo in data.get("repositories", []):
-                repos.append(
-                    GitHubRepository(
-                        id=repo["id"],
-                        name=repo["name"],
-                        full_name=repo["full_name"],
-                        owner=repo["owner"]["login"],
-                        default_branch=repo["default_branch"],
-                        private=repo["private"],
-                    )
-                )
+                    token = await self._get_installation_token_for_id(installation_id)
+                    if not token:
+                        continue
 
-            return repos
+                    # Get repos for this installation
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            "https://api.github.com/installation/repositories",
+                            headers={
+                                "Authorization": f"Bearer {token}",
+                                "Accept": "application/vnd.github+json",
+                                "X-GitHub-Api-Version": "2022-11-28",
+                            },
+                            params={"per_page": 100},
+                        )
+                        if response.status_code != 200:
+                            continue
+                        data = response.json()
 
-        # GitHub App installation_id not configured, fall back to locally cloned repos
+                    for repo in data.get("repositories", []):
+                        full_name = repo["full_name"]
+                        if full_name not in seen_full_names:
+                            seen_full_names.add(full_name)
+                            all_repos.append(
+                                GitHubRepository(
+                                    id=repo["id"],
+                                    name=repo["name"],
+                                    full_name=full_name,
+                                    owner=repo["owner"]["login"],
+                                    default_branch=repo["default_branch"],
+                                    private=repo["private"],
+                                )
+                            )
+
+                return all_repos
+
+        # GitHub App not configured, fall back to locally cloned repos
         if not self._repo_dao:
             return []
 
         local_repos = await self._repo_dao.list_all()
-        github_repos = []
+        github_repos: list[GitHubRepository] = []
+        seen_full_names_local: set[str] = set()
         for i, repo in enumerate(local_repos):
             gh_repo = self._repo_to_github_repository(repo, i + 1)
-            if gh_repo:
+            if gh_repo and gh_repo.full_name not in seen_full_names_local:
+                seen_full_names_local.add(gh_repo.full_name)
                 github_repos.append(gh_repo)
 
         return github_repos
