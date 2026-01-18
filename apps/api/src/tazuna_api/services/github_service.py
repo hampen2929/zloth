@@ -1,8 +1,11 @@
 """GitHub App service for tazuna API."""
 
+from __future__ import annotations
+
 import base64
+import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import jwt
@@ -12,16 +15,60 @@ from tazuna_api.domain.models import (
     GitHubAppConfig,
     GitHubAppConfigSave,
     GitHubRepository,
+    Repo,
 )
 from tazuna_api.storage.db import Database
+
+if TYPE_CHECKING:
+    from tazuna_api.storage.dao import RepoDAO
 
 
 class GitHubService:
     """Service for GitHub App operations."""
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, repo_dao: RepoDAO | None = None):
         self.db = db
+        self._repo_dao = repo_dao
         self._token_cache: dict[str, tuple[str, float]] = {}
+
+    def _parse_github_url(self, repo_url: str) -> tuple[str, str] | None:
+        """Parse owner and repo name from a GitHub URL.
+
+        Args:
+            repo_url: GitHub repository URL.
+
+        Returns:
+            Tuple of (owner, repo) or None if not a valid GitHub URL.
+        """
+        # Match https://github.com/owner/repo or https://github.com/owner/repo.git
+        match = re.match(r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?$", repo_url)
+        if match:
+            return match.group(1), match.group(2)
+        return None
+
+    def _repo_to_github_repository(self, repo: Repo, index: int) -> GitHubRepository | None:
+        """Convert a local Repo to GitHubRepository format.
+
+        Args:
+            repo: Local Repo object.
+            index: Index for generating a unique ID.
+
+        Returns:
+            GitHubRepository or None if the URL cannot be parsed.
+        """
+        parsed = self._parse_github_url(repo.repo_url)
+        if not parsed:
+            return None
+
+        owner, name = parsed
+        return GitHubRepository(
+            id=index,  # Use index as a pseudo ID since local repos don't have GitHub IDs
+            name=name,
+            full_name=f"{owner}/{name}",
+            owner=owner,
+            default_branch=repo.default_branch,
+            private=False,  # We don't know if it's private
+        )
 
     def _mask_value(self, value: str, visible_chars: int = 4) -> str:
         """Mask a value, showing only the last few characters."""
@@ -32,8 +79,14 @@ class GitHubService:
         return "*" * (len(value) - visible_chars) + value[-visible_chars:]
 
     async def get_config(self) -> GitHubAppConfig:
-        """Get GitHub App configuration status."""
-        # Check environment variables first
+        """Get GitHub App configuration status.
+
+        Returns is_configured=True in the following cases:
+        - Full GitHub App config (app_id, private_key, installation_id) from env or db
+        - Partial config from env (without installation_id) - local repos can be listed
+        - No config at all - local repos can still be listed
+        """
+        # Check environment variables first - full config
         if (
             settings.github_app_id
             and settings.github_app_private_key
@@ -49,7 +102,19 @@ class GitHubService:
                 source="env",
             )
 
-        # Check database
+        # Check environment variables - partial config (without installation_id)
+        if settings.github_app_id and settings.github_app_private_key:
+            return GitHubAppConfig(
+                app_id=settings.github_app_id,
+                app_id_masked=self._mask_value(settings.github_app_id),
+                installation_id="",
+                installation_id_masked="",
+                has_private_key=True,
+                is_configured=True,
+                source="env",
+            )
+
+        # Check database - full config
         row = await self.db.fetch_one(
             "SELECT app_id, installation_id, private_key FROM github_app_config WHERE id = 1"
         )
@@ -64,7 +129,21 @@ class GitHubService:
                 source="db",
             )
 
-        return GitHubAppConfig(is_configured=False)
+        # Check database - partial config (without installation_id)
+        if row and row["app_id"]:
+            return GitHubAppConfig(
+                app_id=row["app_id"],
+                app_id_masked=self._mask_value(row["app_id"]),
+                installation_id="",
+                installation_id_masked="",
+                has_private_key=bool(row["private_key"]),
+                is_configured=True,
+                source="db",
+            )
+
+        # No GitHub App config, but local repos can still be listed
+        # Return is_configured=True to allow repo listing to work
+        return GitHubAppConfig(is_configured=True, source="local")
 
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
         """Save GitHub App configuration to database."""
@@ -160,6 +239,93 @@ class GitHubService:
 
         return (app_id, private_key, installation_id)
 
+    async def _get_app_credentials_without_installation(self) -> tuple[str, str] | None:
+        """Get app ID and private key (without requiring installation ID).
+
+        Used for listing all installations of the app.
+        """
+        config = await self.get_config()
+
+        private_key = await self._get_private_key()
+        if not private_key:
+            return None
+
+        app_id: str | None
+        if config.source == "env":
+            app_id = settings.github_app_id
+        elif config.app_id:
+            app_id = config.app_id
+        else:
+            return None
+
+        if not app_id:
+            return None
+
+        return (app_id, private_key)
+
+    async def _list_installations(self) -> list[dict[str, Any]]:
+        """List all installations of the GitHub App.
+
+        Returns:
+            List of installation objects from GitHub API.
+        """
+        creds = await self._get_app_credentials_without_installation()
+        if not creds:
+            return []
+
+        app_id, private_key = creds
+        jwt_token = self._generate_jwt(app_id, private_key)
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.github.com/app/installations",
+                headers={
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            if response.status_code != 200:
+                return []
+            return response.json()
+
+    async def _get_installation_token_for_id(self, installation_id: str) -> str | None:
+        """Get installation access token for a specific installation ID."""
+        creds = await self._get_app_credentials_without_installation()
+        if not creds:
+            return None
+
+        app_id, private_key = creds
+        cache_key = f"{app_id}:{installation_id}"
+
+        # Check cache
+        if cache_key in self._token_cache:
+            token, expires_at = self._token_cache[cache_key]
+            if time.time() < expires_at - 60:  # 1 minute buffer
+                return token
+
+        # Generate new token
+        jwt_token = self._generate_jwt(app_id, private_key)
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+                headers={
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            if response.status_code != 201:
+                return None
+            data = response.json()
+
+        token = data["token"]
+        # GitHub tokens expire in 1 hour, cache for slightly less
+        self._token_cache[cache_key] = (token, time.time() + 3500)
+
+        return token
+
     def _generate_jwt(self, app_id: str, private_key: str) -> str:
         """Generate JWT for GitHub App authentication."""
         now = int(time.time())
@@ -227,25 +393,75 @@ class GitHubService:
             return response.json()
 
     async def list_repos(self) -> list[GitHubRepository]:
-        """List repositories accessible to the GitHub App."""
-        data = await self._github_request(
-            "GET", "/installation/repositories", params={"per_page": 100}
-        )
+        """List repositories accessible to the GitHub App.
 
-        repos = []
-        for repo in data.get("repositories", []):
-            repos.append(
-                GitHubRepository(
-                    id=repo["id"],
-                    name=repo["name"],
-                    full_name=repo["full_name"],
-                    owner=repo["owner"]["login"],
-                    default_branch=repo["default_branch"],
-                    private=repo["private"],
-                )
-            )
+        Lists repos from all installations where the app is installed.
+        Falls back to locally cloned repos if GitHub App is not configured.
+        """
+        # Check if we have app credentials (app_id and private_key)
+        creds = await self._get_app_credentials_without_installation()
+        if creds:
+            # GitHub App is configured, list repos from all installations
+            installations = await self._list_installations()
+            if installations:
+                all_repos: list[GitHubRepository] = []
+                seen_full_names: set[str] = set()
 
-        return repos
+                for installation in installations:
+                    installation_id = str(installation.get("id", ""))
+                    if not installation_id:
+                        continue
+
+                    token = await self._get_installation_token_for_id(installation_id)
+                    if not token:
+                        continue
+
+                    # Get repos for this installation
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            "https://api.github.com/installation/repositories",
+                            headers={
+                                "Authorization": f"Bearer {token}",
+                                "Accept": "application/vnd.github+json",
+                                "X-GitHub-Api-Version": "2022-11-28",
+                            },
+                            params={"per_page": 100},
+                        )
+                        if response.status_code != 200:
+                            continue
+                        data = response.json()
+
+                    for repo in data.get("repositories", []):
+                        full_name = repo["full_name"]
+                        if full_name not in seen_full_names:
+                            seen_full_names.add(full_name)
+                            all_repos.append(
+                                GitHubRepository(
+                                    id=repo["id"],
+                                    name=repo["name"],
+                                    full_name=full_name,
+                                    owner=repo["owner"]["login"],
+                                    default_branch=repo["default_branch"],
+                                    private=repo["private"],
+                                )
+                            )
+
+                return all_repos
+
+        # GitHub App not configured, fall back to locally cloned repos
+        if not self._repo_dao:
+            return []
+
+        local_repos = await self._repo_dao.list_all()
+        github_repos: list[GitHubRepository] = []
+        seen_full_names_local: set[str] = set()
+        for i, repo in enumerate(local_repos):
+            gh_repo = self._repo_to_github_repository(repo, i + 1)
+            if gh_repo and gh_repo.full_name not in seen_full_names_local:
+                seen_full_names_local.add(gh_repo.full_name)
+                github_repos.append(gh_repo)
+
+        return github_repos
 
     async def list_branches(self, owner: str, repo: str) -> list[str]:
         """List all branches for a repository with pagination support."""

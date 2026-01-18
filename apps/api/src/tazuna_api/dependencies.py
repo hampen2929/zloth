@@ -165,7 +165,8 @@ async def get_pr_service() -> PRService:
 async def get_github_service() -> GitHubService:
     """Get the GitHub service."""
     db = await get_db()
-    return GitHubService(db)
+    repo_dao = await get_repo_dao()
+    return GitHubService(db, repo_dao)
 
 
 async def get_user_preferences_dao() -> UserPreferencesDAO:
