@@ -79,8 +79,14 @@ class GitHubService:
         return "*" * (len(value) - visible_chars) + value[-visible_chars:]
 
     async def get_config(self) -> GitHubAppConfig:
-        """Get GitHub App configuration status."""
-        # Check environment variables first
+        """Get GitHub App configuration status.
+
+        Returns is_configured=True in the following cases:
+        - Full GitHub App config (app_id, private_key, installation_id) from env or db
+        - Partial config from env (without installation_id) - local repos can be listed
+        - No config at all - local repos can still be listed
+        """
+        # Check environment variables first - full config
         if (
             settings.github_app_id
             and settings.github_app_private_key
@@ -96,7 +102,19 @@ class GitHubService:
                 source="env",
             )
 
-        # Check database
+        # Check environment variables - partial config (without installation_id)
+        if settings.github_app_id and settings.github_app_private_key:
+            return GitHubAppConfig(
+                app_id=settings.github_app_id,
+                app_id_masked=self._mask_value(settings.github_app_id),
+                installation_id="",
+                installation_id_masked="",
+                has_private_key=True,
+                is_configured=True,
+                source="env",
+            )
+
+        # Check database - full config
         row = await self.db.fetch_one(
             "SELECT app_id, installation_id, private_key FROM github_app_config WHERE id = 1"
         )
@@ -111,7 +129,21 @@ class GitHubService:
                 source="db",
             )
 
-        return GitHubAppConfig(is_configured=False)
+        # Check database - partial config (without installation_id)
+        if row and row["app_id"]:
+            return GitHubAppConfig(
+                app_id=row["app_id"],
+                app_id_masked=self._mask_value(row["app_id"]),
+                installation_id="",
+                installation_id_masked="",
+                has_private_key=bool(row["private_key"]),
+                is_configured=True,
+                source="db",
+            )
+
+        # No GitHub App config, but local repos can still be listed
+        # Return is_configured=True to allow repo listing to work
+        return GitHubAppConfig(is_configured=True, source="local")
 
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
         """Save GitHub App configuration to database."""
