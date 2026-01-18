@@ -205,6 +205,12 @@ class RepoDAO:
         )
         await self.db.connection.commit()
 
+    async def list_all(self) -> list[Repo]:
+        """List all repos."""
+        cursor = await self.db.connection.execute("SELECT * FROM repos ORDER BY created_at DESC")
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
     def _row_to_model(self, row: Any) -> Repo:
         return Repo(
             id=row["id"],

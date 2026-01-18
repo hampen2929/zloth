@@ -1,8 +1,11 @@
 """GitHub App service for tazuna API."""
 
+from __future__ import annotations
+
 import base64
+import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import jwt
@@ -12,16 +15,60 @@ from tazuna_api.domain.models import (
     GitHubAppConfig,
     GitHubAppConfigSave,
     GitHubRepository,
+    Repo,
 )
 from tazuna_api.storage.db import Database
+
+if TYPE_CHECKING:
+    from tazuna_api.storage.dao import RepoDAO
 
 
 class GitHubService:
     """Service for GitHub App operations."""
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, repo_dao: RepoDAO | None = None):
         self.db = db
+        self._repo_dao = repo_dao
         self._token_cache: dict[str, tuple[str, float]] = {}
+
+    def _parse_github_url(self, repo_url: str) -> tuple[str, str] | None:
+        """Parse owner and repo name from a GitHub URL.
+
+        Args:
+            repo_url: GitHub repository URL.
+
+        Returns:
+            Tuple of (owner, repo) or None if not a valid GitHub URL.
+        """
+        # Match https://github.com/owner/repo or https://github.com/owner/repo.git
+        match = re.match(r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?$", repo_url)
+        if match:
+            return match.group(1), match.group(2)
+        return None
+
+    def _repo_to_github_repository(self, repo: Repo, index: int) -> GitHubRepository | None:
+        """Convert a local Repo to GitHubRepository format.
+
+        Args:
+            repo: Local Repo object.
+            index: Index for generating a unique ID.
+
+        Returns:
+            GitHubRepository or None if the URL cannot be parsed.
+        """
+        parsed = self._parse_github_url(repo.repo_url)
+        if not parsed:
+            return None
+
+        owner, name = parsed
+        return GitHubRepository(
+            id=index,  # Use index as a pseudo ID since local repos don't have GitHub IDs
+            name=name,
+            full_name=f"{owner}/{name}",
+            owner=owner,
+            default_branch=repo.default_branch,
+            private=False,  # We don't know if it's private
+        )
 
     def _mask_value(self, value: str, visible_chars: int = 4) -> str:
         """Mask a value, showing only the last few characters."""
@@ -227,25 +274,45 @@ class GitHubService:
             return response.json()
 
     async def list_repos(self) -> list[GitHubRepository]:
-        """List repositories accessible to the GitHub App."""
-        data = await self._github_request(
-            "GET", "/installation/repositories", params={"per_page": 100}
-        )
+        """List repositories accessible to the GitHub App.
 
-        repos = []
-        for repo in data.get("repositories", []):
-            repos.append(
-                GitHubRepository(
-                    id=repo["id"],
-                    name=repo["name"],
-                    full_name=repo["full_name"],
-                    owner=repo["owner"]["login"],
-                    default_branch=repo["default_branch"],
-                    private=repo["private"],
-                )
+        If GitHub App is not configured, falls back to listing locally cloned repos.
+        """
+        config = await self.get_config()
+
+        if config.is_configured:
+            # GitHub App is configured, use GitHub API
+            data = await self._github_request(
+                "GET", "/installation/repositories", params={"per_page": 100}
             )
 
-        return repos
+            repos = []
+            for repo in data.get("repositories", []):
+                repos.append(
+                    GitHubRepository(
+                        id=repo["id"],
+                        name=repo["name"],
+                        full_name=repo["full_name"],
+                        owner=repo["owner"]["login"],
+                        default_branch=repo["default_branch"],
+                        private=repo["private"],
+                    )
+                )
+
+            return repos
+
+        # GitHub App not configured, fall back to locally cloned repos
+        if not self._repo_dao:
+            return []
+
+        local_repos = await self._repo_dao.list_all()
+        github_repos = []
+        for i, repo in enumerate(local_repos):
+            gh_repo = self._repo_to_github_repository(repo, i + 1)
+            if gh_repo:
+                github_repos.append(gh_repo)
+
+        return github_repos
 
     async def list_branches(self, owner: str, repo: str) -> list[str]:
         """List all branches for a repository with pagination support."""
