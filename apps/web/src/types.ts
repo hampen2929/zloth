@@ -268,7 +268,7 @@ export interface GitHubAppConfig {
 export interface GitHubAppConfigSave {
   app_id: string;
   private_key?: string;
-  installation_id: string;
+  installation_id?: string;  // Optional: if not set, all installations are available
 }
 
 // GitHub Repository (for selection by name)
