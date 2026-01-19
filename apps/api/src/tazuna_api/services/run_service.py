@@ -306,13 +306,18 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             # Verify worktree is still valid (exists and is a valid git repo)
             worktree_path = Path(existing_run.worktree_path)
             if await self.git_service.is_valid_worktree(worktree_path):
+                # Verify the worktree's origin matches the expected repository.
+                # This is critical for multi-repository setups where worktrees might
+                # accidentally be reused across different repositories.
+                if not await self.git_service.worktree_matches_repo(worktree_path, repo.repo_url):
+                    logger.warning(
+                        f"Worktree origin does not match task's repo; creating new worktree "
+                        f"(worktree={worktree_path}, expected_repo={repo.repo_url})"
+                    )
                 # If we're working from the repo's default branch, ensure the existing worktree
                 # still contains the latest origin/<default>. Otherwise, create a fresh worktree
                 # from the latest default to avoid PRs being based on a stale main.
-                should_check_default = (base_ref == repo.default_branch) and bool(
-                    repo.default_branch
-                )
-                if should_check_default:
+                elif (base_ref == repo.default_branch) and bool(repo.default_branch):
                     default_ref = f"origin/{repo.default_branch}"
                     up_to_date = await self.git_service.is_ancestor(
                         repo_path=worktree_path,

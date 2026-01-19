@@ -460,6 +460,85 @@ class GitService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _check)
 
+    async def get_origin_url(self, repo_path: Path) -> str | None:
+        """Get the origin remote URL for a repository or worktree.
+
+        Args:
+            repo_path: Path to the repository or worktree.
+
+        Returns:
+            Origin URL string, or None if not found or invalid.
+        """
+
+        def _get_url() -> str | None:
+            try:
+                repo = git.Repo(repo_path)
+                return str(repo.remotes.origin.url)
+            except (git.InvalidGitRepositoryError, git.GitCommandError, AttributeError):
+                return None
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _get_url)
+
+    def normalize_repo_url(self, url: str) -> str:
+        """Normalize a Git repository URL for comparison.
+
+        Handles variations like:
+        - https://github.com/owner/repo
+        - https://github.com/owner/repo.git
+        - git@github.com:owner/repo.git
+
+        Args:
+            url: Repository URL to normalize.
+
+        Returns:
+            Normalized URL in format 'github.com/owner/repo'.
+        """
+        url = url.strip()
+
+        # Remove .git suffix
+        if url.endswith(".git"):
+            url = url[:-4]
+
+        # Remove trailing slashes
+        url = url.rstrip("/")
+
+        # Handle SSH format: git@github.com:owner/repo
+        if url.startswith("git@"):
+            # Extract github.com:owner/repo -> github.com/owner/repo
+            url = url.replace(":", "/", 1).replace("git@", "")
+            return url
+
+        # Handle HTTPS format: https://github.com/owner/repo
+        if "://" in url:
+            # Remove protocol
+            url = url.split("://", 1)[1]
+            return url
+
+        return url
+
+    async def worktree_matches_repo(self, worktree_path: Path, expected_repo_url: str) -> bool:
+        """Check if a worktree's origin matches the expected repository URL.
+
+        This is critical for multi-repository setups to ensure a worktree
+        created for repo A is not accidentally reused for repo B.
+
+        Args:
+            worktree_path: Path to the worktree.
+            expected_repo_url: Expected repository URL.
+
+        Returns:
+            True if the worktree's origin matches the expected URL.
+        """
+        worktree_origin = await self.get_origin_url(worktree_path)
+        if not worktree_origin:
+            return False
+
+        normalized_worktree = self.normalize_repo_url(worktree_origin)
+        normalized_expected = self.normalize_repo_url(expected_repo_url)
+
+        return normalized_worktree == normalized_expected
+
     # ============================================================
     # Change Management
     # ============================================================
