@@ -505,6 +505,8 @@ export function ChatCodeView({
   // Auto-trigger CI check for pending CI checks (gating auto-polling)
   // This ensures that when automatic gating creates a pending CI check,
   // we actually poll GitHub for the latest status
+  // Use a ref to track when we're already polling to avoid duplicate requests
+  const ciCheckPollingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!prResult?.pr_id || !ciChecks) return;
 
@@ -513,12 +515,25 @@ export function ChatCodeView({
     );
 
     if (pendingCheck) {
+      // Skip if we're already polling for this check
+      if (ciCheckPollingRef.current.has(pendingCheck.id)) {
+        return;
+      }
+
+      // Mark as polling
+      ciCheckPollingRef.current.add(pendingCheck.id);
+
       // Trigger CI check to update status from GitHub
       // This is fire-and-forget; SWR polling will pick up the updated data
       ciChecksApi.check(taskId, prResult.pr_id).then(() => {
         mutateCIChecks();
       }).catch(() => {
         // Ignore errors - we'll retry on next poll
+      }).finally(() => {
+        // Allow future polling after a delay to prevent rapid-fire requests
+        setTimeout(() => {
+          ciCheckPollingRef.current.delete(pendingCheck.id);
+        }, 10000); // 10 second cooldown between automatic polls
       });
     }
   }, [ciChecks, prResult?.pr_id, taskId, mutateCIChecks]);

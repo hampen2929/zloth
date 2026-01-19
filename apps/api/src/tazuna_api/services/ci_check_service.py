@@ -97,7 +97,16 @@ class CICheckService:
 
         # Create or update CICheck record
         # Look for existing check with the same SHA to avoid duplicate records
-        existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha) if sha else None
+        # For repos without CI (empty jobs and no SHA), use the latest check for this PR
+        # to avoid creating duplicate "pending" records on repeated polling
+        existing = None
+        if sha:
+            existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha)
+        if not existing and not ci_data.get("jobs"):
+            # No SHA or no jobs found - likely a repo without CI
+            # Try to find and update the latest check for this PR instead of creating a new one
+            existing = await self.ci_check_dao.get_latest_by_pr_id(pr_id)
+
         if existing:
             # Update existing check for this SHA
             ci_check = await self.ci_check_dao.update(
