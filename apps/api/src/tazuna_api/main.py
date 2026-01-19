@@ -13,6 +13,7 @@ from tazuna_api.routes import (
     breakdown_router,
     github_router,
     kanban_router,
+    metrics_router,
     models_router,
     preferences_router,
     prs_router,
@@ -66,6 +67,7 @@ app.include_router(backlog_router, prefix="/v1")
 app.include_router(breakdown_router, prefix="/v1")
 app.include_router(github_router, prefix="/v1")
 app.include_router(kanban_router, prefix="/v1")
+app.include_router(metrics_router)
 app.include_router(models_router, prefix="/v1")
 app.include_router(preferences_router, prefix="/v1")
 app.include_router(repos_router, prefix="/v1")

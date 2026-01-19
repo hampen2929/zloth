@@ -4,6 +4,7 @@ from tazuna_api.routes.backlog import router as backlog_router
 from tazuna_api.routes.breakdown import router as breakdown_router
 from tazuna_api.routes.github import router as github_router
 from tazuna_api.routes.kanban import router as kanban_router
+from tazuna_api.routes.metrics import router as metrics_router
 from tazuna_api.routes.models import router as models_router
 from tazuna_api.routes.preferences import router as preferences_router
 from tazuna_api.routes.prs import router as prs_router
@@ -19,6 +20,7 @@ __all__ = [
     "breakdown_router",
     "github_router",
     "kanban_router",
+    "metrics_router",
     "models_router",
     "preferences_router",
     "repos_router",
