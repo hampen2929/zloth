@@ -177,7 +177,21 @@ class GitService:
 
         Raises:
             git.GitCommandError: If git worktree creation fails.
+            ValueError: If source repo's origin doesn't match expected repo URL.
         """
+        # Validate that the source repo's origin URL matches repo.repo_url
+        # This is critical for multi-repository setups to ensure worktrees
+        # are created from the correct repository clone.
+        if not await self.worktree_matches_repo(Path(repo.workspace_path), repo.repo_url):
+            source_origin = await self.get_origin_url(Path(repo.workspace_path))
+            raise ValueError(
+                f"Source repository origin URL mismatch. "
+                f"Expected: {repo.repo_url}, "
+                f"Actual: {source_origin}. "
+                f"The repository at {repo.workspace_path} does not match the task's repository. "
+                "This may indicate corrupted repository data or a configuration issue."
+            )
+
         branch_name = self._generate_branch_name(run_id, branch_prefix=branch_prefix)
         worktree_path = self.worktrees_dir / f"run_{run_id}"
 
