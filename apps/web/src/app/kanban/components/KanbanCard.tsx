@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import type { TaskWithKanbanStatus, TaskKanbanStatus, ExecutorRunStatus, ExecutorType } from '@/types';
-import { PlayIcon, CheckIcon, CodeBracketIcon, CheckCircleIcon, XCircleIcon, ClockIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, CheckIcon, CodeBracketIcon, CheckCircleIcon, XCircleIcon, ClockIcon, ExclamationTriangleIcon, FolderIcon } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
 interface KanbanCardProps {
@@ -330,6 +330,14 @@ export function KanbanCard({
       <div className="font-medium text-sm text-white truncate">
         {task.title || 'Untitled Task'}
       </div>
+
+      {/* Repository name */}
+      {task.repo_name && (
+        <div className="mt-1 flex items-center gap-1 text-xs text-gray-500 truncate">
+          <FolderIcon className="w-3 h-3 flex-shrink-0" />
+          <span className="truncate">{task.repo_name}</span>
+        </div>
+      )}
 
       {/* Executor status indicators */}
       {task.executor_statuses && task.executor_statuses.length > 0 && hasExecutorRuns && (

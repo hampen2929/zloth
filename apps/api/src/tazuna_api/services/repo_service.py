@@ -139,17 +139,31 @@ class RepoService:
                 workspace_path = Path(existing.workspace_path)
                 if workspace_path.exists():
                     repo = git.Repo(workspace_path)
+                    fetch_succeeded = False
                     try:
-                        # Fetch the branch from origin with auth (shallow clone may not have it)
+                        # Fetch the branch from origin with auth, updating remote tracking branch
+                        # Use refspec to explicitly update refs/remotes/origin/{branch}
                         auth_url = await github_service.clone_url(data.owner, data.repo)
-                        repo.git.fetch(auth_url, data.branch, depth=1)
+                        refspec = f"+refs/heads/{data.branch}:refs/remotes/origin/{data.branch}"
+                        repo.git.fetch(auth_url, refspec, depth=1)
+                        fetch_succeeded = True
                     except git.GitCommandError:
-                        # Branch might not exist on remote, ignore fetch errors
+                        # Branch might not exist on remote, will try local branch below
                         pass
+
                     try:
-                        # Force checkout to FETCH_HEAD to ensure we have the latest remote state.
-                        # Using -B to reset the local branch if it already exists.
-                        repo.git.checkout("-B", data.branch, "FETCH_HEAD")
+                        if fetch_succeeded:
+                            # Use origin/{branch} instead of FETCH_HEAD for reliability
+                            # Using -B to reset the local branch if it already exists
+                            repo.git.checkout("-B", data.branch, f"origin/{data.branch}")
+                        else:
+                            # Fetch failed - try to checkout existing local branch
+                            # or the branch may already exist from a previous clone
+                            try:
+                                repo.git.checkout(data.branch)
+                            except git.GitCommandError:
+                                # Branch doesn't exist locally either, try to create from HEAD
+                                repo.git.checkout("-b", data.branch)
                     except git.GitCommandError as e:
                         # Branch might already be checked out in a worktree, which is fine.
                         # Git prevents checking out the same branch in multiple places,

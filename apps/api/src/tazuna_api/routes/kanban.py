@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from tazuna_api.dependencies import get_kanban_service
-from tazuna_api.domain.models import PR, KanbanBoard, Task
+from tazuna_api.domain.models import PR, KanbanBoard, RepoSummary, Task
 from tazuna_api.services.kanban_service import KanbanService
 
 router = APIRouter(prefix="/kanban", tags=["kanban"])
@@ -16,6 +16,18 @@ async def get_kanban_board(
 ) -> KanbanBoard:
     """Get kanban board with all columns."""
     return await kanban_service.get_board(repo_id)
+
+
+@router.get("/repos", response_model=list[RepoSummary])
+async def get_repo_summaries(
+    kanban_service: KanbanService = Depends(get_kanban_service),
+) -> list[RepoSummary]:
+    """Get all repositories with task count summaries.
+
+    Returns a list of repositories with task counts by computed kanban status,
+    sorted by latest activity (most recent first).
+    """
+    return await kanban_service.get_repo_summaries()
 
 
 @router.post("/tasks/{task_id}/move-to-todo", response_model=Task)

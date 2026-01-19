@@ -38,6 +38,7 @@ import type {
   UserPreferences,
   UserPreferencesSave,
   KanbanBoard,
+  RepoSummary,
   BacklogItem,
   BacklogItemCreate,
   BacklogItemUpdate,
@@ -523,6 +524,8 @@ export const kanbanApi = {
     const params = repoId ? `?repo_id=${repoId}` : '';
     return fetchApi<KanbanBoard>(`/kanban${params}`);
   },
+
+  getRepoSummaries: () => fetchApi<RepoSummary[]>('/kanban/repos'),
 
   moveToTodo: (taskId: string) =>
     fetchApi<Task>(`/kanban/tasks/${taskId}/move-to-todo`, { method: 'POST' }),

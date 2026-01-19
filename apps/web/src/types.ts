@@ -391,6 +391,7 @@ export interface ExecutorRunStatus {
 
 export interface TaskWithKanbanStatus extends Task {
   computed_status: TaskKanbanStatus;
+  repo_name: string | null; // Repository name (e.g., "owner/repo")
   run_count: number;
   running_count: number;
   completed_count: number;
@@ -409,6 +410,28 @@ export interface KanbanColumn {
 export interface KanbanBoard {
   columns: KanbanColumn[];
   total_tasks: number;
+}
+
+// Repository Summary
+export interface RepoTaskCounts {
+  backlog: number;
+  todo: number;
+  in_progress: number;
+  gating: number;
+  in_review: number;
+  done: number;
+  archived: number;
+}
+
+export interface RepoSummary {
+  id: string;
+  repo_url: string;
+  repo_name: string | null;
+  default_branch: string;
+  task_counts: RepoTaskCounts;
+  total_tasks: number;
+  latest_activity: string | null;
+  created_at: string;
 }
 
 // Backlog

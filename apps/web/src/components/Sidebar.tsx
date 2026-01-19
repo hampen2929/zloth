@@ -17,6 +17,7 @@ import {
   ArrowsUpDownIcon,
   ClipboardDocumentListIcon,
   ViewColumnsIcon,
+  FolderIcon,
   CogIcon,
   EyeIcon,
   ClockIcon,
@@ -143,6 +144,19 @@ export default function Sidebar() {
         >
           <ViewColumnsIcon className="w-4 h-4" />
           Kanban Board
+        </Link>
+        <Link
+          href="/repos"
+          className={cn(
+            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
+            'bg-gray-800 hover:bg-gray-700 rounded-lg',
+            'text-sm font-medium transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/repos' && 'bg-gray-700 ring-2 ring-gray-500'
+          )}
+        >
+          <FolderIcon className="w-4 h-4" />
+          Repositories
         </Link>
         <Link
           href="/metrics"

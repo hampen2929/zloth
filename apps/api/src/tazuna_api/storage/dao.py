@@ -205,6 +205,12 @@ class RepoDAO:
         )
         await self.db.connection.commit()
 
+    async def list(self) -> builtins.list[Repo]:
+        """List all repos."""
+        cursor = await self.db.connection.execute("SELECT * FROM repos ORDER BY created_at DESC")
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
     def _row_to_model(self, row: Any) -> Repo:
         return Repo(
             id=row["id"],
@@ -313,6 +319,7 @@ class TaskDAO:
         query = """
             SELECT
                 t.*,
+                repos.repo_url,
                 COALESCE(r.run_count, 0) as run_count,
                 COALESCE(r.running_count, 0) as running_count,
                 COALESCE(r.completed_count, 0) as completed_count,
@@ -321,6 +328,7 @@ class TaskDAO:
                 p.latest_pr_id,
                 ci.latest_ci_status
             FROM tasks t
+            LEFT JOIN repos ON t.repo_id = repos.id
             LEFT JOIN (
                 SELECT
                     task_id,
@@ -376,10 +384,19 @@ class TaskDAO:
                 if "coding_mode" in row.keys() and row["coding_mode"]
                 else "interactive"
             )
+            # Parse repo_name from repo_url (e.g., "https://github.com/owner/repo" -> "owner/repo")
+            repo_url = row["repo_url"] if "repo_url" in row.keys() else None
+            repo_name = None
+            if repo_url:
+                # Handle https://github.com/owner/repo format
+                if "github.com/" in repo_url:
+                    repo_name = repo_url.split("github.com/")[-1].rstrip("/").rstrip(".git")
+
             result.append(
                 {
                     "id": row["id"],
                     "repo_id": row["repo_id"],
+                    "repo_name": repo_name,
                     "title": row["title"],
                     "coding_mode": CodingMode(coding_mode_str),
                     "kanban_status": kanban_status,
