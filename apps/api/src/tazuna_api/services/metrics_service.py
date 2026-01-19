@@ -60,7 +60,7 @@ class MetricsService:
 
     async def get_metrics_detail(
         self,
-        period: str = "30d",
+        period: str = "7d",
         repo_id: str | None = None,
     ) -> MetricsDetail:
         """Get complete metrics detail for a period.
@@ -163,7 +163,7 @@ class MetricsService:
     async def get_trends(
         self,
         metric_names: list[str],
-        period: str = "30d",
+        period: str = "7d",
         granularity: str = "day",
         repo_id: str | None = None,
     ) -> list[MetricsTrend]:

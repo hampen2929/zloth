@@ -702,7 +702,7 @@ export const metricsApi = {
   /**
    * Get complete metrics detail for a period.
    */
-  get: (period: string = '30d', repoId?: string) => {
+  get: (period: string = '7d', repoId?: string) => {
     const params = new URLSearchParams();
     params.set('period', period);
     if (repoId) params.set('repo_id', repoId);
@@ -734,7 +734,7 @@ export const metricsApi = {
    */
   getTrends: (
     metrics: string[] = ['merge_rate', 'run_success_rate', 'throughput'],
-    period: string = '30d',
+    period: string = '7d',
     granularity: string = 'day',
     repoId?: string
   ) => {
