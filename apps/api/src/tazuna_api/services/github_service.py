@@ -22,6 +22,7 @@ class GitHubService:
     def __init__(self, db: Database):
         self.db = db
         self._token_cache: dict[str, tuple[str, float]] = {}
+        self._installations_cache: list[dict] | None = None
 
     def _mask_value(self, value: str, visible_chars: int = 4) -> str:
         """Mask a value, showing only the last few characters."""
@@ -32,18 +33,21 @@ class GitHubService:
         return "*" * (len(value) - visible_chars) + value[-visible_chars:]
 
     async def get_config(self) -> GitHubAppConfig:
-        """Get GitHub App configuration status."""
+        """Get GitHub App configuration status.
+
+        Note: installation_id is optional. If not set, the service will
+        auto-discover installations from the GitHub App.
+        """
         # Check environment variables first
-        if (
-            settings.github_app_id
-            and settings.github_app_private_key
-            and settings.github_app_installation_id
-        ):
+        if settings.github_app_id and settings.github_app_private_key:
+            installation_id = settings.github_app_installation_id or None
             return GitHubAppConfig(
                 app_id=settings.github_app_id,
                 app_id_masked=self._mask_value(settings.github_app_id),
-                installation_id=settings.github_app_installation_id,
-                installation_id_masked=self._mask_value(settings.github_app_installation_id),
+                installation_id=installation_id,
+                installation_id_masked=self._mask_value(installation_id)
+                if installation_id
+                else None,
                 has_private_key=True,
                 is_configured=True,
                 source="env",
@@ -53,13 +57,16 @@ class GitHubService:
         row = await self.db.fetch_one(
             "SELECT app_id, installation_id, private_key FROM github_app_config WHERE id = 1"
         )
-        if row and row["app_id"] and row["installation_id"]:
+        if row and row["app_id"] and row["private_key"]:
+            installation_id = row["installation_id"] if row["installation_id"] else None
             return GitHubAppConfig(
                 app_id=row["app_id"],
                 app_id_masked=self._mask_value(row["app_id"]),
-                installation_id=row["installation_id"],
-                installation_id_masked=self._mask_value(row["installation_id"]),
-                has_private_key=bool(row["private_key"]),
+                installation_id=installation_id,
+                installation_id_masked=self._mask_value(installation_id)
+                if installation_id
+                else None,
+                has_private_key=True,
                 is_configured=True,
                 source="db",
             )
@@ -67,7 +74,11 @@ class GitHubService:
         return GitHubAppConfig(is_configured=False)
 
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
-        """Save GitHub App configuration to database."""
+        """Save GitHub App configuration to database.
+
+        Note: installation_id is optional. If not provided, the service will
+        auto-discover installations from the GitHub App.
+        """
         # Check if config exists
         existing = await self.db.fetch_one("SELECT id FROM github_app_config WHERE id = 1")
 
@@ -112,6 +123,8 @@ class GitHubService:
 
         # Clear token cache
         self._token_cache.clear()
+        # Clear installations cache
+        self._installations_cache = None
 
         return GitHubAppConfig(
             app_id=data.app_id,
@@ -135,8 +148,18 @@ class GitHubService:
 
         return None
 
-    async def _get_app_credentials(self) -> tuple[str, str, str] | None:
-        """Get app ID, private key, and installation ID."""
+    async def _get_app_credentials(
+        self, *, require_installation_id: bool = False
+    ) -> tuple[str, str, str | None] | None:
+        """Get app ID, private key, and optionally installation ID.
+
+        Args:
+            require_installation_id: If True, returns None when installation_id is not set.
+
+        Returns:
+            Tuple of (app_id, private_key, installation_id) or None if not configured.
+            installation_id may be None if not set and require_installation_id is False.
+        """
         config = await self.get_config()
         if not config.is_configured:
             return None
@@ -149,13 +172,15 @@ class GitHubService:
         installation_id: str | None
         if config.source == "env":
             app_id = settings.github_app_id
-            installation_id = settings.github_app_installation_id
+            installation_id = settings.github_app_installation_id or None
         else:
             app_id = config.app_id
             installation_id = config.installation_id
 
-        # These should be set when is_configured is True
-        if not app_id or not installation_id:
+        if not app_id:
+            return None
+
+        if require_installation_id and not installation_id:
             return None
 
         return (app_id, private_key, installation_id)
@@ -170,14 +195,64 @@ class GitHubService:
         }
         return jwt.encode(payload, private_key, algorithm="RS256")
 
-    async def _get_installation_token(self) -> str | None:
-        """Get or refresh installation access token."""
+    async def _list_installations(self) -> list[dict]:
+        """List all installations of this GitHub App.
+
+        Returns:
+            List of installation dicts with 'id', 'account', etc.
+        """
+        if self._installations_cache is not None:
+            return self._installations_cache
+
+        creds = await self._get_app_credentials()
+        if not creds:
+            return []
+
+        app_id, private_key, _ = creds
+        jwt_token = self._generate_jwt(app_id, private_key)
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.github.com/app/installations",
+                headers={
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            response.raise_for_status()
+            installations = response.json()
+
+        self._installations_cache = installations
+        return installations
+
+    async def _get_installation_token(self, installation_id: str | None = None) -> str | None:
+        """Get or refresh installation access token.
+
+        Args:
+            installation_id: Optional installation ID. If not provided,
+                uses configured installation_id or first available installation.
+
+        Returns:
+            Installation access token or None if not available.
+        """
         creds = await self._get_app_credentials()
         if not creds:
             return None
 
-        app_id, private_key, installation_id = creds
-        cache_key = f"{app_id}:{installation_id}"
+        app_id, private_key, configured_installation_id = creds
+
+        # Determine which installation_id to use
+        target_installation_id = installation_id or configured_installation_id
+
+        if not target_installation_id:
+            # Auto-discover: get first available installation
+            installations = await self._list_installations()
+            if not installations:
+                return None
+            target_installation_id = str(installations[0]["id"])
+
+        cache_key = f"{app_id}:{target_installation_id}"
 
         # Check cache
         if cache_key in self._token_cache:
@@ -190,7 +265,7 @@ class GitHubService:
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+                f"https://api.github.com/app/installations/{target_installation_id}/access_tokens",
                 headers={
                     "Authorization": f"Bearer {jwt_token}",
                     "Accept": "application/vnd.github+json",
@@ -206,9 +281,23 @@ class GitHubService:
 
         return token
 
-    async def _github_request(self, method: str, endpoint: str, **kwargs: Any) -> Any:
-        """Make authenticated request to GitHub API."""
-        token = await self._get_installation_token()
+    async def _github_request(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        installation_id: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Make authenticated request to GitHub API.
+
+        Args:
+            method: HTTP method.
+            endpoint: API endpoint path.
+            installation_id: Optional installation ID for the token.
+            **kwargs: Additional arguments for the request.
+        """
+        token = await self._get_installation_token(installation_id)
         if not token:
             raise ValueError("GitHub App not configured")
 
@@ -227,23 +316,55 @@ class GitHubService:
             return response.json()
 
     async def list_repos(self) -> list[GitHubRepository]:
-        """List repositories accessible to the GitHub App."""
-        data = await self._github_request(
-            "GET", "/installation/repositories", params={"per_page": 100}
-        )
+        """List repositories accessible to the GitHub App.
 
-        repos = []
-        for repo in data.get("repositories", []):
-            repos.append(
-                GitHubRepository(
-                    id=repo["id"],
-                    name=repo["name"],
-                    full_name=repo["full_name"],
-                    owner=repo["owner"]["login"],
-                    default_branch=repo["default_branch"],
-                    private=repo["private"],
+        If installation_id is configured, returns repos from that installation.
+        Otherwise, returns repos from all installations.
+        """
+        creds = await self._get_app_credentials()
+        if not creds:
+            raise ValueError("GitHub App not configured")
+
+        _, _, configured_installation_id = creds
+
+        repos: list[GitHubRepository] = []
+        seen_ids: set[int] = set()
+
+        if configured_installation_id:
+            # Single installation mode
+            installation_ids = [configured_installation_id]
+        else:
+            # Multi-installation mode: get all installations
+            installations = await self._list_installations()
+            if not installations:
+                return []
+            installation_ids = [str(inst["id"]) for inst in installations]
+
+        for inst_id in installation_ids:
+            try:
+                data = await self._github_request(
+                    "GET",
+                    "/installation/repositories",
+                    installation_id=inst_id,
+                    params={"per_page": 100},
                 )
-            )
+
+                for repo in data.get("repositories", []):
+                    if repo["id"] not in seen_ids:
+                        seen_ids.add(repo["id"])
+                        repos.append(
+                            GitHubRepository(
+                                id=repo["id"],
+                                name=repo["name"],
+                                full_name=repo["full_name"],
+                                owner=repo["owner"]["login"],
+                                default_branch=repo["default_branch"],
+                                private=repo["private"],
+                            )
+                        )
+            except Exception:
+                # Skip failed installations
+                continue
 
         return repos
 

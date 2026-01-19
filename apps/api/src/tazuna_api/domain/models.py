@@ -565,7 +565,7 @@ class GitHubAppConfigSave(BaseModel):
 
     app_id: str
     private_key: str | None = None  # Optional for updates
-    installation_id: str
+    installation_id: str | None = None  # Optional: if not set, auto-discover from installations
 
 
 class GitHubRepository(BaseModel):
