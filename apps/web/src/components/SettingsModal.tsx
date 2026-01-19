@@ -366,7 +366,7 @@ export function GitHubAppTab() {
       await githubApi.saveConfig({
         app_id: appId,
         private_key: privateKey || undefined,
-        installation_id: installationId,
+        installation_id: installationId || undefined,
       });
       mutate('github-config');
       success('GitHub App configuration saved successfully');
@@ -437,8 +437,13 @@ export function GitHubAppTab() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-400">Installation ID</span>
-                <span className="font-mono text-sm text-gray-200 bg-gray-700 px-2 py-1 rounded">
-                  {config?.installation_id_masked || '***'}
+                <span className={cn(
+                  'text-sm px-2 py-1 rounded',
+                  config?.installation_id_masked
+                    ? 'font-mono text-gray-200 bg-gray-700'
+                    : 'text-blue-400 bg-blue-900/30 font-medium'
+                )}>
+                  {config?.installation_id_masked || 'Auto (all installations)'}
                 </span>
               </div>
             </div>
@@ -473,17 +478,17 @@ export function GitHubAppTab() {
           />
 
           <Input
-            label="Installation ID"
+            label="Installation ID (optional)"
             value={installationId}
             onChange={(e) => setInstallationId(e.target.value)}
             placeholder="12345678"
-            hint="Find this in your organization's installed apps settings"
+            hint="Optional: If not set, all installations of this GitHub App will be available. Find this in your organization's installed apps settings."
             error={saveError || undefined}
           />
 
           <Button
             type="submit"
-            disabled={!appId || !installationId}
+            disabled={!appId}
             isLoading={loading}
             className="w-full"
           >
@@ -501,6 +506,7 @@ export function GitHubAppTab() {
         <div className="font-mono text-xs text-gray-400 space-y-1 bg-gray-800/50 p-3 rounded">
           <div>TAZUNA_GITHUB_APP_ID=&lt;app_id&gt;</div>
           <div>TAZUNA_GITHUB_APP_PRIVATE_KEY=&lt;base64_encoded_key&gt;</div>
+          <div className="text-gray-500"># Optional: if not set, all installations are available</div>
           <div>TAZUNA_GITHUB_APP_INSTALLATION_ID=&lt;installation_id&gt;</div>
         </div>
       </div>
