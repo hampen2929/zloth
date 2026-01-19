@@ -176,6 +176,33 @@ class PRService:
 
         return parts[0], parts[1]
 
+    async def _get_run_for_task(self, task_id: str, run_id: str) -> Run:
+        """Get a run and validate it belongs to the specified task.
+
+        This validation is critical for multi-repository setups where different
+        tasks target different repositories. Without this check, a run from
+        task A (repo A) could be used with task B (repo B), causing push failures.
+
+        Args:
+            task_id: Expected task ID.
+            run_id: Run ID to retrieve.
+
+        Returns:
+            Run object.
+
+        Raises:
+            ValueError: If run is not found or belongs to a different task.
+        """
+        run = await self.run_dao.get(run_id)
+        if not run:
+            raise ValueError(f"Run not found: {run_id}")
+        if run.task_id != task_id:
+            raise ValueError(
+                f"Run {run_id} belongs to task {run.task_id}, not task {task_id}. "
+                "Cannot use a run from a different task for PR operations."
+            )
+        return run
+
     async def _ensure_branch_pushed(
         self, *, owner: str, repo: str, repo_obj: Repo, run: Run
     ) -> None:
@@ -249,10 +276,8 @@ class PRService:
         if not repo_obj:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        # Get run
-        run = await self.run_dao.get(data.selected_run_id)
-        if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+        # Get run and validate it belongs to this task
+        run = await self._get_run_for_task(task_id, data.selected_run_id)
 
         # Verify run has a branch and commit
         if not run.working_branch:
@@ -322,10 +347,8 @@ class PRService:
         if not repo_obj:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        # Get run
-        run = await self.run_dao.get(data.selected_run_id)
-        if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+        # Get run and validate it belongs to this task
+        run = await self._get_run_for_task(task_id, data.selected_run_id)
 
         # Verify run has a branch and commit
         if not run.working_branch:
@@ -402,9 +425,8 @@ class PRService:
         if not repo_obj:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        run = await self.run_dao.get(data.selected_run_id)
-        if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+        # Get run and validate it belongs to this task
+        run = await self._get_run_for_task(task_id, data.selected_run_id)
 
         if not run.working_branch:
             raise ValueError(f"Run has no working branch: {data.selected_run_id}")
@@ -435,9 +457,8 @@ class PRService:
         if not repo_obj:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        run = await self.run_dao.get(data.selected_run_id)
-        if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+        # Get run and validate it belongs to this task
+        run = await self._get_run_for_task(task_id, data.selected_run_id)
 
         if not run.working_branch:
             raise ValueError(f"Run has no working branch: {data.selected_run_id}")
@@ -489,9 +510,8 @@ class PRService:
         if not repo_obj:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        run = await self.run_dao.get(selected_run_id)
-        if not run:
-            raise ValueError(f"Run not found: {selected_run_id}")
+        # Get run and validate it belongs to this task
+        run = await self._get_run_for_task(task_id, selected_run_id)
 
         if not run.working_branch:
             raise ValueError(f"Run has no working branch: {selected_run_id}")
@@ -1076,10 +1096,8 @@ IMPORTANT INSTRUCTIONS:
         if not repo_obj:
             raise ValueError(f"Repo not found: {task.repo_id}")
 
-        # Get run
-        run = await self.run_dao.get(data.selected_run_id)
-        if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+        # Get run and validate it belongs to this task
+        run = await self._get_run_for_task(task_id, data.selected_run_id)
 
         # For CLI executor runs, the commit should already be on the branch
         # The branch should be the same as the PR branch
