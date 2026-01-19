@@ -149,10 +149,10 @@ export default function Sidebar() {
           href="/backlog"
           className={cn(
             'flex items-center justify-center gap-2 w-full py-2.5 px-3',
-            'bg-purple-600 hover:bg-purple-700 rounded-lg',
+            'bg-gray-800 hover:bg-gray-700 rounded-lg',
             'text-sm font-medium transition-colors',
-            'focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900',
-            pathname === '/backlog' && 'ring-2 ring-purple-400'
+            'focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/backlog' && 'bg-gray-700 ring-2 ring-gray-500'
           )}
         >
           <ClipboardDocumentListIcon className="w-4 h-4" />
