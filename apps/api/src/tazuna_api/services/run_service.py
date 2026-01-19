@@ -362,12 +362,22 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 if prefs and prefs.worktrees_dir:
                     self.git_service.set_worktrees_dir(prefs.worktrees_dir)
 
+            # Get auth_url for private repos (required for authenticated fetch)
+            auth_url: str | None = None
+            if self.github_service and repo.repo_url:
+                try:
+                    owner, repo_name = self._parse_github_url(repo.repo_url)
+                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                except Exception as e:
+                    logger.warning(f"Could not get auth_url for worktree fetch: {e}")
+
             # Create new worktree for this run
             worktree_info = await self.git_service.create_worktree(
                 repo=repo,
                 base_branch=base_ref,
                 run_id=run.id,
                 branch_prefix=branch_prefix,
+                auth_url=auth_url,
             )
 
         # Update run with worktree info

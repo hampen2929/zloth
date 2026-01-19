@@ -17,9 +17,11 @@ import {
   ArrowsUpDownIcon,
   ClipboardDocumentListIcon,
   ViewColumnsIcon,
+  FolderIcon,
   CogIcon,
   EyeIcon,
   ClockIcon,
+  ChartBarIcon,
 } from '@heroicons/react/24/outline';
 
 type SortOption = 'newest' | 'oldest' | 'alphabetical';
@@ -118,19 +120,6 @@ export default function Sidebar() {
           New Task
         </Link>
         <Link
-          href="/backlog"
-          className={cn(
-            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
-            'bg-purple-600 hover:bg-purple-700 rounded-lg',
-            'text-sm font-medium transition-colors',
-            'focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900',
-            pathname === '/backlog' && 'ring-2 ring-purple-400'
-          )}
-        >
-          <ClipboardDocumentListIcon className="w-4 h-4" />
-          Backlog & Archived
-        </Link>
-        <Link
           href="/kanban"
           className={cn(
             'flex items-center justify-center gap-2 w-full py-2.5 px-3',
@@ -142,6 +131,45 @@ export default function Sidebar() {
         >
           <ViewColumnsIcon className="w-4 h-4" />
           Kanban Board
+        </Link>
+        <Link
+          href="/metrics"
+          className={cn(
+            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
+            'bg-gray-800 hover:bg-gray-700 rounded-lg',
+            'text-sm font-medium transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/metrics' && 'bg-gray-700 ring-2 ring-gray-500'
+          )}
+        >
+          <ChartBarIcon className="w-4 h-4" />
+          Metrics
+        </Link>
+        <Link
+          href="/backlog"
+          className={cn(
+            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
+            'bg-gray-800 hover:bg-gray-700 rounded-lg',
+            'text-sm font-medium transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/backlog' && 'bg-gray-700 ring-2 ring-gray-500'
+          )}
+        >
+          <ClipboardDocumentListIcon className="w-4 h-4" />
+          Backlog & Archived
+        </Link>
+        <Link
+          href="/repos"
+          className={cn(
+            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
+            'bg-gray-800 hover:bg-gray-700 rounded-lg',
+            'text-sm font-medium transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/repos' && 'bg-gray-700 ring-2 ring-gray-500'
+          )}
+        >
+          <FolderIcon className="w-4 h-4" />
+          Repositories
         </Link>
       </div>
 

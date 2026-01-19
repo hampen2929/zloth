@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS github_app_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),  -- Singleton constraint
     app_id TEXT NOT NULL,
     private_key TEXT NOT NULL,              -- Base64 encoded private key
-    installation_id TEXT NOT NULL,
+    installation_id TEXT,                   -- Optional: if not set, auto-discover from installations
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

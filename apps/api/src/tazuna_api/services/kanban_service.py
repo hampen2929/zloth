@@ -6,11 +6,13 @@ from tazuna_api.domain.models import (
     ExecutorRunStatus,
     KanbanBoard,
     KanbanColumn,
+    RepoSummary,
+    RepoTaskCounts,
     Task,
     TaskWithKanbanStatus,
 )
 from tazuna_api.services.github_service import GitHubService
-from tazuna_api.storage.dao import PRDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
+from tazuna_api.storage.dao import PRDAO, RepoDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
 
 
 class KanbanService:
@@ -33,6 +35,7 @@ class KanbanService:
         review_dao: ReviewDAO,
         github_service: GitHubService,
         user_preferences_dao: UserPreferencesDAO,
+        repo_dao: RepoDAO | None = None,
     ):
         self.task_dao = task_dao
         self.run_dao = run_dao
@@ -40,6 +43,7 @@ class KanbanService:
         self.review_dao = review_dao
         self.github_service = github_service
         self.user_preferences_dao = user_preferences_dao
+        self.repo_dao = repo_dao
 
     def _compute_kanban_status(
         self,
@@ -157,6 +161,7 @@ class KanbanService:
             task_with_status = TaskWithKanbanStatus(
                 id=task_data["id"],
                 repo_id=task_data["repo_id"],
+                repo_name=task_data.get("repo_name"),
                 title=task_data["title"],
                 kanban_status=task_data["kanban_status"],
                 created_at=task_data["created_at"],
@@ -283,3 +288,96 @@ class KanbanService:
         if not updated_pr:
             raise ValueError(f"PR not found after update: {pr_id}")
         return updated_pr
+
+    async def get_repo_summaries(self) -> list[RepoSummary]:
+        """Get all repositories with task count summaries.
+
+        Returns a list of RepoSummary objects with task counts by computed kanban status.
+        """
+        from datetime import datetime as dt
+
+        if not self.repo_dao:
+            raise ValueError("RepoDAO is required for get_repo_summaries")
+
+        # Get all repos
+        repos = await self.repo_dao.list()
+        if not repos:
+            return []
+
+        # Get all tasks with aggregates
+        tasks_with_aggregates = await self.task_dao.list_with_aggregates()
+
+        # Fetch user preferences for gating status
+        user_prefs = await self.user_preferences_dao.get()
+        enable_gating_status = user_prefs.enable_gating_status if user_prefs else False
+
+        # Group tasks by repo_id and compute status counts
+        # Use separate dicts for type safety
+        repo_statuses: dict[str, list[TaskKanbanStatus]] = {repo.id: [] for repo in repos}
+        repo_latest_activity: dict[str, dt | None] = {repo.id: None for repo in repos}
+
+        for task_data in tasks_with_aggregates:
+            repo_id = task_data["repo_id"]
+            if repo_id not in repo_statuses:
+                continue
+
+            computed_status = self._compute_kanban_status(
+                base_status=task_data["kanban_status"],
+                run_count=task_data["run_count"],
+                running_count=task_data["running_count"],
+                completed_count=task_data["completed_count"],
+                latest_pr_status=task_data["latest_pr_status"],
+                latest_ci_status=task_data.get("latest_ci_status"),
+                enable_gating_status=enable_gating_status,
+            )
+
+            repo_statuses[repo_id].append(computed_status)
+
+            # Track latest activity
+            updated_at = task_data["updated_at"]
+            # Convert to datetime if it's a string
+            if isinstance(updated_at, str):
+                updated_at = dt.fromisoformat(updated_at)
+
+            current_latest = repo_latest_activity[repo_id]
+            if current_latest is None or updated_at > current_latest:
+                repo_latest_activity[repo_id] = updated_at
+
+        # Build RepoSummary objects
+        result: list[RepoSummary] = []
+        for repo in repos:
+            task_statuses = repo_statuses[repo.id]
+
+            # Count by status
+            counts = RepoTaskCounts(
+                backlog=sum(1 for s in task_statuses if s == TaskKanbanStatus.BACKLOG),
+                todo=sum(1 for s in task_statuses if s == TaskKanbanStatus.TODO),
+                in_progress=sum(1 for s in task_statuses if s == TaskKanbanStatus.IN_PROGRESS),
+                gating=sum(1 for s in task_statuses if s == TaskKanbanStatus.GATING),
+                in_review=sum(1 for s in task_statuses if s == TaskKanbanStatus.IN_REVIEW),
+                done=sum(1 for s in task_statuses if s == TaskKanbanStatus.DONE),
+                archived=sum(1 for s in task_statuses if s == TaskKanbanStatus.ARCHIVED),
+            )
+
+            # Parse repo_name from repo_url
+            repo_name = None
+            if repo.repo_url and "github.com/" in repo.repo_url:
+                repo_name = repo.repo_url.split("github.com/")[-1].rstrip("/").rstrip(".git")
+
+            result.append(
+                RepoSummary(
+                    id=repo.id,
+                    repo_url=repo.repo_url,
+                    repo_name=repo_name,
+                    default_branch=repo.default_branch,
+                    task_counts=counts,
+                    total_tasks=len(task_statuses),
+                    latest_activity=repo_latest_activity[repo.id],
+                    created_at=repo.created_at,
+                )
+            )
+
+        # Sort by latest_activity descending (most recent first)
+        result.sort(key=lambda r: r.latest_activity or r.created_at, reverse=True)
+
+        return result

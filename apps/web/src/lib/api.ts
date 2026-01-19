@@ -38,6 +38,7 @@ import type {
   UserPreferences,
   UserPreferencesSave,
   KanbanBoard,
+  RepoSummary,
   BacklogItem,
   BacklogItemCreate,
   BacklogItemUpdate,
@@ -49,6 +50,10 @@ import type {
   FixInstructionResponse,
   CICheck,
   CICheckResponse,
+  MetricsDetail,
+  MetricsSummary,
+  MetricsTrend,
+  RealtimeMetrics,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -520,6 +525,8 @@ export const kanbanApi = {
     return fetchApi<KanbanBoard>(`/kanban${params}`);
   },
 
+  getRepoSummaries: () => fetchApi<RepoSummary[]>('/kanban/repos'),
+
   moveToTodo: (taskId: string) =>
     fetchApi<Task>(`/kanban/tasks/${taskId}/move-to-todo`, { method: 'POST' }),
 
@@ -687,6 +694,56 @@ export const reviewsApi = {
       onComplete: options.onComplete,
       onError: options.onError,
     });
+  },
+};
+
+// Metrics
+export const metricsApi = {
+  /**
+   * Get complete metrics detail for a period.
+   */
+  get: (period: string = '30d', repoId?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (repoId) params.set('repo_id', repoId);
+    return fetchApi<MetricsDetail>(`/metrics?${params.toString()}`);
+  },
+
+  /**
+   * Get a summary of key metrics.
+   */
+  getSummary: (period: string = '7d', repoId?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (repoId) params.set('repo_id', repoId);
+    return fetchApi<MetricsSummary>(`/metrics/summary?${params.toString()}`);
+  },
+
+  /**
+   * Get current real-time metrics.
+   */
+  getRealtime: (repoId?: string) => {
+    const params = new URLSearchParams();
+    if (repoId) params.set('repo_id', repoId);
+    const query = params.toString();
+    return fetchApi<RealtimeMetrics>(`/metrics/realtime${query ? `?${query}` : ''}`);
+  },
+
+  /**
+   * Get trend data for specified metrics.
+   */
+  getTrends: (
+    metrics: string[] = ['merge_rate', 'run_success_rate', 'throughput'],
+    period: string = '30d',
+    granularity: string = 'day',
+    repoId?: string
+  ) => {
+    const params = new URLSearchParams();
+    metrics.forEach((m) => params.append('metrics', m));
+    params.set('period', period);
+    params.set('granularity', granularity);
+    if (repoId) params.set('repo_id', repoId);
+    return fetchApi<MetricsTrend[]>(`/metrics/trends?${params.toString()}`);
   },
 };
 
