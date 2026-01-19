@@ -163,6 +163,7 @@ class GitService:
         base_branch: str,
         run_id: str,
         branch_prefix: str | None = None,
+        auth_url: str | None = None,
     ) -> WorktreeInfo:
         """Create a new git worktree for the run.
 
@@ -171,6 +172,8 @@ class GitService:
             base_branch: Base branch to create worktree from.
             run_id: Run ID for naming.
             branch_prefix: Optional branch prefix for the new work branch.
+            auth_url: Authenticated URL for private repos. When provided, uses
+                authenticated fetch to ensure latest refs are available.
 
         Returns:
             WorktreeInfo with path and branch information.
@@ -187,11 +190,20 @@ class GitService:
             default_branch = repo.default_branch or "main"
 
             # Fetch to ensure we have latest refs (best-effort)
+            # Use authenticated URL if provided (required for private repos)
             try:
-                source_repo.git.fetch("origin", "--prune")
-            except Exception:
-                # Ignore fetch errors (might be offline)
-                pass
+                if auth_url:
+                    # Use direct URL fetch for authenticated access
+                    source_repo.git.fetch(
+                        auth_url,
+                        "+refs/heads/*:refs/remotes/origin/*",
+                        "--prune",
+                    )
+                else:
+                    source_repo.git.fetch("origin", "--prune")
+            except Exception as e:
+                # Log but don't fail - might be offline or have network issues
+                logger.warning(f"Fetch failed during worktree creation: {e}")
 
             # Ensure the *source* repo is at the latest state of the default branch
             # before creating a worktree.
@@ -875,30 +887,35 @@ class GitService:
         repo_path: Path,
         auth_url: str | None = None,
         remote: str = "origin",
+        refspec: str | None = None,
     ) -> None:
         """Fetch from remote with authentication support.
+
+        Uses direct URL fetch when auth_url is provided, which is more reliable
+        for worktrees and private repositories than temporarily changing the
+        remote URL.
 
         Args:
             repo_path: Path to the repository.
             auth_url: Authenticated URL for private repos.
             remote: Remote name.
+            refspec: Optional refspec to fetch (e.g., '+refs/heads/*:refs/remotes/origin/*').
         """
 
         def _fetch_with_auth() -> None:
             repo = git.Repo(repo_path)
 
             if auth_url:
-                try:
-                    original_url = repo.remotes.origin.url
-                except Exception:
-                    original_url = None
-
-                try:
-                    repo.remotes.origin.set_url(auth_url)
-                    repo.remotes[remote].fetch()
-                finally:
-                    if original_url:
-                        repo.remotes.origin.set_url(original_url)
+                # Use direct URL fetch instead of modifying remote URL.
+                # This is more reliable for worktrees which share remote config
+                # with the main repository.
+                fetch_args = [auth_url]
+                if refspec:
+                    fetch_args.append(refspec)
+                else:
+                    # Fetch all refs by default to match origin fetch behavior
+                    fetch_args.append("+refs/heads/*:refs/remotes/origin/*")
+                repo.git.fetch(*fetch_args)
             else:
                 repo.remotes[remote].fetch()
 

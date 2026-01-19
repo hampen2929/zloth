@@ -226,6 +226,26 @@ class GitHubService:
         self._installations_cache = installations
         return installations
 
+    async def _get_installation_for_owner(self, owner: str) -> str | None:
+        """Find the installation ID for a specific repository owner.
+
+        GitHub App installations are per-account (user or organization).
+        This method finds the installation that has access to repositories
+        owned by the given owner.
+
+        Args:
+            owner: Repository owner (GitHub username or organization name).
+
+        Returns:
+            Installation ID if found, None otherwise.
+        """
+        installations = await self._list_installations()
+        for installation in installations:
+            account = installation.get("account", {})
+            if account.get("login", "").lower() == owner.lower():
+                return str(installation["id"])
+        return None
+
     async def _get_installation_token(self, installation_id: str | None = None) -> str | None:
         """Get or refresh installation access token.
 
@@ -394,9 +414,35 @@ class GitHubService:
         return all_branches
 
     async def clone_url(self, owner: str, repo: str) -> str:
-        """Get authenticated clone URL for a repository."""
-        token = await self._get_installation_token()
+        """Get authenticated clone URL for a repository.
+
+        This method finds the correct GitHub App installation for the repository
+        owner and generates a token with access to that owner's repositories.
+
+        Args:
+            owner: Repository owner (GitHub username or organization name).
+            repo: Repository name.
+
+        Returns:
+            Authenticated git URL in format:
+            https://x-access-token:TOKEN@github.com/owner/repo.git
+
+        Raises:
+            ValueError: If GitHub App is not configured or not installed
+                for the given owner.
+        """
+        # First, try to find the installation for this specific owner
+        installation_id = await self._get_installation_for_owner(owner)
+
+        # Get token using the owner-specific installation (if found)
+        # or fall back to default behavior
+        token = await self._get_installation_token(installation_id)
         if not token:
+            if installation_id is None:
+                raise ValueError(
+                    f"GitHub App is not installed for owner '{owner}'. "
+                    "Please install the GitHub App on this account/organization."
+                )
             raise ValueError("GitHub App not configured")
 
         return f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
