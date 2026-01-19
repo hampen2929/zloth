@@ -79,6 +79,31 @@ class Repo(BaseModel):
         from_attributes = True
 
 
+class RepoTaskCounts(BaseModel):
+    """Task counts by kanban status for a repository."""
+
+    backlog: int = 0
+    todo: int = 0
+    in_progress: int = 0
+    gating: int = 0
+    in_review: int = 0
+    done: int = 0
+    archived: int = 0
+
+
+class RepoSummary(BaseModel):
+    """Repository summary with task statistics."""
+
+    id: str
+    repo_url: str
+    repo_name: str | None = None  # Extracted from repo_url (e.g., "owner/repo")
+    default_branch: str
+    task_counts: RepoTaskCounts
+    total_tasks: int = 0
+    latest_activity: datetime | None = None  # Most recent task updated_at
+    created_at: datetime
+
+
 # ============================================================
 # Task (Conversation Unit)
 # ============================================================
@@ -120,6 +145,7 @@ class TaskWithKanbanStatus(Task):
     """Task with computed kanban status for kanban board display."""
 
     computed_status: TaskKanbanStatus  # Final kanban status (including dynamic computation)
+    repo_name: str | None = None  # Repository name (e.g., "owner/repo")
     run_count: int = 0
     running_count: int = 0  # Number of runs with status='running'
     completed_count: int = 0  # Number of completed runs
