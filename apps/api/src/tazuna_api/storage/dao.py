@@ -1913,6 +1913,14 @@ class MetricsDAO:
         """
         cursor = await self.db.connection.execute(query, params)
         row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_prs": 0,
+                "merged_prs": 0,
+                "closed_prs": 0,
+                "open_prs": 0,
+                "avg_time_to_merge_hours": None,
+            }
         return {
             "total_prs": row["total_prs"] or 0,
             "merged_prs": row["merged_prs"] or 0,
@@ -1944,6 +1952,12 @@ class MetricsDAO:
         """
         cursor = await self.db.connection.execute(query, params)
         row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_messages": 0,
+                "user_messages": 0,
+                "assistant_messages": 0,
+            }
         return {
             "total_messages": row["total_messages"] or 0,
             "user_messages": row["user_messages"] or 0,
@@ -1984,6 +1998,15 @@ class MetricsDAO:
         """
         cursor = await self.db.connection.execute(query, params)
         row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_runs": 0,
+                "succeeded_runs": 0,
+                "failed_runs": 0,
+                "canceled_runs": 0,
+                "avg_run_duration_seconds": None,
+                "avg_queue_wait_seconds": None,
+            }
         return {
             "total_runs": row["total_runs"] or 0,
             "succeeded_runs": row["succeeded_runs"] or 0,
@@ -2041,6 +2064,12 @@ class MetricsDAO:
         """
         cursor = await self.db.connection.execute(query, params)
         row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_ci_checks": 0,
+                "passed_ci_checks": 0,
+                "failed_ci_checks": 0,
+            }
         return {
             "total_ci_checks": row["total_ci_checks"] or 0,
             "passed_ci_checks": row["passed_ci_checks"] or 0,
@@ -2084,6 +2113,15 @@ class MetricsDAO:
         feedback_cursor = await self.db.connection.execute(feedback_query, params)
         feedback_row = await feedback_cursor.fetchone()
 
+        if row is None or feedback_row is None:
+            return {
+                "total_reviews": 0,
+                "avg_review_score": None,
+                "critical_issues": 0,
+                "high_issues": 0,
+                "medium_issues": 0,
+                "low_issues": 0,
+            }
         return {
             "total_reviews": row["total_reviews"] or 0,
             "avg_review_score": row["avg_review_score"],
@@ -2119,6 +2157,15 @@ class MetricsDAO:
         """
         cursor = await self.db.connection.execute(query, params)
         row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_agentic_runs": 0,
+                "completed_agentic_runs": 0,
+                "failed_agentic_runs": 0,
+                "avg_total_iterations": 0.0,
+                "avg_ci_iterations": 0.0,
+                "avg_review_iterations": 0.0,
+            }
         return {
             "total_agentic_runs": row["total_agentic_runs"] or 0,
             "completed_agentic_runs": row["completed_agentic_runs"] or 0,
@@ -2148,6 +2195,8 @@ class MetricsDAO:
         """
         cursor = await self.db.connection.execute(query, params)
         row = await cursor.fetchone()
+        if row is None:
+            return 0
         return row["count"] or 0
 
     async def get_tasks_with_single_run_count(
@@ -2176,6 +2225,8 @@ class MetricsDAO:
         """
         cursor = await self.db.connection.execute(query, params)
         row = await cursor.fetchone()
+        if row is None:
+            return 0
         return row["count"] or 0
 
     async def get_cycle_times(
@@ -2282,13 +2333,13 @@ class MetricsDAO:
         prs_merged_row = await cursor.fetchone()
 
         return {
-            "active_tasks": active_row["count"] or 0,
-            "running_runs": running_row["count"] or 0,
-            "pending_ci_checks": ci_row["count"] or 0,
-            "open_prs": open_pr_row["count"] or 0,
-            "tasks_created_today": tasks_today_row["count"] or 0,
-            "runs_completed_today": runs_today_row["count"] or 0,
-            "prs_merged_today": prs_merged_row["count"] or 0,
+            "active_tasks": (active_row["count"] or 0) if active_row else 0,
+            "running_runs": (running_row["count"] or 0) if running_row else 0,
+            "pending_ci_checks": (ci_row["count"] or 0) if ci_row else 0,
+            "open_prs": (open_pr_row["count"] or 0) if open_pr_row else 0,
+            "tasks_created_today": (tasks_today_row["count"] or 0) if tasks_today_row else 0,
+            "runs_completed_today": (runs_today_row["count"] or 0) if runs_today_row else 0,
+            "prs_merged_today": (prs_merged_row["count"] or 0) if prs_merged_row else 0,
         }
 
     async def get_trend_data(
