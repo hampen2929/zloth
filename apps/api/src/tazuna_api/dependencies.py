@@ -10,6 +10,7 @@ from tazuna_api.services.git_service import GitService
 from tazuna_api.services.github_service import GitHubService
 from tazuna_api.services.kanban_service import KanbanService
 from tazuna_api.services.merge_gate_service import MergeGateService
+from tazuna_api.services.metrics_service import MetricsService
 from tazuna_api.services.model_service import ModelService
 from tazuna_api.services.notification_service import NotificationService
 from tazuna_api.services.output_manager import OutputManager
@@ -24,6 +25,7 @@ from tazuna_api.storage.dao import (
     BacklogDAO,
     CICheckDAO,
     MessageDAO,
+    MetricsDAO,
     ModelProfileDAO,
     RepoDAO,
     ReviewDAO,
@@ -319,3 +321,15 @@ async def get_ci_check_service() -> CICheckService:
     repo_dao = await get_repo_dao()
     github_service = await get_github_service()
     return CICheckService(ci_check_dao, pr_dao, task_dao, repo_dao, github_service)
+
+
+async def get_metrics_dao() -> MetricsDAO:
+    """Get Metrics DAO."""
+    db = await get_db()
+    return MetricsDAO(db)
+
+
+async def get_metrics_service() -> MetricsService:
+    """Get the metrics service."""
+    metrics_dao = await get_metrics_dao()
+    return MetricsService(metrics_dao)

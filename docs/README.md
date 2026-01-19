@@ -14,6 +14,7 @@ Welcome to the tazuna documentation. This guide will help you understand, develo
 - [API Reference](./api.md) - Complete REST API documentation
 - [Development Guide](./development.md) - Environment setup and development workflow
 - [Agent System](./agents.md) - Agent architecture and LLM integration
+- [Development Metrics](./dev-metrics.md) - Metrics for measuring development productivity
 
 ### For Contributors
 

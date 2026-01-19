@@ -1893,3 +1893,561 @@ class CICheckDAO:
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
+
+
+class MetricsDAO:
+    """DAO for aggregating metrics data from various tables."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def get_pr_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get PR metrics for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total_prs,
+                SUM(CASE WHEN status = 'merged' THEN 1 ELSE 0 END) as merged_prs,
+                SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed_prs,
+                SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_prs,
+                AVG(
+                    CASE WHEN status = 'merged'
+                    THEN (julianday(updated_at) - julianday(created_at)) * 24
+                    END
+                ) as avg_time_to_merge_hours
+            FROM prs
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_prs": 0,
+                "merged_prs": 0,
+                "closed_prs": 0,
+                "open_prs": 0,
+                "avg_time_to_merge_hours": None,
+            }
+        return {
+            "total_prs": row["total_prs"] or 0,
+            "merged_prs": row["merged_prs"] or 0,
+            "closed_prs": row["closed_prs"] or 0,
+            "open_prs": row["open_prs"] or 0,
+            "avg_time_to_merge_hours": row["avg_time_to_merge_hours"],
+        }
+
+    async def get_message_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get message/conversation metrics for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total_messages,
+                SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) as user_messages,
+                SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END) as assistant_messages
+            FROM messages
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_messages": 0,
+                "user_messages": 0,
+                "assistant_messages": 0,
+            }
+        return {
+            "total_messages": row["total_messages"] or 0,
+            "user_messages": row["user_messages"] or 0,
+            "assistant_messages": row["assistant_messages"] or 0,
+        }
+
+    async def get_run_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get run execution metrics for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total_runs,
+                SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) as succeeded_runs,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_runs,
+                SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) as canceled_runs,
+                AVG(
+                    CASE WHEN completed_at IS NOT NULL AND started_at IS NOT NULL
+                    THEN (julianday(completed_at) - julianday(started_at)) * 24 * 3600
+                    END
+                ) as avg_run_duration_seconds,
+                AVG(
+                    CASE WHEN started_at IS NOT NULL
+                    THEN (julianday(started_at) - julianday(created_at)) * 24 * 3600
+                    END
+                ) as avg_queue_wait_seconds
+            FROM runs
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_runs": 0,
+                "succeeded_runs": 0,
+                "failed_runs": 0,
+                "canceled_runs": 0,
+                "avg_run_duration_seconds": None,
+                "avg_queue_wait_seconds": None,
+            }
+        return {
+            "total_runs": row["total_runs"] or 0,
+            "succeeded_runs": row["succeeded_runs"] or 0,
+            "failed_runs": row["failed_runs"] or 0,
+            "canceled_runs": row["canceled_runs"] or 0,
+            "avg_run_duration_seconds": row["avg_run_duration_seconds"],
+            "avg_queue_wait_seconds": row["avg_queue_wait_seconds"],
+        }
+
+    async def get_executor_distribution(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Get distribution of runs by executor type."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                executor_type,
+                COUNT(*) as count
+            FROM runs
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+            GROUP BY executor_type
+        """
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+        return [{"executor_type": row["executor_type"], "count": row["count"]} for row in rows]
+
+    async def get_ci_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get CI check metrics for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total_ci_checks,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as passed_ci_checks,
+                SUM(CASE WHEN status = 'failure' THEN 1 ELSE 0 END) as failed_ci_checks
+            FROM ci_checks
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_ci_checks": 0,
+                "passed_ci_checks": 0,
+                "failed_ci_checks": 0,
+            }
+        return {
+            "total_ci_checks": row["total_ci_checks"] or 0,
+            "passed_ci_checks": row["passed_ci_checks"] or 0,
+            "failed_ci_checks": row["failed_ci_checks"] or 0,
+        }
+
+    async def get_review_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get code review metrics for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total_reviews,
+                AVG(overall_score) as avg_review_score
+            FROM reviews
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+
+        # Get severity distribution from feedbacks
+        feedback_query = f"""
+            SELECT
+                SUM(CASE WHEN f.severity = 'critical' THEN 1 ELSE 0 END) as critical_issues,
+                SUM(CASE WHEN f.severity = 'high' THEN 1 ELSE 0 END) as high_issues,
+                SUM(CASE WHEN f.severity = 'medium' THEN 1 ELSE 0 END) as medium_issues,
+                SUM(CASE WHEN f.severity = 'low' THEN 1 ELSE 0 END) as low_issues
+            FROM review_feedbacks f
+            JOIN reviews r ON f.review_id = r.id
+            WHERE r.created_at >= ? AND r.created_at < ?{repo_filter}
+        """
+        feedback_cursor = await self.db.connection.execute(feedback_query, params)
+        feedback_row = await feedback_cursor.fetchone()
+
+        if row is None or feedback_row is None:
+            return {
+                "total_reviews": 0,
+                "avg_review_score": None,
+                "critical_issues": 0,
+                "high_issues": 0,
+                "medium_issues": 0,
+                "low_issues": 0,
+            }
+        return {
+            "total_reviews": row["total_reviews"] or 0,
+            "avg_review_score": row["avg_review_score"],
+            "critical_issues": feedback_row["critical_issues"] or 0,
+            "high_issues": feedback_row["high_issues"] or 0,
+            "medium_issues": feedback_row["medium_issues"] or 0,
+            "low_issues": feedback_row["low_issues"] or 0,
+        }
+
+    async def get_agentic_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get agentic execution metrics for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total_agentic_runs,
+                SUM(CASE WHEN phase = 'completed' THEN 1 ELSE 0 END) as completed_agentic_runs,
+                SUM(CASE WHEN phase = 'failed' THEN 1 ELSE 0 END) as failed_agentic_runs,
+                AVG(iteration) as avg_total_iterations,
+                AVG(ci_iterations) as avg_ci_iterations,
+                AVG(review_iterations) as avg_review_iterations
+            FROM agentic_runs
+            WHERE started_at >= ? AND started_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return {
+                "total_agentic_runs": 0,
+                "completed_agentic_runs": 0,
+                "failed_agentic_runs": 0,
+                "avg_total_iterations": 0.0,
+                "avg_ci_iterations": 0.0,
+                "avg_review_iterations": 0.0,
+            }
+        return {
+            "total_agentic_runs": row["total_agentic_runs"] or 0,
+            "completed_agentic_runs": row["completed_agentic_runs"] or 0,
+            "failed_agentic_runs": row["failed_agentic_runs"] or 0,
+            "avg_total_iterations": row["avg_total_iterations"] or 0.0,
+            "avg_ci_iterations": row["avg_ci_iterations"] or 0.0,
+            "avg_review_iterations": row["avg_review_iterations"] or 0.0,
+        }
+
+    async def get_task_count(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> int:
+        """Get task count for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND repo_id = ?"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT COUNT(*) as count
+            FROM tasks
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return 0
+        return row["count"] or 0
+
+    async def get_tasks_with_single_run_count(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> int:
+        """Get count of tasks that succeeded with single run."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND t.repo_id = ?"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT COUNT(*) as count
+            FROM tasks t
+            WHERE t.created_at >= ? AND t.created_at < ?{repo_filter}
+            AND (
+                SELECT COUNT(*) FROM runs r WHERE r.task_id = t.id
+            ) = 1
+            AND EXISTS (
+                SELECT 1 FROM runs r WHERE r.task_id = t.id AND r.status = 'succeeded'
+            )
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return 0
+        return row["count"] or 0
+
+    async def get_cycle_times(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> builtins.list[float]:
+        """Get cycle times (task creation to PR merge) in hours."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND t.repo_id = ?"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                (julianday(p.updated_at) - julianday(t.created_at)) * 24 as cycle_time_hours
+            FROM tasks t
+            JOIN prs p ON p.task_id = t.id
+            WHERE p.status = 'merged'
+            AND p.updated_at >= ? AND p.updated_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+        return [row["cycle_time_hours"] for row in rows if row["cycle_time_hours"] is not None]
+
+    async def get_realtime_metrics(self, repo_id: str | None = None) -> dict[str, Any]:
+        """Get current real-time metrics."""
+        repo_filter = ""
+        task_repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            task_repo_filter = " AND repo_id = ?"
+
+        # Active tasks (kanban_status = 'todo' or computed in_progress)
+        active_query = f"""
+            SELECT COUNT(*) as count
+            FROM tasks
+            WHERE kanban_status = 'todo'{task_repo_filter}
+        """
+        cursor = await self.db.connection.execute(active_query, [repo_id] if repo_id else [])
+        active_row = await cursor.fetchone()
+
+        # Running runs
+        running_query = f"""
+            SELECT COUNT(*) as count
+            FROM runs
+            WHERE status = 'running'{repo_filter}
+        """
+        cursor = await self.db.connection.execute(running_query, [repo_id] if repo_id else [])
+        running_row = await cursor.fetchone()
+
+        # Pending CI checks
+        ci_query = f"""
+            SELECT COUNT(*) as count
+            FROM ci_checks
+            WHERE status = 'pending'{repo_filter}
+        """
+        cursor = await self.db.connection.execute(ci_query, [repo_id] if repo_id else [])
+        ci_row = await cursor.fetchone()
+
+        # Open PRs
+        open_pr_query = f"""
+            SELECT COUNT(*) as count
+            FROM prs
+            WHERE status = 'open'{repo_filter}
+        """
+        cursor = await self.db.connection.execute(open_pr_query, [repo_id] if repo_id else [])
+        open_pr_row = await cursor.fetchone()
+
+        # Today's stats
+        today = datetime.utcnow().date().isoformat()
+        today_task_params = [today]
+        today_params = [today]
+        if repo_id:
+            today_task_params.append(repo_id)
+            today_params.append(repo_id)
+
+        tasks_today_query = f"""
+            SELECT COUNT(*) as count
+            FROM tasks
+            WHERE date(created_at) = ?{task_repo_filter}
+        """
+        cursor = await self.db.connection.execute(tasks_today_query, today_task_params)
+        tasks_today_row = await cursor.fetchone()
+
+        runs_today_query = f"""
+            SELECT COUNT(*) as count
+            FROM runs
+            WHERE date(completed_at) = ?
+            AND status IN ('succeeded', 'failed', 'canceled'){repo_filter}
+        """
+        cursor = await self.db.connection.execute(runs_today_query, today_params)
+        runs_today_row = await cursor.fetchone()
+
+        prs_merged_query = f"""
+            SELECT COUNT(*) as count
+            FROM prs
+            WHERE status = 'merged'
+            AND date(updated_at) = ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(prs_merged_query, today_params)
+        prs_merged_row = await cursor.fetchone()
+
+        return {
+            "active_tasks": (active_row["count"] or 0) if active_row else 0,
+            "running_runs": (running_row["count"] or 0) if running_row else 0,
+            "pending_ci_checks": (ci_row["count"] or 0) if ci_row else 0,
+            "open_prs": (open_pr_row["count"] or 0) if open_pr_row else 0,
+            "tasks_created_today": (tasks_today_row["count"] or 0) if tasks_today_row else 0,
+            "runs_completed_today": (runs_today_row["count"] or 0) if runs_today_row else 0,
+            "prs_merged_today": (prs_merged_row["count"] or 0) if prs_merged_row else 0,
+        }
+
+    async def get_trend_data(
+        self,
+        metric_name: str,
+        period_start: datetime,
+        period_end: datetime,
+        granularity: str = "day",
+        repo_id: str | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Get trend data for a specific metric.
+
+        Args:
+            metric_name: Name of the metric (e.g., 'merge_rate', 'run_success_rate')
+            period_start: Start of the period
+            period_end: End of the period
+            granularity: 'hour', 'day', or 'week'
+            repo_id: Optional repository filter
+
+        Returns:
+            List of data points with timestamp and value
+        """
+        date_format = {
+            "hour": "%Y-%m-%d %H:00:00",
+            "day": "%Y-%m-%d",
+            "week": "%Y-%W",
+        }.get(granularity, "%Y-%m-%d")
+
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        if metric_name == "merge_rate":
+            query = f"""
+                SELECT
+                    strftime('{date_format}', created_at) as period,
+                    CAST(SUM(CASE WHEN status = 'merged' THEN 1 ELSE 0 END) AS REAL) /
+                        NULLIF(COUNT(*), 0) * 100 as value
+                FROM prs
+                WHERE created_at >= ? AND created_at < ?{repo_filter}
+                GROUP BY period
+                ORDER BY period
+            """
+        elif metric_name == "run_success_rate":
+            query = f"""
+                SELECT
+                    strftime('{date_format}', created_at) as period,
+                    CAST(SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS REAL) /
+                        NULLIF(COUNT(*), 0) * 100 as value
+                FROM runs
+                WHERE created_at >= ? AND created_at < ?{repo_filter}
+                GROUP BY period
+                ORDER BY period
+            """
+        elif metric_name == "throughput":
+            query = f"""
+                SELECT
+                    strftime('{date_format}', updated_at) as period,
+                    COUNT(*) as value
+                FROM prs
+                WHERE status = 'merged'
+                AND updated_at >= ? AND updated_at < ?{repo_filter}
+                GROUP BY period
+                ORDER BY period
+            """
+        elif metric_name == "messages_per_task":
+            query = f"""
+                SELECT
+                    strftime('{date_format}', m.created_at) as period,
+                    CAST(COUNT(*) AS REAL) /
+                        NULLIF((SELECT COUNT(DISTINCT task_id) FROM messages
+                         WHERE created_at >= ? AND created_at < ?), 0) as value
+                FROM messages m
+                WHERE m.created_at >= ? AND m.created_at < ?{repo_filter}
+                GROUP BY period
+                ORDER BY period
+            """
+            # For messages_per_task, we need extra params
+            params = [
+                period_start.isoformat(),
+                period_end.isoformat(),
+                period_start.isoformat(),
+                period_end.isoformat(),
+            ]
+            if repo_id:
+                params.append(repo_id)
+        else:
+            return []
+
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+        return [{"timestamp": row["period"], "value": row["value"] or 0.0} for row in rows]

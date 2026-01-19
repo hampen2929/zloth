@@ -1104,3 +1104,160 @@ class NotificationEvent(BaseModel):
     iterations: int = 0
     review_score: float | None = None
     error: str | None = None
+
+
+# ============================================================
+# Development Metrics
+# ============================================================
+
+
+class PRMetrics(BaseModel):
+    """PR-related metrics."""
+
+    total_prs: int = 0
+    merged_prs: int = 0
+    closed_prs: int = 0
+    open_prs: int = 0
+    merge_rate: float = 0.0  # percentage
+    avg_time_to_merge_hours: float | None = None
+
+
+class ConversationMetrics(BaseModel):
+    """Conversation/message metrics."""
+
+    total_messages: int = 0
+    user_messages: int = 0
+    assistant_messages: int = 0
+    avg_messages_per_task: float = 0.0
+    avg_user_messages_per_task: float = 0.0
+
+
+class RunMetrics(BaseModel):
+    """Run execution metrics."""
+
+    total_runs: int = 0
+    succeeded_runs: int = 0
+    failed_runs: int = 0
+    canceled_runs: int = 0
+    run_success_rate: float = 0.0  # percentage
+    avg_run_duration_seconds: float | None = None
+    avg_queue_wait_seconds: float | None = None
+
+
+class ExecutorDistribution(BaseModel):
+    """Distribution of runs by executor type."""
+
+    executor_type: ExecutorType
+    count: int = 0
+    percentage: float = 0.0
+
+
+class CIMetrics(BaseModel):
+    """CI check metrics."""
+
+    total_ci_checks: int = 0
+    passed_ci_checks: int = 0
+    failed_ci_checks: int = 0
+    ci_success_rate: float = 0.0  # percentage
+    avg_ci_fix_iterations: float = 0.0
+
+
+class ReviewMetrics(BaseModel):
+    """Code review metrics."""
+
+    total_reviews: int = 0
+    avg_review_score: float | None = None
+    critical_issues: int = 0
+    high_issues: int = 0
+    medium_issues: int = 0
+    low_issues: int = 0
+
+
+class AgenticMetrics(BaseModel):
+    """Agentic execution metrics."""
+
+    total_agentic_runs: int = 0
+    completed_agentic_runs: int = 0
+    failed_agentic_runs: int = 0
+    agentic_completion_rate: float = 0.0  # percentage
+    avg_total_iterations: float = 0.0
+    avg_ci_iterations: float = 0.0
+    avg_review_iterations: float = 0.0
+
+
+class ProductivityMetrics(BaseModel):
+    """Overall productivity metrics."""
+
+    avg_cycle_time_hours: float | None = None  # task creation to PR merge
+    throughput_per_week: float = 0.0  # merged PRs per week
+    first_time_success_rate: float = 0.0  # tasks with 1 run
+
+
+class MetricsSummary(BaseModel):
+    """Aggregated metrics summary."""
+
+    period: str  # e.g., "7d", "30d"
+    period_start: datetime
+    period_end: datetime
+
+    # Headline metrics
+    merge_rate: float = 0.0
+    avg_cycle_time_hours: float | None = None
+    throughput: float = 0.0
+    run_success_rate: float = 0.0
+
+    # Counts
+    total_tasks: int = 0
+    total_prs: int = 0
+    total_runs: int = 0
+    total_messages: int = 0
+
+    # Comparisons (vs previous period)
+    merge_rate_change: float | None = None
+    cycle_time_change: float | None = None
+    throughput_change: float | None = None
+
+
+class MetricsDataPoint(BaseModel):
+    """Single data point in a trend."""
+
+    timestamp: datetime
+    value: float
+
+
+class MetricsTrend(BaseModel):
+    """Metrics trend over time."""
+
+    metric_name: str
+    data_points: list[MetricsDataPoint] = Field(default_factory=list)
+    trend: str = "stable"  # "up", "down", "stable"
+    change_percentage: float = 0.0
+
+
+class RealtimeMetrics(BaseModel):
+    """Current system state metrics."""
+
+    active_tasks: int = 0
+    running_runs: int = 0
+    pending_ci_checks: int = 0
+    open_prs: int = 0
+
+    # Today's stats
+    tasks_created_today: int = 0
+    runs_completed_today: int = 0
+    prs_merged_today: int = 0
+
+
+class MetricsDetail(BaseModel):
+    """Complete metrics detail response."""
+
+    summary: MetricsSummary
+    pr_metrics: PRMetrics
+    conversation_metrics: ConversationMetrics
+    run_metrics: RunMetrics
+    executor_distribution: list[ExecutorDistribution] = Field(default_factory=list)
+    ci_metrics: CIMetrics
+    review_metrics: ReviewMetrics
+    agentic_metrics: AgenticMetrics
+    productivity_metrics: ProductivityMetrics
+    realtime: RealtimeMetrics
