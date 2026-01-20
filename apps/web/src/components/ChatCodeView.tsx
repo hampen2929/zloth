@@ -65,7 +65,7 @@ export function ChatCodeView({
   const { copy } = useClipboard();
 
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
-  const { data: prs } = useSWR(`prs-${taskId}`, () => prsApi.list(taskId), {
+  const { data: prs, mutate: mutatePrs } = useSWR(`prs-${taskId}`, () => prsApi.list(taskId), {
     refreshInterval: prLinkResult ? 2000 : 0,
   });
 
@@ -299,6 +299,8 @@ export function ChatCodeView({
         }
         setPRResult({ url: result.url, number: result.number, pr_id: result.pr_id });
         onPRCreated();
+        // Refresh PRs cache so latestPR is updated when switching executors
+        mutatePrs();
         // Immediately refresh CI checks to show pending CI status
         mutateCIChecks();
         // Enable aggressive polling for 10 seconds after PR creation
@@ -374,6 +376,8 @@ export function ChatCodeView({
           setPRResult({ url: synced.pr.url, number: synced.pr.number, pr_id: synced.pr.pr_id });
           setPRLinkResult(null);
           onPRCreated();
+          // Refresh PRs cache so latestPR is updated when switching executors
+          mutatePrs();
           success('PR detected. Opening PR link.');
         }
       } catch {
@@ -385,7 +389,7 @@ export function ChatCodeView({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [prLinkResult, latestSuccessfulRun, prResult, taskId, onPRCreated, success]);
+  }, [prLinkResult, latestSuccessfulRun, prResult, taskId, onPRCreated, success, mutatePrs]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
