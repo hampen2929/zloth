@@ -505,23 +505,58 @@ export function ChatCodeView({
   // Auto-trigger CI check for pending CI checks (gating auto-polling)
   // This ensures that when automatic gating creates a pending CI check,
   // we actually poll GitHub for the latest status
+  // Use a ref to track the last triggered SHA to prevent duplicate triggers
+  const lastTriggeredCICheckRef = useRef<string | null>(null);
+  const ciCheckTriggerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     if (!prResult?.pr_id || !ciChecks) return;
+
+    // Don't trigger if currently checking CI (user clicked button)
+    if (checkingCI) return;
 
     const pendingCheck = ciChecks.find(
       (c) => c.status === 'pending' && c.pr_id === prResult.pr_id
     );
 
     if (pendingCheck) {
-      // Trigger CI check to update status from GitHub
-      // This is fire-and-forget; SWR polling will pick up the updated data
-      ciChecksApi.check(taskId, prResult.pr_id).then(() => {
-        mutateCIChecks();
-      }).catch(() => {
-        // Ignore errors - we'll retry on next poll
-      });
+      // Use SHA or ID as unique identifier to prevent duplicate triggers
+      const checkKey = pendingCheck.sha || pendingCheck.id;
+
+      // Skip if we already triggered for this check recently
+      if (lastTriggeredCICheckRef.current === checkKey) {
+        return;
+      }
+
+      // Clear any pending timeout
+      if (ciCheckTriggerTimeoutRef.current) {
+        clearTimeout(ciCheckTriggerTimeoutRef.current);
+      }
+
+      // Debounce: wait 2 seconds before triggering to avoid rapid-fire requests
+      ciCheckTriggerTimeoutRef.current = setTimeout(() => {
+        lastTriggeredCICheckRef.current = checkKey;
+
+        // Trigger CI check to update status from GitHub
+        // This is fire-and-forget; SWR polling will pick up the updated data
+        ciChecksApi.check(taskId, prResult.pr_id!).catch(() => {
+          // Ignore errors - we'll retry on next poll
+          // Reset the ref so we can retry
+          lastTriggeredCICheckRef.current = null;
+        });
+      }, 2000);
+    } else {
+      // No pending check - reset the ref
+      lastTriggeredCICheckRef.current = null;
     }
-  }, [ciChecks, prResult?.pr_id, taskId, mutateCIChecks]);
+
+    // Cleanup timeout on unmount or dependency change
+    return () => {
+      if (ciCheckTriggerTimeoutRef.current) {
+        clearTimeout(ciCheckTriggerTimeoutRef.current);
+      }
+    };
+  }, [ciChecks, prResult?.pr_id, taskId, checkingCI]);
 
   // Create a unified timeline of messages+runs and reviews, sorted chronologically
   type TimelineItem =

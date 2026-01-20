@@ -4,6 +4,7 @@ This service provides on-demand CI status checking for PRs.
 """
 
 import logging
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from tazuna_api.domain.models import CICheck, CICheckResponse, CIJobResult
@@ -14,9 +15,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Cooldown period for CI checks per PR+SHA combination (in seconds)
+CI_CHECK_SHA_COOLDOWN_SECONDS = 30
+
 
 class CICheckService:
     """Service for checking CI status of PRs."""
+
+    # Class-level cache for last check times per PR+SHA
+    _last_check_times: dict[str, datetime] = {}
 
     def __init__(
         self,
@@ -41,14 +48,45 @@ class CICheckService:
         self.repo_dao = repo_dao
         self.github = github_service
 
-    async def check_ci(self, task_id: str, pr_id: str) -> CICheckResponse:
+    @classmethod
+    def _get_cache_key(cls, pr_id: str, sha: str | None) -> str:
+        """Generate cache key for cooldown tracking."""
+        return f"{pr_id}:{sha or 'unknown'}"
+
+    @classmethod
+    def _can_check(cls, pr_id: str, sha: str | None) -> bool:
+        """Check if enough time has passed since last check for this PR+SHA."""
+        key = cls._get_cache_key(pr_id, sha)
+        last_time = cls._last_check_times.get(key)
+        if last_time is None:
+            return True
+        elapsed = datetime.utcnow() - last_time
+        return elapsed >= timedelta(seconds=CI_CHECK_SHA_COOLDOWN_SECONDS)
+
+    @classmethod
+    def _record_check_time(cls, pr_id: str, sha: str | None) -> None:
+        """Record the current time as the last check time for this PR+SHA."""
+        key = cls._get_cache_key(pr_id, sha)
+        cls._last_check_times[key] = datetime.utcnow()
+
+        # Clean up old entries (older than 5 minutes) to prevent memory growth
+        cutoff = datetime.utcnow() - timedelta(minutes=5)
+        cls._last_check_times = {
+            k: v for k, v in cls._last_check_times.items() if v > cutoff
+        }
+
+    async def check_ci(
+        self, task_id: str, pr_id: str, force: bool = False
+    ) -> CICheckResponse:
         """Check CI status for a PR.
 
         Fetches current CI status from GitHub and creates/updates a CICheck record.
+        Implements cooldown to prevent excessive API calls for the same PR+SHA.
 
         Args:
             task_id: Task ID.
             pr_id: PR ID.
+            force: If True, bypass cooldown check.
 
         Returns:
             CICheckResponse with current status and completion flag.
@@ -56,7 +94,7 @@ class CICheckService:
         Raises:
             ValueError: If PR or task not found.
         """
-        logger.debug(f"Checking CI for task={task_id}, pr={pr_id}")
+        logger.debug(f"Checking CI for task={task_id}, pr={pr_id}, force={force}")
 
         # Validate task and PR exist
         task = await self.task_dao.get(task_id)
@@ -72,6 +110,18 @@ class CICheckService:
         if pr.task_id != task_id:
             logger.warning(f"PR {pr_id} does not belong to task {task_id}")
             raise ValueError(f"PR {pr_id} does not belong to task {task_id}")
+
+        # Check for existing recent CI check (cooldown)
+        # If we recently checked this PR's SHA, return the existing result
+        if not force:
+            existing_check = await self.ci_check_dao.get_latest_by_pr_id(pr_id)
+            if existing_check and existing_check.sha:
+                if not self._can_check(pr_id, existing_check.sha):
+                    logger.debug(
+                        f"CI check skipped due to cooldown: pr={pr_id}, sha={existing_check.sha}"
+                    )
+                    is_complete = existing_check.status in ("success", "failure", "error")
+                    return CICheckResponse(ci_check=existing_check, is_complete=is_complete)
 
         # Get repo info for GitHub API
         repo = await self.repo_dao.get(task.repo_id)
@@ -121,6 +171,9 @@ class CICheckService:
                 jobs=ci_data.get("jobs"),
                 failed_jobs=ci_data.get("failed_jobs"),
             )
+
+        # Record check time for cooldown tracking
+        self._record_check_time(pr_id, sha)
 
         # Determine if CI is complete
         is_complete = status in ("success", "failure", "error")
