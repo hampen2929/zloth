@@ -123,6 +123,20 @@ class Settings(BaseSettings):
     codex_cli_path: str = Field(default="codex")
     gemini_cli_path: str = Field(default="gemini")
 
+    # Queue Management Configuration
+    max_concurrent_runs: int = Field(
+        default=5, description="Maximum number of concurrent run executions"
+    )
+    run_timeout_seconds: int = Field(
+        default=3600, description="Timeout for run execution in seconds (default: 1 hour)"
+    )
+    stuck_task_threshold_minutes: int = Field(
+        default=120, description="Mark tasks as stuck if running for longer than this (minutes)"
+    )
+    task_recovery_enabled: bool = Field(
+        default=True, description="Enable recovery of orphaned tasks on startup"
+    )
+
     # Agentic Mode Configuration
     agentic_enabled: bool = Field(default=True, description="Enable agentic mode")
     agentic_auto_merge: bool = Field(

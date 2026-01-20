@@ -33,29 +33,88 @@ TResult = TypeVar("TResult", bound=RoleExecutionResult)  # Role result type
 
 
 class RoleQueueAdapter:
-    """Simple in-memory queue adapter for role execution.
+    """In-memory queue adapter for role execution with concurrency limits.
 
-    Manages async task execution with cancellation support.
+    Features:
+    - Semaphore-based concurrency limiting
+    - Automatic task timeout
+    - Automatic cleanup of completed tasks
+    - Callback support for task completion/failure
+
     Can be replaced with distributed task queues (Celery/RQ/Redis) for scaling.
     """
 
-    def __init__(self) -> None:
-        """Initialize the queue adapter."""
+    def __init__(
+        self,
+        max_concurrent: int = 5,
+        timeout_seconds: int = 3600,
+        on_task_timeout: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+    ) -> None:
+        """Initialize the queue adapter.
+
+        Args:
+            max_concurrent: Maximum number of concurrent tasks.
+            timeout_seconds: Timeout for each task in seconds.
+            on_task_timeout: Optional callback when a task times out.
+        """
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._timeout_seconds = timeout_seconds
+        self._on_task_timeout = on_task_timeout
+        self._max_concurrent = max_concurrent
 
     def enqueue(
         self,
         record_id: str,
         coro: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
-        """Enqueue a role execution.
+        """Enqueue a role execution with concurrency control and timeout.
 
         Args:
             record_id: Unique identifier for the execution record.
             coro: Coroutine factory to execute.
         """
-        task: asyncio.Task[None] = asyncio.create_task(coro())
+        # Clean up completed tasks before adding new one
+        self._cleanup_completed()
+
+        async def wrapped_execution() -> None:
+            async with self._semaphore:
+                try:
+                    await asyncio.wait_for(coro(), timeout=self._timeout_seconds)
+                except TimeoutError:
+                    logger.error(f"Task {record_id} timed out after {self._timeout_seconds}s")
+                    if self._on_task_timeout:
+                        try:
+                            await self._on_task_timeout(record_id)
+                        except Exception as e:
+                            logger.error(f"Error in timeout callback for {record_id}: {e}")
+                except asyncio.CancelledError:
+                    logger.info(f"Task {record_id} was cancelled")
+                    raise
+                except Exception as e:
+                    logger.error(f"Task {record_id} failed with error: {e}")
+                finally:
+                    # Schedule cleanup for this task
+                    self._schedule_cleanup(record_id)
+
+        task: asyncio.Task[None] = asyncio.create_task(wrapped_execution())
         self._tasks[record_id] = task
+
+    def _cleanup_completed(self) -> None:
+        """Remove completed tasks from the internal dict."""
+        completed = [rid for rid, task in self._tasks.items() if task.done()]
+        for rid in completed:
+            del self._tasks[rid]
+
+    def _schedule_cleanup(self, record_id: str) -> None:
+        """Schedule cleanup of a specific task after a short delay."""
+
+        async def delayed_cleanup() -> None:
+            await asyncio.sleep(1)  # Small delay to ensure task is fully done
+            if record_id in self._tasks and self._tasks[record_id].done():
+                del self._tasks[record_id]
+
+        asyncio.create_task(delayed_cleanup())
 
     def cancel(self, record_id: str) -> bool:
         """Cancel a queued execution.
@@ -83,6 +142,20 @@ class RoleQueueAdapter:
         """
         task = self._tasks.get(record_id)
         return task is not None and not task.done()
+
+    def get_queue_stats(self) -> dict[str, int]:
+        """Get queue statistics.
+
+        Returns:
+            Dict with running count and max concurrent.
+        """
+        self._cleanup_completed()
+        running = sum(1 for task in self._tasks.values() if not task.done())
+        return {
+            "running": running,
+            "max_concurrent": self._max_concurrent,
+            "available_slots": self._max_concurrent - min(running, self._max_concurrent),
+        }
 
 
 # Type alias for executor types

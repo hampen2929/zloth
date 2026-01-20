@@ -1,5 +1,6 @@
 """tazuna API - FastAPI application entry point."""
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -7,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from tazuna_api.config import settings
-from tazuna_api.dependencies import get_pr_status_poller
+from tazuna_api.dependencies import get_pr_status_poller, get_task_recovery_service
 from tazuna_api.routes import (
     backlog_router,
     breakdown_router,
@@ -24,6 +25,8 @@ from tazuna_api.routes import (
 )
 from tazuna_api.storage.db import get_db
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -32,11 +35,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     db = await get_db()
     await db.initialize()
 
+    # Startup: recover orphaned tasks
+    task_recovery_service = await get_task_recovery_service()
+    if settings.task_recovery_enabled:
+        logger.info("Running startup task recovery...")
+        recovery_result = await task_recovery_service.recover_on_startup()
+        logger.info(f"Startup recovery completed: {recovery_result}")
+
+    # Start task recovery service (periodic health checks)
+    await task_recovery_service.start()
+
     # Start PR status poller
     pr_status_poller = await get_pr_status_poller()
     pr_status_poller.start()
 
     yield
+
+    # Shutdown: stop task recovery service
+    await task_recovery_service.stop()
 
     # Shutdown: stop PR status poller
     await pr_status_poller.stop()

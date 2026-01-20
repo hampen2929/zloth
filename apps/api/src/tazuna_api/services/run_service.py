@@ -46,30 +46,96 @@ if TYPE_CHECKING:
     from tazuna_api.services.output_manager import OutputManager
 
 
+# Default configuration for queue management
+DEFAULT_MAX_CONCURRENT_TASKS = 5
+DEFAULT_TASK_TIMEOUT_SECONDS = 3600  # 1 hour
+
+
 # Note: QueueAdapter is kept for backward compatibility
 # New code should use RoleQueueAdapter from roles.base_service
 class QueueAdapter:
-    """Simple in-memory queue adapter for v0.1.
+    """In-memory queue adapter with concurrency limits and timeouts.
+
+    Features:
+    - Semaphore-based concurrency limiting (default: 5 concurrent tasks)
+    - Automatic task timeout (default: 1 hour)
+    - Automatic cleanup of completed tasks
+    - Callback support for task completion/failure
 
     Can be replaced with Celery/RQ/Redis in v0.2+.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        max_concurrent: int = DEFAULT_MAX_CONCURRENT_TASKS,
+        timeout_seconds: int = DEFAULT_TASK_TIMEOUT_SECONDS,
+        on_task_timeout: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+    ) -> None:
+        """Initialize the queue adapter.
+
+        Args:
+            max_concurrent: Maximum number of concurrent tasks.
+            timeout_seconds: Timeout for each task in seconds.
+            on_task_timeout: Optional callback when a task times out.
+        """
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._timeout_seconds = timeout_seconds
+        self._on_task_timeout = on_task_timeout
+        self._max_concurrent = max_concurrent
 
     def enqueue(
         self,
         run_id: str,
         coro: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
-        """Enqueue a run for execution.
+        """Enqueue a run for execution with concurrency control and timeout.
 
         Args:
             run_id: Run ID.
             coro: Coroutine to execute.
         """
-        task: asyncio.Task[None] = asyncio.create_task(coro())
+        # Clean up completed tasks before adding new one
+        self._cleanup_completed()
+
+        async def wrapped_execution() -> None:
+            async with self._semaphore:
+                try:
+                    await asyncio.wait_for(coro(), timeout=self._timeout_seconds)
+                except TimeoutError:
+                    logger.error(f"Task {run_id} timed out after {self._timeout_seconds}s")
+                    if self._on_task_timeout:
+                        try:
+                            await self._on_task_timeout(run_id)
+                        except Exception as e:
+                            logger.error(f"Error in timeout callback for {run_id}: {e}")
+                except asyncio.CancelledError:
+                    logger.info(f"Task {run_id} was cancelled")
+                    raise
+                except Exception as e:
+                    logger.error(f"Task {run_id} failed with error: {e}")
+                finally:
+                    # Schedule cleanup for this task
+                    self._schedule_cleanup(run_id)
+
+        task: asyncio.Task[None] = asyncio.create_task(wrapped_execution())
         self._tasks[run_id] = task
+
+    def _cleanup_completed(self) -> None:
+        """Remove completed tasks from the internal dict."""
+        completed = [rid for rid, task in self._tasks.items() if task.done()]
+        for rid in completed:
+            del self._tasks[rid]
+
+    def _schedule_cleanup(self, run_id: str) -> None:
+        """Schedule cleanup of a specific task after a short delay."""
+
+        async def delayed_cleanup() -> None:
+            await asyncio.sleep(1)  # Small delay to ensure task is fully done
+            if run_id in self._tasks and self._tasks[run_id].done():
+                del self._tasks[run_id]
+
+        asyncio.create_task(delayed_cleanup())
 
     def cancel(self, run_id: str) -> bool:
         """Cancel a queued run.
@@ -97,6 +163,20 @@ class QueueAdapter:
         """
         task = self._tasks.get(run_id)
         return task is not None and not task.done()
+
+    def get_queue_stats(self) -> dict[str, int]:
+        """Get queue statistics.
+
+        Returns:
+            Dict with running, pending, and completed counts.
+        """
+        self._cleanup_completed()
+        running = sum(1 for task in self._tasks.values() if not task.done())
+        return {
+            "running": running,
+            "max_concurrent": self._max_concurrent,
+            "available_slots": self._max_concurrent - min(running, self._max_concurrent),
+        }
 
 
 @RoleRegistry.register("implementation")
@@ -135,7 +215,11 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self.user_preferences_dao = user_preferences_dao
         self.github_service = github_service
         # Note: self.output_manager is set by base class
-        self.queue = QueueAdapter()
+        self.queue = QueueAdapter(
+            max_concurrent=settings.max_concurrent_runs,
+            timeout_seconds=settings.run_timeout_seconds,
+            on_task_timeout=self._handle_task_timeout,
+        )
         self.llm_router = LLMRouter()
         # Note: Executors are also available via self._executors from base class
         self.claude_executor = ClaudeCodeExecutor(
@@ -455,6 +539,29 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 )
 
         return cancelled
+
+    async def _handle_task_timeout(self, run_id: str) -> None:
+        """Handle task timeout by marking the run as failed.
+
+        Args:
+            run_id: Run ID that timed out.
+        """
+        logger.error(f"Run {run_id} timed out, marking as failed")
+        try:
+            await self.run_dao.update_status(
+                run_id,
+                RunStatus.FAILED,
+                error=f"Task execution timed out after {settings.run_timeout_seconds} seconds",
+                logs=[f"Timeout: Task exceeded {settings.run_timeout_seconds}s limit"],
+            )
+            # Mark output stream as complete
+            if self.output_manager:
+                await self.output_manager.publish_async(
+                    run_id, f"ERROR: Task timed out after {settings.run_timeout_seconds}s"
+                )
+                await self.output_manager.mark_complete(run_id)
+        except Exception as e:
+            logger.error(f"Failed to update timed out run {run_id}: {e}")
 
     async def cleanup_worktree(self, run_id: str) -> bool:
         """Clean up the worktree for a run.

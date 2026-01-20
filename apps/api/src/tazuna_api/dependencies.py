@@ -19,6 +19,7 @@ from tazuna_api.services.pr_status_poller import PRStatusPoller
 from tazuna_api.services.repo_service import RepoService
 from tazuna_api.services.review_service import ReviewService
 from tazuna_api.services.run_service import RunService
+from tazuna_api.services.task_recovery_service import TaskRecoveryService
 from tazuna_api.storage.dao import (
     PRDAO,
     AgenticRunDAO,
@@ -47,6 +48,7 @@ _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
+_task_recovery_service: TaskRecoveryService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -333,3 +335,12 @@ async def get_metrics_service() -> MetricsService:
     """Get the metrics service."""
     metrics_dao = await get_metrics_dao()
     return MetricsService(metrics_dao)
+
+
+async def get_task_recovery_service() -> TaskRecoveryService:
+    """Get the task recovery service singleton."""
+    global _task_recovery_service
+    if _task_recovery_service is None:
+        run_dao = await get_run_dao()
+        _task_recovery_service = TaskRecoveryService(run_dao)
+    return _task_recovery_service

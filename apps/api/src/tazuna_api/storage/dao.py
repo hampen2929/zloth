@@ -841,6 +841,69 @@ class RunDAO:
             }
         return result
 
+    async def find_stuck_tasks(
+        self,
+        status: RunStatus,
+        started_before: datetime | None = None,
+        created_before: datetime | None = None,
+    ) -> builtins.list[Run]:
+        """Find tasks stuck in a given status.
+
+        Args:
+            status: Status to filter by.
+            started_before: Find tasks started before this time (for RUNNING).
+            created_before: Find tasks created before this time (for QUEUED).
+
+        Returns:
+            List of stuck Run objects.
+        """
+        conditions = ["status = ?"]
+        params: builtins.list[Any] = [status.value]
+
+        if started_before and status == RunStatus.RUNNING:
+            conditions.append("started_at < ?")
+            params.append(started_before.isoformat())
+        elif created_before and status == RunStatus.QUEUED:
+            conditions.append("created_at < ?")
+            params.append(created_before.isoformat())
+
+        query = f"SELECT * FROM runs WHERE {' AND '.join(conditions)}"
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def find_by_status(self, status: RunStatus) -> builtins.list[Run]:
+        """Find all runs with a given status.
+
+        Args:
+            status: Status to filter by.
+
+        Returns:
+            List of Run objects.
+        """
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM runs WHERE status = ?",
+            (status.value,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def count_by_status(self, status: RunStatus) -> int:
+        """Count runs with a given status.
+
+        Args:
+            status: Status to filter by.
+
+        Returns:
+            Count of runs.
+        """
+        cursor = await self.db.connection.execute(
+            "SELECT COUNT(*) as count FROM runs WHERE status = ?",
+            (status.value,),
+        )
+        row = await cursor.fetchone()
+        return row["count"] if row else 0
+
 
 class PRDAO:
     """DAO for PR."""
