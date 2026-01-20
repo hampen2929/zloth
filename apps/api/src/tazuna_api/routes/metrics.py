@@ -16,7 +16,7 @@ router = APIRouter(prefix="/v1/metrics", tags=["metrics"])
 
 @router.get("", response_model=MetricsDetail)
 async def get_metrics(
-    period: str = Query("30d", description="Period: 1d, 7d, 30d, 90d, all"),
+    period: str = Query("7d", description="Period: 1d, 7d, 30d, 90d, all"),
     repo_id: str | None = Query(None, description="Filter by repository ID"),
     metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> MetricsDetail:
@@ -49,7 +49,7 @@ async def get_metrics_trends(
         ["merge_rate", "run_success_rate", "throughput"],
         description="Metric names to include",
     ),
-    period: str = Query("30d", description="Period: 1d, 7d, 30d, 90d, all"),
+    period: str = Query("7d", description="Period: 1d, 7d, 30d, 90d, all"),
     granularity: str = Query("day", description="Granularity: hour, day, week"),
     repo_id: str | None = Query(None, description="Filter by repository ID"),
     metrics_service: MetricsService = Depends(get_metrics_service),
