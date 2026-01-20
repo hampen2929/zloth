@@ -49,27 +49,80 @@ if TYPE_CHECKING:
 # Note: QueueAdapter is kept for backward compatibility
 # New code should use RoleQueueAdapter from roles.base_service
 class QueueAdapter:
-    """Simple in-memory queue adapter for v0.1.
+    """In-memory queue adapter with concurrency control and timeout.
+
+    Features:
+    - Concurrency limit via semaphore to prevent resource exhaustion
+    - Execution timeout to prevent tasks from hanging indefinitely
+    - Automatic cleanup of completed tasks to prevent memory leaks
 
     Can be replaced with Celery/RQ/Redis in v0.2+.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        max_concurrent: int | None = None,
+        default_timeout: int | None = None,
+    ) -> None:
+        """Initialize the queue adapter.
+
+        Args:
+            max_concurrent: Maximum concurrent task executions.
+                           Defaults to settings.queue_max_concurrent_tasks.
+            default_timeout: Default timeout in seconds for task execution.
+                            Defaults to settings.queue_task_timeout_seconds.
+        """
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._max_concurrent = max_concurrent or settings.queue_max_concurrent_tasks
+        self._default_timeout = default_timeout or settings.queue_task_timeout_seconds
+        self._semaphore = asyncio.Semaphore(self._max_concurrent)
 
     def enqueue(
         self,
         run_id: str,
         coro: Callable[[], Coroutine[Any, Any, None]],
+        timeout: int | None = None,
     ) -> None:
-        """Enqueue a run for execution.
+        """Enqueue a run for execution with concurrency control and timeout.
 
         Args:
             run_id: Run ID.
             coro: Coroutine to execute.
+            timeout: Optional timeout override in seconds.
         """
-        task: asyncio.Task[None] = asyncio.create_task(coro())
+        task_timeout = timeout or self._default_timeout
+
+        async def wrapped_execution() -> None:
+            """Execute with semaphore-based concurrency control and timeout."""
+            async with self._semaphore:
+                try:
+                    await asyncio.wait_for(coro(), timeout=task_timeout)
+                except TimeoutError:
+                    logger.error(f"Task {run_id} timed out after {task_timeout}s")
+                    raise
+                except asyncio.CancelledError:
+                    logger.info(f"Task {run_id} was cancelled")
+                    raise
+                except Exception as e:
+                    logger.error(f"Task {run_id} failed with error: {e}")
+                    raise
+                finally:
+                    # Cleanup completed task from memory if configured
+                    if settings.queue_cleanup_completed_tasks:
+                        self._cleanup_task(run_id)
+
+        task: asyncio.Task[None] = asyncio.create_task(wrapped_execution())
         self._tasks[run_id] = task
+
+    def _cleanup_task(self, run_id: str) -> None:
+        """Remove completed task from internal tracking.
+
+        Args:
+            run_id: Run ID to clean up.
+        """
+        if run_id in self._tasks:
+            del self._tasks[run_id]
+            logger.debug(f"Cleaned up task {run_id} from queue")
 
     def cancel(self, run_id: str) -> bool:
         """Cancel a queued run.
@@ -97,6 +150,21 @@ class QueueAdapter:
         """
         task = self._tasks.get(run_id)
         return task is not None and not task.done()
+
+    def get_queue_stats(self) -> dict[str, int]:
+        """Get queue statistics for monitoring.
+
+        Returns:
+            Dictionary with queue statistics.
+        """
+        running = sum(1 for t in self._tasks.values() if not t.done())
+        pending = len(self._tasks) - running
+        return {
+            "max_concurrent": self._max_concurrent,
+            "running": running,
+            "pending": pending,
+            "total_tracked": len(self._tasks),
+        }
 
 
 @RoleRegistry.register("implementation")

@@ -95,6 +95,8 @@ class AgenticOrchestrator:
         # In-memory state management
         self._states: dict[str, AgenticState] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        # Background task tracking to prevent orphaned tasks
+        self._background_tasks: dict[str, asyncio.Task[None]] = {}
 
         # Default limits from settings
         self._default_limits = IterationLimits(
@@ -104,6 +106,98 @@ class AgenticOrchestrator:
             min_review_score=settings.review_min_score,
             timeout_minutes=settings.agentic_timeout_minutes,
         )
+
+    # =========================================
+    # Background Task Management
+    # =========================================
+
+    def _start_background_task(
+        self,
+        task_id: str,
+        coro: Any,
+        phase_name: str,
+        timeout_seconds: int | None = None,
+    ) -> asyncio.Task[None]:
+        """Start a background task with timeout and proper tracking.
+
+        Args:
+            task_id: Task ID for tracking.
+            coro: Coroutine to execute.
+            phase_name: Name of the phase for logging.
+            timeout_seconds: Optional timeout override.
+
+        Returns:
+            The created asyncio Task.
+        """
+        # Cancel any existing background task for this task_id
+        self._cancel_background_task(task_id)
+
+        # Default timeout: use agentic_timeout_minutes converted to seconds
+        task_timeout = timeout_seconds or (settings.agentic_timeout_minutes * 60)
+
+        async def wrapped_task() -> None:
+            """Execute with timeout and error handling."""
+            try:
+                await asyncio.wait_for(coro, timeout=task_timeout)
+            except TimeoutError:
+                logger.error(f"[{task_id}] {phase_name} timed out after {task_timeout}s")
+                # Update state to failed
+                state = self._states.get(task_id)
+                if state:
+                    async with self._locks.get(task_id, asyncio.Lock()):
+                        state.phase = AgenticPhase.FAILED
+                        state.error = f"{phase_name} timed out after {task_timeout}s"
+                        await self.agentic_dao.update(state)
+                        await self._notify_failure(state)
+            except asyncio.CancelledError:
+                logger.info(f"[{task_id}] {phase_name} was cancelled")
+                raise
+            except Exception as e:
+                logger.error(f"[{task_id}] {phase_name} failed: {e}")
+                # Error handling is done within each phase method
+                raise
+            finally:
+                # Cleanup the tracked task
+                self._cleanup_background_task(task_id)
+
+        task: asyncio.Task[None] = asyncio.create_task(wrapped_task())
+        self._background_tasks[task_id] = task
+        logger.debug(f"[{task_id}] Started background task for {phase_name}")
+        return task
+
+    def _cancel_background_task(self, task_id: str) -> bool:
+        """Cancel an existing background task.
+
+        Args:
+            task_id: Task ID to cancel.
+
+        Returns:
+            True if a task was cancelled.
+        """
+        existing_task = self._background_tasks.get(task_id)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+            logger.debug(f"[{task_id}] Cancelled existing background task")
+            return True
+        return False
+
+    def _cleanup_background_task(self, task_id: str) -> None:
+        """Remove completed task from tracking.
+
+        Args:
+            task_id: Task ID to cleanup.
+        """
+        if task_id in self._background_tasks:
+            del self._background_tasks[task_id]
+            logger.debug(f"[{task_id}] Cleaned up background task from tracking")
+
+    def get_active_task_count(self) -> int:
+        """Get count of active background tasks.
+
+        Returns:
+            Number of active (non-completed) background tasks.
+        """
+        return sum(1 for t in self._background_tasks.values() if not t.done())
 
     # =========================================
     # Public API
@@ -163,8 +257,12 @@ class AgenticOrchestrator:
         # Persist state
         await self.agentic_dao.create(state)
 
-        # Start coding phase in background
-        asyncio.create_task(self._run_coding_phase(task_id, instruction, limits))
+        # Start coding phase in background with proper tracking and timeout
+        self._start_background_task(
+            task_id,
+            self._run_coding_phase(task_id, instruction, limits),
+            "Coding phase",
+        )
 
         return state
 
@@ -199,6 +297,9 @@ class AgenticOrchestrator:
 
         # Stop CI polling if active
         await self._stop_ci_polling(task_id)
+
+        # Cancel any running background task
+        self._cancel_background_task(task_id)
 
         async with self._locks[task_id]:
             state.phase = AgenticPhase.FAILED
@@ -235,7 +336,11 @@ class AgenticOrchestrator:
                 # CI passed - proceed to review
                 state.phase = AgenticPhase.REVIEWING
                 await self.agentic_dao.update(state)
-                asyncio.create_task(self._run_review_phase(task_id))
+                self._start_background_task(
+                    task_id,
+                    self._run_review_phase(task_id),
+                    "Review phase",
+                )
             else:
                 # CI failed - trigger fix
                 state.ci_iterations += 1
@@ -249,7 +354,11 @@ class AgenticOrchestrator:
 
                 state.phase = AgenticPhase.FIXING_CI
                 await self.agentic_dao.update(state)
-                asyncio.create_task(self._run_ci_fix_phase(task_id, ci_result))
+                self._start_background_task(
+                    task_id,
+                    self._run_ci_fix_phase(task_id, ci_result),
+                    "CI fix phase",
+                )
 
             return state
 
@@ -291,7 +400,11 @@ class AgenticOrchestrator:
                     # Full Auto: Proceed to merge check
                     state.phase = AgenticPhase.MERGE_CHECK
                     await self.agentic_dao.update(state)
-                    asyncio.create_task(self._run_merge_phase(task_id))
+                    self._start_background_task(
+                        task_id,
+                        self._run_merge_phase(task_id),
+                        "Merge phase",
+                    )
             else:
                 # Review rejected - trigger fix
                 state.review_iterations += 1
@@ -305,7 +418,11 @@ class AgenticOrchestrator:
 
                 state.phase = AgenticPhase.FIXING_REVIEW
                 await self.agentic_dao.update(state)
-                asyncio.create_task(self._run_review_fix_phase(task_id, review_id))
+                self._start_background_task(
+                    task_id,
+                    self._run_review_fix_phase(task_id, review_id),
+                    "Review fix phase",
+                )
 
             return state
 
@@ -337,8 +454,12 @@ class AgenticOrchestrator:
             state.phase = AgenticPhase.MERGE_CHECK
             await self.agentic_dao.update(state)
 
-            # Proceed to merge
-            asyncio.create_task(self._run_merge_phase(task_id))
+            # Proceed to merge with proper tracking
+            self._start_background_task(
+                task_id,
+                self._run_merge_phase(task_id),
+                "Merge phase (approved)",
+            )
 
             return state
 
@@ -376,13 +497,15 @@ class AgenticOrchestrator:
                 # Human provided feedback - trigger fix
                 state.phase = AgenticPhase.CODING
                 await self.agentic_dao.update(state)
-                asyncio.create_task(
+                self._start_background_task(
+                    task_id,
                     self._run_coding_phase(
                         task_id,
                         feedback,
                         self._default_limits,
                         context={"human_feedback": True},
-                    )
+                    ),
+                    "Coding phase (human feedback)",
                 )
             else:
                 # No feedback - mark as failed
