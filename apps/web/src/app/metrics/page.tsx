@@ -81,7 +81,7 @@ export default function MetricsPage() {
   const [metrics, setMetrics] = useState<MetricsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<PeriodOption>('30d');
+  const [period, setPeriod] = useState<PeriodOption>('7d');
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [showExploratory, setShowExploratory] = useState(false);
 
