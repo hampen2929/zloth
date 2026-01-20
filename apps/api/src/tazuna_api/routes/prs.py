@@ -2,15 +2,17 @@
 
 import asyncio
 import logging
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from tazuna_api.dependencies import (
     get_ci_check_service,
     get_pr_service,
+    get_run_dao,
     get_user_preferences_dao,
 )
-from tazuna_api.domain.enums import PRUpdateMode
+from tazuna_api.domain.enums import PRUpdateMode, RunStatus
 from tazuna_api.domain.models import (
     PR,
     CICheck,
@@ -28,11 +30,31 @@ from tazuna_api.domain.models import (
 )
 from tazuna_api.services.ci_check_service import CICheckService
 from tazuna_api.services.pr_service import GitHubPermissionError, PRService
-from tazuna_api.storage.dao import UserPreferencesDAO
+from tazuna_api.storage.dao import RunDAO, UserPreferencesDAO
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["prs"])
+
+# Cooldown period for CI checks per task (in seconds)
+CI_CHECK_COOLDOWN_SECONDS = 10
+
+# Track last CI check time per task to prevent duplicate triggers
+_last_ci_check_times: dict[str, datetime] = {}
+
+
+def _can_trigger_ci_check(task_id: str) -> bool:
+    """Check if enough time has passed since last CI check for this task."""
+    last_time = _last_ci_check_times.get(task_id)
+    if last_time is None:
+        return True
+    elapsed = datetime.utcnow() - last_time
+    return elapsed >= timedelta(seconds=CI_CHECK_COOLDOWN_SECONDS)
+
+
+def _record_ci_check_time(task_id: str) -> None:
+    """Record the current time as the last CI check time for this task."""
+    _last_ci_check_times[task_id] = datetime.utcnow()
 
 
 async def _trigger_ci_check_if_enabled(
@@ -40,13 +62,41 @@ async def _trigger_ci_check_if_enabled(
     pr_id: str,
     ci_check_service: CICheckService,
     user_preferences_dao: UserPreferencesDAO,
+    run_dao: RunDAO | None = None,
 ) -> None:
-    """Trigger CI check in background if enable_gating_status is enabled."""
+    """Trigger CI check in background if enable_gating_status is enabled.
+
+    CI check is only triggered if:
+    1. enable_gating_status preference is enabled
+    2. No runs are currently running for this task (AI implementation is complete)
+    3. Cooldown period has passed since last CI check for this task
+    """
     try:
         prefs = await user_preferences_dao.get()
-        if prefs and prefs.enable_gating_status:
-            # Run CI check in background (don't block the response)
-            asyncio.create_task(_run_ci_check(task_id, pr_id, ci_check_service))
+        if not prefs or not prefs.enable_gating_status:
+            return
+
+        # Check cooldown to prevent duplicate triggers
+        if not _can_trigger_ci_check(task_id):
+            logger.debug(f"CI check skipped due to cooldown: task={task_id}")
+            return
+
+        # Check if any runs are still in progress
+        if run_dao:
+            runs = await run_dao.list(task_id)
+            running_runs = [r for r in runs if r.status in (RunStatus.RUNNING, RunStatus.QUEUED)]
+            if running_runs:
+                logger.info(
+                    f"CI check deferred: {len(running_runs)} run(s) still in progress "
+                    f"for task={task_id}"
+                )
+                return
+
+        # Record the check time and trigger CI check
+        _record_ci_check_time(task_id)
+
+        # Run CI check in background (don't block the response)
+        asyncio.create_task(_run_ci_check(task_id, pr_id, ci_check_service))
     except Exception as e:
         logger.warning(f"Failed to check gating preference: {e}")
 
@@ -67,13 +117,16 @@ async def create_pr(
     pr_service: PRService = Depends(get_pr_service),
     ci_check_service: CICheckService = Depends(get_ci_check_service),
     user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
+    run_dao: RunDAO = Depends(get_run_dao),
 ) -> PRCreated:
     """Create a Pull Request from a run."""
     try:
         pr = await pr_service.create(task_id, data)
 
         # Trigger CI check in background if gating is enabled
-        await _trigger_ci_check_if_enabled(task_id, pr.id, ci_check_service, user_preferences_dao)
+        await _trigger_ci_check_if_enabled(
+            task_id, pr.id, ci_check_service, user_preferences_dao, run_dao
+        )
 
         return PRCreated(
             pr_id=pr.id,
@@ -94,6 +147,7 @@ async def create_pr_auto(
     pr_service: PRService = Depends(get_pr_service),
     ci_check_service: CICheckService = Depends(get_ci_check_service),
     user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
+    run_dao: RunDAO = Depends(get_run_dao),
 ) -> PRCreated:
     """Create a Pull Request with AI-generated title and description.
 
@@ -104,7 +158,9 @@ async def create_pr_auto(
         pr = await pr_service.create_auto(task_id, data)
 
         # Trigger CI check in background if gating is enabled
-        await _trigger_ci_check_if_enabled(task_id, pr.id, ci_check_service, user_preferences_dao)
+        await _trigger_ci_check_if_enabled(
+            task_id, pr.id, ci_check_service, user_preferences_dao, run_dao
+        )
 
         return PRCreated(
             pr_id=pr.id,
@@ -187,6 +243,7 @@ async def sync_manual_pr(
     pr_service: PRService = Depends(get_pr_service),
     ci_check_service: CICheckService = Depends(get_ci_check_service),
     user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
+    run_dao: RunDAO = Depends(get_run_dao),
 ) -> PRSyncResult:
     """Sync a manually created PR (created via the GitHub compare UI)."""
     try:
@@ -195,7 +252,7 @@ async def sync_manual_pr(
         # Trigger CI check in background if gating is enabled and PR was found
         if result.found and result.pr:
             await _trigger_ci_check_if_enabled(
-                task_id, result.pr.pr_id, ci_check_service, user_preferences_dao
+                task_id, result.pr.pr_id, ci_check_service, user_preferences_dao, run_dao
             )
 
         return result
@@ -213,13 +270,16 @@ async def update_pr(
     pr_service: PRService = Depends(get_pr_service),
     ci_check_service: CICheckService = Depends(get_ci_check_service),
     user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
+    run_dao: RunDAO = Depends(get_run_dao),
 ) -> PRUpdated:
     """Update a Pull Request with a new run."""
     try:
         pr = await pr_service.update(task_id, pr_id, data)
 
         # Trigger CI check in background if gating is enabled
-        await _trigger_ci_check_if_enabled(task_id, pr_id, ci_check_service, user_preferences_dao)
+        await _trigger_ci_check_if_enabled(
+            task_id, pr_id, ci_check_service, user_preferences_dao, run_dao
+        )
 
         return PRUpdated(
             url=pr.url,
