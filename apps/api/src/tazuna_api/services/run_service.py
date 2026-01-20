@@ -604,6 +604,17 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 # Cleanup working copy
                 self.repo_service.cleanup_working_copy(run.id)
 
+        except asyncio.CancelledError:
+            # Task was cancelled (e.g., due to timeout or user cancellation)
+            logger.warning(f"[{run.id[:8]}] PatchAgent run was cancelled")
+            await self.run_dao.update_status(
+                run.id,
+                RunStatus.FAILED,
+                error="Task was cancelled (timeout or user cancellation)",
+                logs=["Execution cancelled"],
+            )
+            raise  # Re-raise to propagate cancellation
+
         except Exception as e:
             # Update status to failed
             await self.run_dao.update_status(
@@ -874,6 +885,18 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 session_id=result.session_id or resume_session_id,
                 commit_sha=commit_sha,
             )
+
+        except asyncio.CancelledError:
+            # Task was cancelled (e.g., due to timeout or user cancellation)
+            logger.warning(f"[{run.id[:8]}] CLI run was cancelled")
+            await self.run_dao.update_status(
+                run.id,
+                RunStatus.FAILED,
+                error="Task was cancelled (timeout or user cancellation)",
+                logs=logs + ["Execution cancelled"],
+                commit_sha=commit_sha,
+            )
+            raise  # Re-raise to propagate cancellation
 
         except Exception as e:
             # Update status to failed
