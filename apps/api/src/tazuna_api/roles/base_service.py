@@ -33,29 +33,80 @@ TResult = TypeVar("TResult", bound=RoleExecutionResult)  # Role result type
 
 
 class RoleQueueAdapter:
-    """Simple in-memory queue adapter for role execution.
+    """In-memory queue adapter for role execution with concurrency control.
 
-    Manages async task execution with cancellation support.
+    Features:
+    - Concurrency limit via semaphore to prevent resource exhaustion
+    - Execution timeout to prevent tasks from hanging indefinitely
+    - Automatic cleanup of completed tasks to prevent memory leaks
+
     Can be replaced with distributed task queues (Celery/RQ/Redis) for scaling.
     """
 
-    def __init__(self) -> None:
-        """Initialize the queue adapter."""
+    def __init__(
+        self,
+        max_concurrent: int | None = None,
+        default_timeout: int | None = None,
+    ) -> None:
+        """Initialize the queue adapter.
+
+        Args:
+            max_concurrent: Maximum concurrent task executions.
+                           Defaults to settings.queue_max_concurrent_tasks.
+            default_timeout: Default timeout in seconds for task execution.
+                            Defaults to settings.queue_task_timeout_seconds.
+        """
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._max_concurrent = max_concurrent or settings.queue_max_concurrent_tasks
+        self._default_timeout = default_timeout or settings.queue_task_timeout_seconds
+        self._semaphore = asyncio.Semaphore(self._max_concurrent)
 
     def enqueue(
         self,
         record_id: str,
         coro: Callable[[], Coroutine[Any, Any, None]],
+        timeout: int | None = None,
     ) -> None:
-        """Enqueue a role execution.
+        """Enqueue a role execution with concurrency control and timeout.
 
         Args:
             record_id: Unique identifier for the execution record.
             coro: Coroutine factory to execute.
+            timeout: Optional timeout override in seconds.
         """
-        task: asyncio.Task[None] = asyncio.create_task(coro())
+        task_timeout = timeout or self._default_timeout
+
+        async def wrapped_execution() -> None:
+            """Execute with semaphore-based concurrency control and timeout."""
+            async with self._semaphore:
+                try:
+                    await asyncio.wait_for(coro(), timeout=task_timeout)
+                except TimeoutError:
+                    logger.error(f"Role execution {record_id} timed out after {task_timeout}s")
+                    raise
+                except asyncio.CancelledError:
+                    logger.info(f"Role execution {record_id} was cancelled")
+                    raise
+                except Exception as e:
+                    logger.error(f"Role execution {record_id} failed with error: {e}")
+                    raise
+                finally:
+                    # Cleanup completed task from memory if configured
+                    if settings.queue_cleanup_completed_tasks:
+                        self._cleanup_task(record_id)
+
+        task: asyncio.Task[None] = asyncio.create_task(wrapped_execution())
         self._tasks[record_id] = task
+
+    def _cleanup_task(self, record_id: str) -> None:
+        """Remove completed task from internal tracking.
+
+        Args:
+            record_id: Record ID to clean up.
+        """
+        if record_id in self._tasks:
+            del self._tasks[record_id]
+            logger.debug(f"Cleaned up role execution {record_id} from queue")
 
     def cancel(self, record_id: str) -> bool:
         """Cancel a queued execution.
@@ -83,6 +134,21 @@ class RoleQueueAdapter:
         """
         task = self._tasks.get(record_id)
         return task is not None and not task.done()
+
+    def get_queue_stats(self) -> dict[str, int]:
+        """Get queue statistics for monitoring.
+
+        Returns:
+            Dictionary with queue statistics.
+        """
+        running = sum(1 for t in self._tasks.values() if not t.done())
+        pending = len(self._tasks) - running
+        return {
+            "max_concurrent": self._max_concurrent,
+            "running": running,
+            "pending": pending,
+            "total_tracked": len(self._tasks),
+        }
 
 
 # Type alias for executor types

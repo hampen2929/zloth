@@ -146,6 +146,17 @@ class Settings(BaseSettings):
         default=True, description="Enable CI polling (alternative to webhooks)"
     )
 
+    # Queue Configuration (prevents resource exhaustion from unlimited concurrent tasks)
+    queue_max_concurrent_tasks: int = Field(
+        default=5, description="Maximum concurrent task executions (prevents overload)"
+    )
+    queue_task_timeout_seconds: int = Field(
+        default=3600, description="Default timeout for task execution in seconds (1 hour)"
+    )
+    queue_cleanup_completed_tasks: bool = Field(
+        default=True, description="Automatically clean up completed tasks from memory"
+    )
+
     # Quality Thresholds
     review_min_score: float = Field(default=0.75, description="Minimum review score")
     coverage_threshold: int = Field(default=80, description="Minimum coverage percentage")
