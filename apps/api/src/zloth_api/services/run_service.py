@@ -452,17 +452,17 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             base_ref=base_ref,
         )
 
-            if not workspace_info:
-                branch_prefix: str | None = None
-                if self.user_preferences_dao:
-                    prefs = await self.user_preferences_dao.get()
-                    branch_prefix = prefs.default_branch_prefix if prefs else None
-                    # Apply custom directory from UserPreferences if set
-                    if prefs and prefs.worktrees_dir:
-                        if self.use_clone_isolation:
-                            self.workspace_service.set_workspaces_dir(prefs.worktrees_dir)
-                        else:
-                            self.git_service.set_worktrees_dir(prefs.worktrees_dir)
+        if not workspace_info:
+            branch_prefix: str | None = None
+            if self.user_preferences_dao:
+                prefs = await self.user_preferences_dao.get()
+                branch_prefix = prefs.default_branch_prefix if prefs else None
+                # Apply custom directory from UserPreferences if set
+                if prefs and prefs.worktrees_dir:
+                    if self.use_clone_isolation:
+                        self.workspace_service.set_workspaces_dir(prefs.worktrees_dir)
+                    else:
+                        self.git_service.set_worktrees_dir(prefs.worktrees_dir)
 
             # Get auth_url for private repos
             auth_url: str | None = None
