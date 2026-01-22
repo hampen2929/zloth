@@ -839,7 +839,27 @@ class GitService:
                 if not is_non_ff or attempt >= max_retries:
                     return PushResult(success=False, error=str(e), required_pull=required_pull)
 
-                # Try to pull and retry
+                # Try to pull and retry.
+                #
+                # IMPORTANT: For a brand-new branch, the remote ref may not exist yet.
+                # In that case, `git pull origin <branch>` fails with:
+                #   fatal: couldn't find remote ref <branch>
+                # So we must guard the pull with a remote-branch existence check.
+                try:
+                    remote_exists = await self.remote_branch_exists(
+                        repo_path=repo_path, branch=branch, auth_url=auth_url
+                    )
+                except Exception as ex:
+                    # Best-effort only: if we fail to check, fall back to previous behavior.
+                    logger.debug(f"Failed to check remote branch existence: {ex}")
+                    remote_exists = True
+
+                if not remote_exists:
+                    logger.info(
+                        f"Remote branch origin/{branch} not found; skipping pull and retrying push"
+                    )
+                    continue
+
                 logger.info(
                     f"Push rejected (non-fast-forward), pulling and retrying "
                     f"(attempt {attempt + 1}/{max_retries})"
@@ -862,6 +882,40 @@ class GitService:
                     )
 
         return PushResult(success=False, error="Max retries exceeded", required_pull=required_pull)
+
+    async def remote_branch_exists(
+        self,
+        *,
+        repo_path: Path,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> bool:
+        """Check whether origin/<branch> exists (best-effort).
+
+        This is used to avoid calling `git pull origin <branch>` for branches that have not
+        been pushed to the remote yet.
+
+        Args:
+            repo_path: Path to the repository (workspace or worktree).
+            branch: Branch name (e.g., 'zloth/abcd1234').
+            auth_url: Authenticated URL for private repos.
+
+        Returns:
+            True if refs/remotes/origin/<branch> exists after a fetch, False otherwise.
+        """
+        # Fetch latest state from remote (best-effort)
+        await self.fetch_with_auth(repo_path, auth_url=auth_url)
+
+        def _exists() -> bool:
+            repo = git.Repo(repo_path)
+            try:
+                repo.git.show_ref("--verify", f"refs/remotes/origin/{branch}")
+                return True
+            except git.GitCommandError:
+                return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _exists)
 
     async def fetch(
         self,
