@@ -5,6 +5,7 @@ from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
 from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
 from zloth_api.services.ci_polling_service import CIPollingService
+from zloth_api.services.cli_status_service import CLIStatusService
 from zloth_api.services.crypto_service import CryptoService
 from zloth_api.services.git_service import GitService
 from zloth_api.services.github_service import GitHubService
@@ -345,3 +346,8 @@ async def get_metrics_service() -> MetricsService:
     """Get the metrics service."""
     metrics_dao = await get_metrics_dao()
     return MetricsService(metrics_dao)
+
+
+def get_cli_status_service() -> CLIStatusService:
+    """Get the CLI status service."""
+    return CLIStatusService(settings)

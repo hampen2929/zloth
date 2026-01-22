@@ -23,7 +23,9 @@ import {
   TrashIcon,
   PlusIcon,
   Cog6ToothIcon,
+  CommandLineIcon,
 } from '@heroicons/react/24/outline';
+import ExecutorsTab from './ExecutorsTab';
 
 const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   {
@@ -43,7 +45,7 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
-export type SettingsTabType = 'models' | 'github' | 'defaults';
+export type SettingsTabType = 'models' | 'github' | 'defaults' | 'executors';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -55,6 +57,7 @@ export const settingsTabConfig: { id: SettingsTabType; label: string; icon: Reac
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
+  { id: 'executors', label: 'Executors', icon: <CommandLineIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
@@ -103,6 +106,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
         {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
+        {activeTab === 'executors' && <ExecutorsTab />}
       </ModalBody>
     </Modal>
   );

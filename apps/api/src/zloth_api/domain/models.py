@@ -1263,3 +1263,28 @@ class MetricsDetail(BaseModel):
     agentic_metrics: AgenticMetrics
     productivity_metrics: ProductivityMetrics
     realtime: RealtimeMetrics
+
+
+# ============================================================
+# CLI Executor Status
+# ============================================================
+
+
+class CLIStatus(BaseModel):
+    """CLI executor availability status."""
+
+    name: str = Field(..., description="Executor identifier (e.g., claude_code, codex, gemini)")
+    display_name: str = Field(..., description="Human-friendly display name")
+    available: bool = Field(..., description="Whether the CLI is available and executable")
+    configured_path: str = Field(..., description="Configured CLI path")
+    resolved_path: str | None = Field(
+        None, description="Resolved absolute path (None if not found)"
+    )
+    version: str | None = Field(None, description="CLI version (None if unavailable)")
+    error: str | None = Field(None, description="Error message if unavailable")
+
+
+class CLIStatusResponse(BaseModel):
+    """Response for CLI executor status endpoint."""
+
+    executors: list[CLIStatus] = Field(default_factory=list)
