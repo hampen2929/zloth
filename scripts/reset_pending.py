@@ -37,6 +37,10 @@ def show_pending(conn: sqlite3.Connection) -> dict[str, int]:
     )
     counts["agentic_runs"] = cursor.fetchone()[0]
 
+    # Pending ci_checks
+    cursor.execute("SELECT COUNT(*) FROM ci_checks WHERE status = 'pending'")
+    counts["ci_checks"] = cursor.fetchone()[0]
+
     return counts
 
 
@@ -98,6 +102,29 @@ def show_pending_details(conn: sqlite3.Connection) -> None:
     else:
         print("No active agentic runs.")
 
+    print("\n=== Pending CI Checks ===")
+    cursor.execute(
+        """
+        SELECT id, task_id, pr_id, status, created_at
+        FROM ci_checks
+        WHERE status = 'pending'
+        ORDER BY created_at DESC
+        LIMIT 20
+        """
+    )
+    rows = cursor.fetchall()
+    cursor.execute("SELECT COUNT(*) FROM ci_checks WHERE status = 'pending'")
+    total = cursor.fetchone()[0]
+    if rows:
+        print(f"{'ID':<40} {'Task ID':<40} {'PR ID':<40} {'Status':<10} {'Created'}")
+        print("-" * 150)
+        for row in rows:
+            print(f"{row[0]:<40} {row[1]:<40} {row[2]:<40} {row[3]:<10} {row[4]}")
+        if total > 20:
+            print(f"... and {total - 20} more")
+    else:
+        print("No pending CI checks.")
+
 
 def reset_pending(
     conn: sqlite3.Connection, dry_run: bool = False, table: str | None = None
@@ -111,7 +138,7 @@ def reset_pending(
     if table:
         tables_to_reset = [table]
     else:
-        tables_to_reset = ["runs", "reviews", "agentic_runs"]
+        tables_to_reset = ["runs", "reviews", "agentic_runs", "ci_checks"]
 
     if "runs" in tables_to_reset:
         if dry_run:
@@ -163,6 +190,18 @@ def reset_pending(
             )
             reset_counts["agentic_runs"] = cursor.rowcount
 
+    if "ci_checks" in tables_to_reset:
+        if dry_run:
+            cursor.execute("SELECT COUNT(*) FROM ci_checks WHERE status = 'pending'")
+            reset_counts["ci_checks"] = cursor.fetchone()[0]
+        else:
+            cursor.execute(
+                """
+                DELETE FROM ci_checks WHERE status = 'pending'
+                """
+            )
+            reset_counts["ci_checks"] = cursor.rowcount
+
     if not dry_run:
         conn.commit()
 
@@ -192,7 +231,7 @@ def main() -> None:
     parser.add_argument(
         "--table",
         type=str,
-        choices=["runs", "reviews", "agentic_runs"],
+        choices=["runs", "reviews", "agentic_runs", "ci_checks"],
         help="Reset only specific table",
     )
     parser.add_argument(
@@ -218,6 +257,7 @@ def main() -> None:
         print(f"Pending runs: {counts['runs']}")
         print(f"Pending reviews: {counts['reviews']}")
         print(f"Active agentic_runs: {counts['agentic_runs']}")
+        print(f"Pending ci_checks: {counts['ci_checks']}")
 
         if args.details:
             show_pending_details(conn)
