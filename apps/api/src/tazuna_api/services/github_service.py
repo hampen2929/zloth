@@ -1,6 +1,7 @@
 """GitHub App service for tazuna API."""
 
 import base64
+import logging
 import time
 from typing import Any
 
@@ -14,6 +15,8 @@ from tazuna_api.domain.models import (
     GitHubRepository,
 )
 from tazuna_api.storage.db import Database
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubService:
@@ -556,6 +559,7 @@ class GitHubService:
             params["base"] = base
 
         try:
+            logger.info(f"Searching PR: owner={owner}, repo={repo}, head={head}, base={base}")
             prs = await self._github_request(
                 "GET",
                 f"/repos/{owner}/{repo}/pulls",
@@ -563,11 +567,14 @@ class GitHubService:
             )
 
             if isinstance(prs, list) and prs:
+                logger.info(f"Found PR: #{prs[0].get('number')}")
                 return prs[0]
+            logger.info("No PR found matching criteria")
             return None
         except httpx.HTTPStatusError as e:
             # 404 means repo not found or no access - return None
             if e.response.status_code == 404:
+                logger.warning(f"GitHub API 404: repo={owner}/{repo} - check access permissions")
                 return None
             raise
 
