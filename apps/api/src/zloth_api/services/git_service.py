@@ -794,6 +794,39 @@ class GitService:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _push)
 
+    async def _remote_branch_exists(
+        self,
+        repo_path: Path,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> bool:
+        """Check if a remote branch exists.
+
+        Args:
+            repo_path: Path to the repository.
+            branch: Branch name to check.
+            auth_url: Authenticated URL for fetching (optional).
+
+        Returns:
+            True if the remote branch exists, False otherwise.
+        """
+        # First fetch to ensure we have latest refs
+        try:
+            await self.fetch_with_auth(repo_path, auth_url=auth_url)
+        except Exception as e:
+            logger.debug(f"Fetch failed while checking remote branch: {e}")
+
+        def _check() -> bool:
+            repo = git.Repo(repo_path)
+            try:
+                repo.git.show_ref("--verify", f"refs/remotes/origin/{branch}")
+                return True
+            except git.GitCommandError:
+                return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _check)
+
     async def push_with_retry(
         self,
         repo_path: Path,
@@ -838,6 +871,16 @@ class GitService:
 
                 if not is_non_ff or attempt >= max_retries:
                     return PushResult(success=False, error=str(e), required_pull=required_pull)
+
+                # Check if the remote branch exists before trying to pull
+                # For new branches that don't exist on remote yet, pull will fail
+                remote_exists = await self._remote_branch_exists(repo_path, branch, auth_url)
+                if not remote_exists:
+                    logger.info(
+                        f"Remote branch origin/{branch} does not exist, "
+                        f"cannot pull to resolve non-fast-forward"
+                    )
+                    return PushResult(success=False, error=str(e), required_pull=False)
 
                 # Try to pull and retry
                 logger.info(
