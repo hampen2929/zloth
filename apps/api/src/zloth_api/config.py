@@ -105,6 +105,14 @@ class Settings(BaseSettings):
         description="Directory for git worktrees. Defaults to ~/.zloth/worktrees "
         "to avoid inheriting parent directory's CLAUDE.md",
     )
+    # Workspace Isolation Mode
+    use_clone_isolation: bool = Field(
+        default=True,
+        description=(
+            "Use git clone instead of worktree for workspace isolation. "
+            "Clone mode provides better support for remote sync and conflict resolution."
+        ),
+    )
     data_dir: Path | None = Field(
         default=None,
         description="Directory for SQLite database. Defaults to ~/.zloth/data "
