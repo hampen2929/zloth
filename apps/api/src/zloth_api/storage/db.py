@@ -16,10 +16,10 @@ class Database:
     def __init__(self, db_path: Path | None = None):
         if db_path:
             self.db_path = db_path
-        elif settings.data_dir:
-            self.db_path = settings.data_dir / "zloth.db"
+        elif settings.database_path:
+            self.db_path = settings.database_path
         else:
-            raise ValueError("data_dir must be set in settings")
+            raise ValueError("database_path must be set in settings")
         self._connection: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:

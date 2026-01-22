@@ -106,6 +106,11 @@ class Settings(BaseSettings):
         "to avoid inheriting parent directory's CLAUDE.md",
     )
     data_dir: Path | None = Field(default=None)
+    database_path: Path | None = Field(
+        default=None,
+        description="Path to SQLite database file. Defaults to {data_dir}/zloth.db. "
+        "Can be set to a custom location (e.g., ~/.zloth/zloth.db)",
+    )
 
     # Database
     database_url: str | None = Field(default=None)
@@ -187,8 +192,10 @@ class Settings(BaseSettings):
             self.worktrees_dir = Path.home() / ".zloth" / "worktrees"
         if self.data_dir is None:
             self.data_dir = self.base_dir / "data"
+        if self.database_path is None:
+            self.database_path = self.data_dir / "zloth.db"
         if self.database_url is None:
-            self.database_url = f"sqlite+aiosqlite:///{self.data_dir}/zloth.db"
+            self.database_url = f"sqlite+aiosqlite:///{self.database_path}"
 
         # Ensure directories exist and are writable
         for dir_path, dir_name in [
@@ -201,6 +208,16 @@ class Settings(BaseSettings):
                 raise PermissionError(
                     f"Directory '{dir_path}' is not writable. "
                     f"Please fix permissions with: chmod -R u+w {dir_path}"
+                )
+
+        # Ensure database parent directory exists when custom path is specified
+        if self.database_path:
+            db_parent = self.database_path.parent
+            db_parent.mkdir(parents=True, exist_ok=True)
+            if not os.access(db_parent, os.W_OK):
+                raise PermissionError(
+                    f"Database directory '{db_parent}' is not writable. "
+                    f"Please fix permissions with: chmod -R u+w {db_parent}"
                 )
 
     @property
