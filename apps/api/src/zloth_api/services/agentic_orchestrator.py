@@ -994,6 +994,27 @@ Please:
 
         return repo_url
 
+    async def _get_pr_url(self, task_id: str, pr_number: int) -> str:
+        """Build GitHub PR URL from task's repo info.
+
+        Args:
+            task_id: Task ID to look up repo info.
+            pr_number: PR number.
+
+        Returns:
+            Full GitHub PR URL (e.g., https://github.com/owner/repo/pull/123).
+        """
+        task = await self.task_dao.get(task_id)
+        if not task:
+            return f"https://github.com/unknown/unknown/pull/{pr_number}"
+
+        repo = await self.run_service.repo_service.dao.get(task.repo_id)
+        if not repo:
+            return f"https://github.com/unknown/unknown/pull/{pr_number}"
+
+        repo_full_name = self._extract_repo_full_name(repo.repo_url)
+        return f"https://github.com/{repo_full_name}/pull/{pr_number}"
+
     # =========================================
     # Notification Methods
     # =========================================
@@ -1005,12 +1026,13 @@ Please:
 
         task = await self.task_dao.get(state.task_id)
         task_title = task.title if task else None
+        pr_url = await self._get_pr_url(state.task_id, state.pr_number)
 
         await self.notifier.notify_ready_for_merge(
             task_id=state.task_id,
             task_title=task_title,
             pr_number=state.pr_number,
-            pr_url=f"https://github.com/TODO/pull/{state.pr_number}",  # TODO: Get actual URL
+            pr_url=pr_url,
             mode=state.mode.value,
             iterations=state.iteration,
             review_score=state.last_review_score,
@@ -1037,12 +1059,13 @@ Please:
 
         task = await self.task_dao.get(state.task_id)
         task_title = task.title if task else None
+        pr_url = await self._get_pr_url(state.task_id, state.pr_number)
 
         await self.notifier.notify_completed(
             task_id=state.task_id,
             task_title=task_title,
             pr_number=state.pr_number,
-            pr_url=f"https://github.com/TODO/pull/{state.pr_number}",  # TODO: Get actual URL
+            pr_url=pr_url,
             mode=state.mode.value,
             iterations=state.iteration,
         )
