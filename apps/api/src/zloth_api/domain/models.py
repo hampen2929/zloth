@@ -425,6 +425,11 @@ Access to the following paths is forbidden:
 ### Allowed Git Commands (Read-only)
 {allowed_commands_str}
 
+### Response Language
+- Respond in the same language as the user's task instruction
+- If the user writes in Japanese, respond in Japanese
+- If the user writes in English, respond in English
+
 ### Summary File (REQUIRED)
 After completing all changes, you MUST create a summary file at `{SUMMARY_FILE_PATH}`.
 This file should contain a brief summary (1-2 sentences in English) of what you did.

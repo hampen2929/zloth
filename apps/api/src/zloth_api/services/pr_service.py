@@ -677,6 +677,10 @@ class PRService:
                 "<your description here>",
                 "```",
                 "",
+                "## Language Requirement",
+                "- IMPORTANT: Both title and description MUST be written in English",
+                "- Even if the user instruction is in another language, output in English",
+                "",
                 "## Rules for Title",
                 "- Keep it under 50 characters",
                 "- Use imperative mood (e.g., 'Add feature X' not 'Added feature X')",
@@ -800,6 +804,7 @@ DO NOT edit any files. Only output the title text.
 - Keep it under 50 characters
 - Use imperative mood (e.g., "Add feature X" not "Added feature X")
 - Be specific but concise
+- IMPORTANT: Title MUST be written in English, even if the task description is in another language
 """
 
         try:
@@ -994,6 +999,7 @@ IMPORTANT INSTRUCTIONS:
                     "- Replace placeholders and HTML comments with real content",
                     "- Keep the template structure (headings, checkboxes, etc.)",
                     "- Base all content on the user instruction and diff",
+                    "- IMPORTANT: Description MUST be written in English",
                 ]
             )
         else:
@@ -1003,6 +1009,7 @@ IMPORTANT INSTRUCTIONS:
                     "## Rules",
                     "- Create a concise PR description",
                     "- Base the content on the user instruction and diff",
+                    "- IMPORTANT: Description MUST be written in English",
                 ]
             )
 
@@ -1435,6 +1442,7 @@ IMPORTANT INSTRUCTIONS:
                     "- Replace placeholders and HTML comments with real content",
                     "- Keep the template structure (headings, checkboxes, etc.)",
                     "- Base all content on the user instruction and diff",
+                    "- IMPORTANT: Description MUST be written in English",
                 ]
             )
         else:
@@ -1444,6 +1452,7 @@ IMPORTANT INSTRUCTIONS:
                     "## Rules",
                     "- Create a concise PR description",
                     "- Base the content on the user instruction and diff",
+                    "- IMPORTANT: Description MUST be written in English",
                 ]
             )
 
