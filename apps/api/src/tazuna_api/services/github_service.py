@@ -555,11 +555,20 @@ class GitHubService:
         if base:
             params["base"] = base
 
-        prs = await self._github_request(
-            "GET",
-            f"/repos/{owner}/{repo}/pulls",
-            params=params,
-        )
+        try:
+            prs = await self._github_request(
+                "GET",
+                f"/repos/{owner}/{repo}/pulls",
+                params=params,
+            )
+        except httpx.HTTPStatusError as e:
+            # 404 can occur when:
+            # - Repository doesn't exist
+            # - GitHub App doesn't have access to the repository
+            # In these cases, return None (PR not found) rather than raising
+            if e.response.status_code == 404:
+                return None
+            raise
 
         if isinstance(prs, list) and prs:
             return prs[0]
