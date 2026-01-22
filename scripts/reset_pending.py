@@ -1,5 +1,59 @@
 #!/usr/bin/env python3
-"""CLI tool to reset pending runs, reviews, and agentic_runs in zloth database."""
+"""Reset pending items in zloth database.
+
+This CLI tool resets stuck or pending items in the zloth SQLite database.
+It handles the following tables:
+  - runs: Pending runs (status: queued, running) → canceled
+  - reviews: Pending reviews (status: queued, running) → canceled
+  - agentic_runs: Active agentic runs (phase: not completed/failed) → failed
+  - ci_checks: Pending CI checks (status: pending) → deleted
+
+Usage:
+    # Show current pending counts (dry-run)
+    python scripts/reset_pending.py --dry-run
+
+    # Show detailed list of pending items
+    python scripts/reset_pending.py --details
+
+    # Reset all pending items (with confirmation)
+    python scripts/reset_pending.py
+
+    # Reset all pending items (skip confirmation)
+    python scripts/reset_pending.py -y
+
+    # Reset only specific table
+    python scripts/reset_pending.py --table ci_checks -y
+    python scripts/reset_pending.py --table runs -y
+
+    # Use custom database path
+    python scripts/reset_pending.py --db /path/to/zloth.db -y
+
+Examples:
+    # Check what would be reset without making changes
+    $ python scripts/reset_pending.py --dry-run
+    Database: /home/user/.zloth/data/zloth.db
+    Pending runs: 5
+    Pending reviews: 0
+    Active agentic_runs: 0
+    Pending ci_checks: 490
+
+    [DRY RUN] Would reset:
+      - runs: 5
+      - reviews: 0
+      - agentic_runs: 0
+      - ci_checks: 490
+
+    # Reset only CI checks
+    $ python scripts/reset_pending.py --table ci_checks -y
+    Database: /home/user/.zloth/data/zloth.db
+    Pending runs: 5
+    Pending reviews: 0
+    Active agentic_runs: 0
+    Pending ci_checks: 490
+
+    Reset complete:
+      - ci_checks: 490 items reset
+"""
 
 import argparse
 import sqlite3
@@ -11,14 +65,28 @@ DEFAULT_DB_PATH = Path.home() / ".zloth" / "data" / "zloth.db"
 
 
 def get_db_path(custom_path: str | None = None) -> Path:
-    """Get database path."""
+    """Get database path.
+
+    Args:
+        custom_path: Optional custom database path.
+
+    Returns:
+        Path to the database file.
+    """
     if custom_path:
         return Path(custom_path)
     return DEFAULT_DB_PATH
 
 
 def show_pending(conn: sqlite3.Connection) -> dict[str, int]:
-    """Show counts of pending items."""
+    """Get counts of pending items in each table.
+
+    Args:
+        conn: SQLite database connection.
+
+    Returns:
+        Dictionary mapping table names to pending item counts.
+    """
     cursor = conn.cursor()
 
     counts = {}
@@ -45,7 +113,11 @@ def show_pending(conn: sqlite3.Connection) -> dict[str, int]:
 
 
 def show_pending_details(conn: sqlite3.Connection) -> None:
-    """Show detailed list of pending items."""
+    """Print detailed list of pending items.
+
+    Args:
+        conn: SQLite database connection.
+    """
     cursor = conn.cursor()
 
     print("\n=== Pending Runs ===")
@@ -129,7 +201,16 @@ def show_pending_details(conn: sqlite3.Connection) -> None:
 def reset_pending(
     conn: sqlite3.Connection, dry_run: bool = False, table: str | None = None
 ) -> dict[str, int]:
-    """Reset pending items to canceled/failed status."""
+    """Reset pending items to canceled/failed status.
+
+    Args:
+        conn: SQLite database connection.
+        dry_run: If True, only return counts without making changes.
+        table: If specified, only reset items in this table.
+
+    Returns:
+        Dictionary mapping table names to number of items reset.
+    """
     cursor = conn.cursor()
     now = datetime.now().isoformat()
     reset_counts = {}
@@ -209,8 +290,18 @@ def reset_pending(
 
 
 def main() -> None:
+    """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        description="Reset pending runs, reviews, and agentic_runs in zloth database."
+        description="Reset pending runs, reviews, agentic_runs, and ci_checks in zloth database.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --dry-run              Show pending counts without making changes
+  %(prog)s --details              Show detailed list of pending items
+  %(prog)s -y                     Reset all pending items (skip confirmation)
+  %(prog)s --table ci_checks -y   Reset only pending CI checks
+  %(prog)s --table runs -y        Reset only pending runs
+        """,
     )
     parser.add_argument(
         "--db",
