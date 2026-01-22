@@ -555,15 +555,21 @@ class GitHubService:
         if base:
             params["base"] = base
 
-        prs = await self._github_request(
-            "GET",
-            f"/repos/{owner}/{repo}/pulls",
-            params=params,
-        )
+        try:
+            prs = await self._github_request(
+                "GET",
+                f"/repos/{owner}/{repo}/pulls",
+                params=params,
+            )
 
-        if isinstance(prs, list) and prs:
-            return prs[0]
-        return None
+            if isinstance(prs, list) and prs:
+                return prs[0]
+            return None
+        except httpx.HTTPStatusError as e:
+            # 404 means repo not found or no access - return None
+            if e.response.status_code == 404:
+                return None
+            raise
 
     async def get_pull_request_status(
         self,
