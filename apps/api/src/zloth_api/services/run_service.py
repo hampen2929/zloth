@@ -379,7 +379,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         workspace_info: WorktreeInfo | WorkspaceInfo | None = None
 
         if existing_run and existing_run.worktree_path:
-            workspace_path = Path(existing_run.worktree_path)
+            workspace_path: Path | None = Path(existing_run.worktree_path)
 
             # If clone isolation is enabled but the previous workspace is a worktree,
             # do not reuse it. We prefer clone-based isolation going forward.
@@ -405,7 +405,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             else:
                 is_valid = False
 
-            if is_valid:
+            if is_valid and workspace_path is not None:
                 # If we're working from the repo's default branch, ensure the workspace
                 # still contains the latest origin/<default>. Otherwise, create fresh.
                 should_check_default = (base_ref == repo.default_branch) and bool(
