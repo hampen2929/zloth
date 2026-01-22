@@ -164,6 +164,13 @@ class Settings(BaseSettings):
     # Webhook
     webhook_secret: str = Field(default="", description="Webhook HMAC secret")
 
+    # Workspace Isolation Mode
+    use_clone_isolation: bool = Field(
+        default=True,
+        description="Use git clone instead of worktree for workspace isolation. "
+        "Clone mode provides better support for remote sync and conflict resolution.",
+    )
+
     # Merge Settings
     merge_method: str = Field(default="squash", description="Merge method: merge, squash, rebase")
     merge_delete_branch: bool = Field(default=True, description="Delete branch after merge")
