@@ -16,10 +16,10 @@ class Database:
     def __init__(self, db_path: Path | None = None):
         if db_path:
             self.db_path = db_path
-        elif settings.data_dir:
-            self.db_path = settings.data_dir / "zloth.db"
+        elif settings.database_path:
+            self.db_path = settings.database_path
         else:
-            raise ValueError("data_dir must be set in settings")
+            raise ValueError("database_path must be set in settings")
         self._connection: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:
@@ -113,6 +113,11 @@ class Database:
         # Migration: Add worktrees_dir column if it doesn't exist
         if "worktrees_dir" not in pref_column_names:
             await conn.execute("ALTER TABLE user_preferences ADD COLUMN worktrees_dir TEXT")
+            await conn.commit()
+
+        # Migration: Add database_path column if it doesn't exist
+        if "database_path" not in pref_column_names:
+            await conn.execute("ALTER TABLE user_preferences ADD COLUMN database_path TEXT")
             await conn.commit()
 
         # Migration: Add enable_gating_status column if it doesn't exist

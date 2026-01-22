@@ -225,6 +225,8 @@ docker compose down
 | `ZLOTH_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Yes* |
 | `ZLOTH_DEBUG` | Debug mode | No |
 | `ZLOTH_LOG_LEVEL` | Log level | No |
+| `ZLOTH_DATABASE_PATH` | Custom SQLite database path | No (default: `{project}/data/zloth.db`) |
+| `ZLOTH_WORKTREES_DIR` | Custom worktrees directory | No (default: `~/.zloth/worktrees`) |
 | `ZLOTH_CLAUDE_CLI_PATH` | Path to Claude Code CLI | No (default: `claude`) |
 | `ZLOTH_CODEX_CLI_PATH` | Path to Codex CLI | No (default: `codex`) |
 | `ZLOTH_GEMINI_CLI_PATH` | Path to Gemini CLI | No (default: `gemini`) |

@@ -1018,6 +1018,7 @@ class UserPreferencesDAO:
         default_coding_mode: str | None = None,
         auto_generate_pr_description: bool | None = None,
         worktrees_dir: str | None = None,
+        database_path: str | None = None,
         enable_gating_status: bool | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
@@ -1041,6 +1042,7 @@ class UserPreferencesDAO:
                     default_coding_mode = ?,
                     auto_generate_pr_description = ?,
                     worktrees_dir = ?,
+                    database_path = ?,
                     enable_gating_status = ?,
                     updated_at = ?
                 WHERE id = 1
@@ -1054,6 +1056,7 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_gen,
                     worktrees_dir,
+                    database_path,
                     gating_status,
                     now,
                 ),
@@ -1071,11 +1074,12 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_generate_pr_description,
                     worktrees_dir,
+                    database_path,
                     enable_gating_status,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1086,6 +1090,7 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_gen,
                     worktrees_dir,
+                    database_path,
                     gating_status,
                     now,
                     now,
@@ -1103,6 +1108,7 @@ class UserPreferencesDAO:
             default_coding_mode=CodingMode(default_coding_mode or "interactive"),
             auto_generate_pr_description=auto_generate_pr_description or False,
             worktrees_dir=worktrees_dir,
+            database_path=database_path,
             enable_gating_status=enable_gating_status or False,
         )
 
@@ -1130,6 +1136,7 @@ class UserPreferencesDAO:
                 else False
             ),
             worktrees_dir=(row["worktrees_dir"] if "worktrees_dir" in row.keys() else None),
+            database_path=(row["database_path"] if "database_path" in row.keys() else None),
             enable_gating_status=bool(
                 row["enable_gating_status"] if "enable_gating_status" in row.keys() else False
             ),
