@@ -603,6 +603,7 @@ class UserPreferences(BaseModel):
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
     auto_generate_pr_description: bool = False
     worktrees_dir: str | None = None  # Custom worktrees directory path
+    data_dir: str | None = None  # Custom data directory for SQLite database
     enable_gating_status: bool = False  # Enable gating status for CI waiting
 
 
@@ -617,6 +618,7 @@ class UserPreferencesSave(BaseModel):
     default_coding_mode: CodingMode | None = None
     auto_generate_pr_description: bool | None = None
     worktrees_dir: str | None = None  # Custom worktrees directory path
+    data_dir: str | None = None  # Custom data directory for SQLite database
     enable_gating_status: bool | None = None  # Enable gating status for CI waiting
 
 

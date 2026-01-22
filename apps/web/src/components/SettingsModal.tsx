@@ -530,6 +530,7 @@ export function DefaultsTab() {
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
   const [worktreesDir, setWorktreesDir] = useState<string>('');
+  const [dataDir, setDataDir] = useState<string>('');
   const [enableGatingStatus, setEnableGatingStatus] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -559,6 +560,7 @@ export function DefaultsTab() {
       setCodingMode(preferences.default_coding_mode || 'interactive');
       setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
       setWorktreesDir(preferences.worktrees_dir || '');
+      setDataDir(preferences.data_dir || '');
       setEnableGatingStatus(preferences.enable_gating_status || false);
     }
   }, [preferences]);
@@ -631,6 +633,7 @@ export function DefaultsTab() {
         default_coding_mode: codingMode,
         auto_generate_pr_description: autoGeneratePrDescription,
         worktrees_dir: worktreesDir.trim() ? worktreesDir.trim() : null,
+        data_dir: dataDir.trim() ? dataDir.trim() : null,
         enable_gating_status: enableGatingStatus,
       });
       mutate('preferences');
@@ -654,6 +657,7 @@ export function DefaultsTab() {
         default_coding_mode: null,
         auto_generate_pr_description: false,
         worktrees_dir: null,
+        data_dir: null,
         enable_gating_status: false,
       });
       setSelectedRepo('');
@@ -664,6 +668,7 @@ export function DefaultsTab() {
       setCodingMode('interactive');
       setAutoGeneratePrDescription(false);
       setWorktreesDir('');
+      setDataDir('');
       setEnableGatingStatus(false);
       mutate('preferences');
       success('Default settings cleared');
@@ -880,6 +885,17 @@ export function DefaultsTab() {
             placeholder="~/.zloth/worktrees"
             hint="Directory for git worktrees. Leave blank to use the default (~/.zloth/worktrees). This should be outside the zloth installation directory to avoid CLAUDE.md conflicts."
           />
+
+          {/* Database Location */}
+          <div className="mt-4">
+            <Input
+              label="Database Location"
+              value={dataDir}
+              onChange={(e) => setDataDir(e.target.value)}
+              placeholder="~/.zloth/data"
+              hint="Directory for SQLite database. Leave blank to use the default (zloth/data). Changes require application restart to take effect."
+            />
+          </div>
         </div>
 
         {/* Action buttons */}
