@@ -1,7 +1,8 @@
 # tazuna
 
 [![CI](https://github.com/hampen2929/tazuna/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/tazuna/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink)](https://github.com/sponsors/hampen2929)
 [![GitHub stars](https://img.shields.io/github/stars/hampen2929/tazuna.svg?style=social&label=Star)](https://github.com/hampen2929/tazuna)
 [![GitHub issues](https://img.shields.io/github/issues/hampen2929/tazuna.svg)](https://github.com/hampen2929/tazuna/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/tazuna.svg)](https://github.com/hampen2929/tazuna/pulls)
@@ -208,6 +209,14 @@ We welcome bug reports and feature requests via [GitHub Issues](https://github.c
 
 > **Note**: This project is primarily developed using AI-assisted coding. Pull requests may not be reviewed or merged. If you have ideas or find bugs, please open an Issue instead.
 
+## Sponsors
+
+tazuna is free and open source. If you find it useful, please consider sponsoring the project.
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?style=for-the-badge)](https://github.com/sponsors/hampen2929)
+
+See [SPONSORS.md](SPONSORS.md) for our amazing sponsors.
+
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
