@@ -530,6 +530,7 @@ export function DefaultsTab() {
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
   const [worktreesDir, setWorktreesDir] = useState<string>('');
+  const [databasePath, setDatabasePath] = useState<string>('');
   const [enableGatingStatus, setEnableGatingStatus] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -559,6 +560,7 @@ export function DefaultsTab() {
       setCodingMode(preferences.default_coding_mode || 'interactive');
       setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
       setWorktreesDir(preferences.worktrees_dir || '');
+      setDatabasePath(preferences.database_path || '');
       setEnableGatingStatus(preferences.enable_gating_status || false);
     }
   }, [preferences]);
@@ -631,6 +633,7 @@ export function DefaultsTab() {
         default_coding_mode: codingMode,
         auto_generate_pr_description: autoGeneratePrDescription,
         worktrees_dir: worktreesDir.trim() ? worktreesDir.trim() : null,
+        database_path: databasePath.trim() ? databasePath.trim() : null,
         enable_gating_status: enableGatingStatus,
       });
       mutate('preferences');
@@ -654,6 +657,7 @@ export function DefaultsTab() {
         default_coding_mode: null,
         auto_generate_pr_description: false,
         worktrees_dir: null,
+        database_path: null,
         enable_gating_status: false,
       });
       setSelectedRepo('');
@@ -664,6 +668,7 @@ export function DefaultsTab() {
       setCodingMode('interactive');
       setAutoGeneratePrDescription(false);
       setWorktreesDir('');
+      setDatabasePath('');
       setEnableGatingStatus(false);
       mutate('preferences');
       success('Default settings cleared');
@@ -879,6 +884,15 @@ export function DefaultsTab() {
             onChange={(e) => setWorktreesDir(e.target.value)}
             placeholder="~/.zloth/worktrees"
             hint="Directory for git worktrees. Leave blank to use the default (~/.zloth/worktrees). This should be outside the zloth installation directory to avoid CLAUDE.md conflicts."
+          />
+
+          {/* Database Path */}
+          <Input
+            label="Database Path"
+            value={databasePath}
+            onChange={(e) => setDatabasePath(e.target.value)}
+            placeholder="{project}/data/zloth.db"
+            hint="Path to SQLite database file. Leave blank to use the default ({project}/data/zloth.db). Requires restart to take effect."
           />
         </div>
 
