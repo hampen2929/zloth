@@ -390,6 +390,9 @@ class GitHubService:
 
     async def list_branches(self, owner: str, repo: str) -> list[str]:
         """List all branches for a repository with pagination support."""
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         all_branches: list[str] = []
         page = 1
 
@@ -397,6 +400,7 @@ class GitHubService:
             data = await self._github_request(
                 "GET",
                 f"/repos/{owner}/{repo}/branches",
+                installation_id=installation_id,
                 params={"per_page": 100, "page": page},
             )
 
@@ -481,9 +485,13 @@ class GitHubService:
         Returns:
             GitHub API response as dict containing 'number' and 'html_url'.
         """
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         return await self._github_request(
             "POST",
             f"/repos/{owner}/{repo}/pulls",
+            installation_id=installation_id,
             json={
                 "title": title,
                 "body": body or "",
@@ -512,6 +520,9 @@ class GitHubService:
         Returns:
             GitHub API response as dict.
         """
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         update_data = {}
         if title is not None:
             update_data["title"] = title
@@ -521,6 +532,7 @@ class GitHubService:
         return await self._github_request(
             "PATCH",
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            installation_id=installation_id,
             json=update_data,
         )
 
@@ -555,10 +567,14 @@ class GitHubService:
         if base:
             params["base"] = base
 
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         try:
             prs = await self._github_request(
                 "GET",
                 f"/repos/{owner}/{repo}/pulls",
+                installation_id=installation_id,
                 params=params,
             )
         except httpx.HTTPStatusError as e:
@@ -593,9 +609,13 @@ class GitHubService:
                 - merged: bool
                 - merged_at: str | None
         """
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         pr_data = await self._github_request(
             "GET",
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            installation_id=installation_id,
         )
 
         return {
@@ -620,10 +640,14 @@ class GitHubService:
         """
         owner, repo = repo_full_name.split("/", 1)
 
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         # Get PR to find the head SHA
         pr_data = await self._github_request(
             "GET",
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            installation_id=installation_id,
         )
 
         head_sha = pr_data.get("head", {}).get("sha")
@@ -634,6 +658,7 @@ class GitHubService:
         status_data = await self._github_request(
             "GET",
             f"/repos/{owner}/{repo}/commits/{head_sha}/status",
+            installation_id=installation_id,
         )
 
         return status_data.get("state", "pending")
@@ -650,9 +675,13 @@ class GitHubService:
         """
         owner, repo = repo_full_name.split("/", 1)
 
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         pr_data = await self._github_request(
             "GET",
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            installation_id=installation_id,
         )
 
         # GitHub uses "dirty" for conflict state
@@ -671,9 +700,13 @@ class GitHubService:
         """
         owner, repo = repo_full_name.split("/", 1)
 
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         pr_data = await self._github_request(
             "GET",
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            installation_id=installation_id,
         )
 
         # mergeable can be null while GitHub is computing
@@ -698,9 +731,13 @@ class GitHubService:
         """
         owner, repo = repo_full_name.split("/", 1)
 
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         result = await self._github_request(
             "PUT",
             f"/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+            installation_id=installation_id,
             json={"merge_method": method},
         )
 
@@ -718,17 +755,21 @@ class GitHubService:
         """
         owner, repo = repo_full_name.split("/", 1)
 
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
         # Get PR to find the branch name
         pr_data = await self._github_request(
             "GET",
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            installation_id=installation_id,
         )
 
         branch_name = pr_data.get("head", {}).get("ref")
         if not branch_name:
             return False
 
-        token = await self._get_installation_token()
+        token = await self._get_installation_token(installation_id)
         if not token:
             return False
 
