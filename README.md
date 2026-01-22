@@ -7,6 +7,8 @@
 [![GitHub issues](https://img.shields.io/github/issues/hampen2929/zloth.svg)](https://github.com/hampen2929/zloth/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/zloth.svg)](https://github.com/hampen2929/zloth/pulls)
 
+A self-hostable multi-model parallel coding agent for comparing AI-generated code side-by-side.
+
 > BYO API Key / Multi-model Parallel Execution / Conversation-driven PR Development
 
 **zloth** is a self-hostable cloud coding agent that lets you:
