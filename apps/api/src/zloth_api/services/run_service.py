@@ -34,9 +34,10 @@ from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from zloth_api.roles.base_service import BaseRoleService
 from zloth_api.roles.registry import RoleRegistry
 from zloth_api.services.commit_message import ensure_english_commit_message
-from zloth_api.services.git_service import GitService
+from zloth_api.services.git_service import GitService, PullResult, WorktreeInfo
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
+from zloth_api.services.workspace_service import MergeResult, WorkspaceInfo, WorkspaceService
 from zloth_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
 
 logger = logging.getLogger(__name__)
@@ -188,6 +189,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         model_service: ModelService,
         repo_service: RepoService,
         git_service: GitService | None = None,
+        workspace_service: WorkspaceService | None = None,
         user_preferences_dao: UserPreferencesDAO | None = None,
         github_service: GitHubService | None = None,
         output_manager: OutputManager | None = None,
@@ -200,6 +202,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self.model_service = model_service
         self.repo_service = repo_service
         self.git_service = git_service or GitService()
+        self.workspace_service = workspace_service or WorkspaceService()
         self.user_preferences_dao = user_preferences_dao
         self.github_service = github_service
         # Note: self.output_manager is set by base class
@@ -213,6 +216,8 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self.gemini_executor = GeminiExecutor(
             GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
         )
+        # Determine isolation mode from settings
+        self.use_clone_isolation = settings.use_clone_isolation
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
         """Create runs for multiple models or CLI executors.
@@ -338,9 +343,13 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
     ) -> Run:
         """Create and start a CLI-based run (Claude Code, Codex, or Gemini).
 
-        This method reuses an existing worktree/branch for the same task and
-        executor type to enable conversation continuation in the same working
-        directory. Only creates a new worktree if none exists.
+        This method supports two isolation modes:
+        - Clone mode (use_clone_isolation=True): Uses git clone for workspace isolation.
+          Better for remote sync and conflict resolution.
+        - Worktree mode (use_clone_isolation=False): Uses git worktree for isolation.
+          Faster but with more git operation constraints.
+
+        In both modes, existing workspaces are reused for conversation continuation.
 
         Args:
             task_id: Task ID.
@@ -353,8 +362,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         Returns:
             Created Run object.
         """
-        from zloth_api.services.git_service import WorktreeInfo
-
         # Get the latest session ID for this task and executor type
         # This enables conversation persistence across multiple runs
         previous_session_id = await self.run_dao.get_latest_session_id(
@@ -362,55 +369,61 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             executor_type=executor_type,
         )
 
-        # Check for existing worktree to reuse
+        # Check for existing workspace/worktree to reuse
         existing_run = await self.run_dao.get_latest_worktree_run(
             task_id=task_id,
             executor_type=executor_type,
         )
 
-        worktree_info = None
+        # workspace_info holds path and branch info, works for both modes
+        workspace_info: WorktreeInfo | WorkspaceInfo | None = None
 
         if existing_run and existing_run.worktree_path:
-            # Verify worktree is still valid (exists and is a valid git repo)
-            worktree_path = Path(existing_run.worktree_path)
-            if await self.git_service.is_valid_worktree(worktree_path):
-                # If we're working from the repo's default branch, ensure the existing worktree
-                # still contains the latest origin/<default>. Otherwise, create a fresh worktree
-                # from the latest default to avoid PRs being based on a stale main.
+            workspace_path = Path(existing_run.worktree_path)
+
+            # Check validity based on isolation mode
+            if self.use_clone_isolation:
+                is_valid = await self.workspace_service.is_valid_workspace(workspace_path)
+            else:
+                is_valid = await self.git_service.is_valid_worktree(workspace_path)
+
+            if is_valid:
+                # If we're working from the repo's default branch, ensure the workspace
+                # still contains the latest origin/<default>. Otherwise, create fresh.
                 should_check_default = (base_ref == repo.default_branch) and bool(
                     repo.default_branch
                 )
                 if should_check_default:
                     default_ref = f"origin/{repo.default_branch}"
                     up_to_date = await self.git_service.is_ancestor(
-                        repo_path=worktree_path,
+                        repo_path=workspace_path,
                         ancestor=default_ref,
                         descendant="HEAD",
                     )
                     if not up_to_date:
                         logger.info(
-                            "Existing worktree is behind latest default; creating a new worktree "
-                            f"(worktree={worktree_path}, default={default_ref})"
+                            "Existing workspace is behind latest default; creating new "
+                            f"(workspace={workspace_path}, default={default_ref})"
                         )
                     else:
-                        worktree_info = WorktreeInfo(
-                            path=worktree_path,
+                        workspace_info = WorktreeInfo(
+                            path=workspace_path,
                             branch_name=existing_run.working_branch or "",
                             base_branch=existing_run.base_ref or base_ref,
                             created_at=existing_run.created_at,
                         )
-                        logger.info(f"Reusing existing worktree: {worktree_path}")
+                        logger.info(f"Reusing existing workspace: {workspace_path}")
                 else:
-                    # Reuse existing worktree (no default-base freshness check)
-                    worktree_info = WorktreeInfo(
-                        path=worktree_path,
+                    # Reuse existing workspace (no default-base freshness check)
+                    workspace_info = WorktreeInfo(
+                        path=workspace_path,
                         branch_name=existing_run.working_branch or "",
                         base_branch=existing_run.base_ref or base_ref,
                         created_at=existing_run.created_at,
                     )
-                    logger.info(f"Reusing existing worktree: {worktree_path}")
+                    logger.info(f"Reusing existing workspace: {workspace_path}")
             else:
-                logger.warning(f"Worktree invalid or broken, will create new: {worktree_path}")
+                logger.warning(f"Workspace invalid or broken, will create new: {workspace_path}")
 
         # Create the run record
         run = await self.run_dao.create(
@@ -421,38 +434,54 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             base_ref=base_ref,
         )
 
-        if not worktree_info:
+        if not workspace_info:
             branch_prefix: str | None = None
             if self.user_preferences_dao:
                 prefs = await self.user_preferences_dao.get()
                 branch_prefix = prefs.default_branch_prefix if prefs else None
-                # Apply custom worktrees_dir from UserPreferences if set
+                # Apply custom directory from UserPreferences if set
                 if prefs and prefs.worktrees_dir:
-                    self.git_service.set_worktrees_dir(prefs.worktrees_dir)
+                    if self.use_clone_isolation:
+                        self.workspace_service.set_workspaces_dir(prefs.worktrees_dir)
+                    else:
+                        self.git_service.set_worktrees_dir(prefs.worktrees_dir)
 
-            # Get auth_url for private repos (required for authenticated fetch)
+            # Get auth_url for private repos
             auth_url: str | None = None
             if self.github_service and repo.repo_url:
                 try:
                     owner, repo_name = self._parse_github_url(repo.repo_url)
                     auth_url = await self.github_service.get_auth_url(owner, repo_name)
                 except Exception as e:
-                    logger.warning(f"Could not get auth_url for worktree fetch: {e}")
+                    logger.warning(f"Could not get auth_url for workspace creation: {e}")
 
-            # Create new worktree for this run
-            worktree_info = await self.git_service.create_worktree(
-                repo=repo,
-                base_branch=base_ref,
-                run_id=run.id,
-                branch_prefix=branch_prefix,
-                auth_url=auth_url,
-            )
+            # Create workspace based on isolation mode
+            if self.use_clone_isolation:
+                # Clone mode: use WorkspaceService
+                logger.info(f"Creating clone-based workspace for run {run.id[:8]}")
+                workspace_info = await self.workspace_service.create_workspace(
+                    repo_url=repo.repo_url,
+                    base_branch=base_ref,
+                    run_id=run.id,
+                    branch_prefix=branch_prefix,
+                    auth_url=auth_url,
+                )
+            else:
+                # Worktree mode: use GitService
+                logger.info(f"Creating worktree-based workspace for run {run.id[:8]}")
+                workspace_info = await self.git_service.create_worktree(
+                    repo=repo,
+                    base_branch=base_ref,
+                    run_id=run.id,
+                    branch_prefix=branch_prefix,
+                    auth_url=auth_url,
+                )
 
-        # Update run with worktree info
+        # Update run with workspace info
         await self.run_dao.update_worktree(
             run.id,
-            working_branch=worktree_info.branch_name,
-            worktree_path=str(worktree_info.path),
+            working_branch=workspace_info.branch_name,
+            worktree_path=str(workspace_info.path),
         )
 
         # Update the run object with new info
@@ -468,7 +497,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         self.queue.enqueue(
             updated_run.id,
-            make_coro(updated_run, worktree_info, executor_type, previous_session_id, repo),
+            make_coro(updated_run, workspace_info, executor_type, previous_session_id, repo),
         )
 
         return updated_run
@@ -510,22 +539,26 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if cancelled:
             await self.run_dao.update_status(run_id, RunStatus.CANCELED)
 
-            # Cleanup worktree if it's a CLI executor run
+            # Cleanup workspace if it's a CLI executor run
             cli_executors = {
                 ExecutorType.CLAUDE_CODE,
                 ExecutorType.CODEX_CLI,
                 ExecutorType.GEMINI_CLI,
             }
             if run and run.executor_type in cli_executors and run.worktree_path:
-                await self.git_service.cleanup_worktree(
-                    Path(run.worktree_path),
-                    delete_branch=True,
-                )
+                workspace_path = Path(run.worktree_path)
+                if self.use_clone_isolation:
+                    await self.workspace_service.cleanup_workspace(workspace_path)
+                else:
+                    await self.git_service.cleanup_worktree(
+                        workspace_path,
+                        delete_branch=True,
+                    )
 
         return cancelled
 
-    async def cleanup_worktree(self, run_id: str) -> bool:
-        """Clean up the worktree for a run.
+    async def cleanup_workspace(self, run_id: str) -> bool:
+        """Clean up the workspace for a run.
 
         Args:
             run_id: Run ID.
@@ -537,11 +570,27 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if not run or not run.worktree_path:
             return False
 
-        await self.git_service.cleanup_worktree(
-            Path(run.worktree_path),
-            delete_branch=False,  # Keep branch for PR
-        )
+        workspace_path = Path(run.worktree_path)
+        if self.use_clone_isolation:
+            await self.workspace_service.cleanup_workspace(workspace_path)
+        else:
+            await self.git_service.cleanup_worktree(
+                workspace_path,
+                delete_branch=False,  # Keep branch for PR
+            )
         return True
+
+    # Keep old method name for backward compatibility
+    async def cleanup_worktree(self, run_id: str) -> bool:
+        """Clean up the worktree for a run (deprecated, use cleanup_workspace).
+
+        Args:
+            run_id: Run ID.
+
+        Returns:
+            True if cleanup was successful.
+        """
+        return await self.cleanup_workspace(run_id)
 
     async def _execute_patch_agent_run(self, run: Run, repo: Any) -> None:
         """Execute a PatchAgent run.
@@ -683,12 +732,19 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     owner, repo_name = self._parse_github_url(repo.repo_url)
                     auth_url = await self.github_service.get_auth_url(owner, repo_name)
 
-                    # Check if we're behind remote
-                    is_behind = await self.git_service.is_behind_remote(
-                        worktree_info.path,
-                        worktree_info.branch_name,
-                        auth_url=auth_url,
-                    )
+                    # Check if we're behind remote (use appropriate service)
+                    if self.use_clone_isolation:
+                        is_behind = await self.workspace_service.is_behind_remote(
+                            worktree_info.path,
+                            worktree_info.branch_name,
+                            auth_url=auth_url,
+                        )
+                    else:
+                        is_behind = await self.git_service.is_behind_remote(
+                            worktree_info.path,
+                            worktree_info.branch_name,
+                            auth_url=auth_url,
+                        )
 
                     if is_behind:
                         logger.info(
@@ -697,32 +753,42 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                         )
                         logs.append("Detected remote updates, pulling latest changes...")
 
-                        pull_result = await self.git_service.pull(
-                            worktree_info.path,
-                            branch=worktree_info.branch_name,
-                            auth_url=auth_url,
-                        )
+                        # Sync with remote (use appropriate service)
+                        # Both MergeResult and PullResult have same interface for our usage
+                        sync_result: MergeResult | PullResult
+                        if self.use_clone_isolation:
+                            sync_result = await self.workspace_service.sync_with_remote(
+                                worktree_info.path,
+                                branch=worktree_info.branch_name,
+                                auth_url=auth_url,
+                            )
+                        else:
+                            sync_result = await self.git_service.pull(
+                                worktree_info.path,
+                                branch=worktree_info.branch_name,
+                                auth_url=auth_url,
+                            )
 
-                        if pull_result.success:
+                        if sync_result.success:
                             logs.append("Successfully pulled latest changes from remote")
                             logger.info(f"[{run.id[:8]}] Successfully pulled remote changes")
-                        elif pull_result.has_conflicts:
+                        elif sync_result.has_conflicts:
                             # Conflicts detected - add resolution instructions for AI
-                            conflict_files_str = ", ".join(pull_result.conflict_files)
+                            conflict_files_str = ", ".join(sync_result.conflict_files)
                             logs.append(
                                 f"Merge conflicts detected in: {conflict_files_str}. "
                                 "AI will be asked to resolve them."
                             )
                             logger.warning(
                                 f"[{run.id[:8]}] Merge conflicts detected: "
-                                f"{pull_result.conflict_files}"
+                                f"{sync_result.conflict_files}"
                             )
                             conflict_instruction = self._build_conflict_resolution_instruction(
-                                pull_result.conflict_files
+                                sync_result.conflict_files
                             )
                         else:
-                            logs.append(f"Pull failed: {pull_result.error}")
-                            logger.warning(f"[{run.id[:8]}] Pull failed: {pull_result.error}")
+                            logs.append(f"Pull failed: {sync_result.error}")
+                            logger.warning(f"[{run.id[:8]}] Pull failed: {sync_result.error}")
                     else:
                         logger.info(f"[{run.id[:8]}] Branch is up to date with remote")
 
@@ -810,11 +876,17 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             # 4. Read and remove summary file (before staging)
             summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
 
-            # 5. Stage all changes
-            await self.git_service.stage_all(worktree_info.path)
+            # 5. Stage all changes (use appropriate service)
+            if self.use_clone_isolation:
+                await self.workspace_service.stage_all(worktree_info.path)
+            else:
+                await self.git_service.stage_all(worktree_info.path)
 
-            # 6. Get patch
-            patch = await self.git_service.get_diff(worktree_info.path, staged=True)
+            # 6. Get patch (use appropriate service)
+            if self.use_clone_isolation:
+                patch = await self.workspace_service.get_diff(worktree_info.path, staged=True)
+            else:
+                patch = await self.git_service.get_diff(worktree_info.path, staged=True)
 
             # Skip commit/push if no changes
             if not patch.strip():
@@ -839,39 +911,59 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 summary_from_file or result.summary or self._generate_summary(files_changed)
             )
 
-            # 7. Commit (automatic)
+            # 7. Commit (automatic, use appropriate service)
             commit_message = self._generate_commit_message(run.instruction, final_summary)
             commit_message = await ensure_english_commit_message(
                 commit_message,
                 llm_router=self.llm_router,
                 hint=final_summary or "",
             )
-            commit_sha = await self.git_service.commit(
-                worktree_info.path,
-                message=commit_message,
-            )
+            if self.use_clone_isolation:
+                commit_sha = await self.workspace_service.commit(
+                    worktree_info.path,
+                    message=commit_message,
+                )
+            else:
+                commit_sha = await self.git_service.commit(
+                    worktree_info.path,
+                    message=commit_message,
+                )
             logs.append(f"Committed: {commit_sha[:8]}")
 
-            # 8. Push (automatic) with retry on non-fast-forward
+            # 8. Push (automatic)
             if self.github_service and repo:
                 owner, repo_name = self._parse_github_url(repo.repo_url)
                 auth_url = await self.github_service.get_auth_url(owner, repo_name)
-                push_result = await self.git_service.push_with_retry(
-                    worktree_info.path,
-                    branch=worktree_info.branch_name,
-                    auth_url=auth_url,
-                )
 
-                if push_result.success:
-                    if push_result.required_pull:
-                        logs.append(
-                            f"Pulled remote changes and pushed to branch: "
-                            f"{worktree_info.branch_name}"
+                if self.use_clone_isolation:
+                    # Clone mode: simple push (WorkspaceService)
+                    try:
+                        await self.workspace_service.push(
+                            worktree_info.path,
+                            branch=worktree_info.branch_name,
+                            auth_url=auth_url,
                         )
-                    else:
                         logs.append(f"Pushed to branch: {worktree_info.branch_name}")
+                    except Exception as push_error:
+                        logs.append(f"Push failed (will retry on PR creation): {push_error}")
                 else:
-                    logs.append(f"Push failed (will retry on PR creation): {push_result.error}")
+                    # Worktree mode: push with retry (GitService)
+                    push_result = await self.git_service.push_with_retry(
+                        worktree_info.path,
+                        branch=worktree_info.branch_name,
+                        auth_url=auth_url,
+                    )
+
+                    if push_result.success:
+                        if push_result.required_pull:
+                            logs.append(
+                                f"Pulled remote changes and pushed to branch: "
+                                f"{worktree_info.branch_name}"
+                            )
+                        else:
+                            logs.append(f"Pushed to branch: {worktree_info.branch_name}")
+                    else:
+                        logs.append(f"Push failed (will retry on PR creation): {push_result.error}")
 
             # 9. Save results
             await self.run_dao.update_status(
