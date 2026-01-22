@@ -359,6 +359,100 @@ class ClaudeCodeExecutor:
         logger.warning("Could not extract session_id from CLI output")
         return None
 
+    async def check_session_exists(
+        self,
+        session_id: str,
+        worktree_path: Path | None = None,
+    ) -> bool:
+        """Check if a Claude Code session likely exists and is resumable.
+
+        Claude Code stores sessions in ~/.claude/projects/<hash>/sessions/.
+        This method attempts to verify if a session is likely valid by checking
+        Claude CLI's session listing capability.
+
+        Note: This is a best-effort check. The actual session validity is only
+        confirmed when attempting to resume. If this returns False, we definitely
+        shouldn't try to resume. If it returns True, the session might still fail.
+
+        Args:
+            session_id: The session ID to check.
+            worktree_path: Optional worktree path (for project-specific sessions).
+
+        Returns:
+            True if session likely exists, False otherwise.
+        """
+        try:
+            # Try to list sessions using claude CLI
+            # This is a lightweight check that doesn't actually resume
+            cmd = [self.options.claude_cli_path, "sessions", "list", "--output-format", "json"]
+
+            env = os.environ.copy()
+            env.update(self.options.env_vars)
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(worktree_path) if worktree_path else None,
+                env=env,
+            )
+
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=10.0,
+                )
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+                logger.warning("Session check timed out")
+                return False
+
+            if process.returncode != 0:
+                # CLI doesn't support sessions list, assume session might exist
+                logger.debug("Could not list sessions, assuming session might exist")
+                return True
+
+            # Parse the output to find the session
+            try:
+                output = stdout.decode("utf-8", errors="replace")
+                for line in output.strip().split("\n"):
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        if isinstance(data, dict):
+                            found_id = data.get("session_id") or data.get("id")
+                            if found_id == session_id:
+                                logger.info(f"Session {session_id} found in session list")
+                                return True
+                        elif isinstance(data, list):
+                            # Array of sessions
+                            for session in data:
+                                if isinstance(session, dict):
+                                    found_id = session.get("session_id") or session.get("id")
+                                    if found_id == session_id:
+                                        logger.info(f"Session {session_id} found in session list")
+                                        return True
+                    except json.JSONDecodeError:
+                        continue
+            except Exception as parse_error:
+                logger.debug(f"Could not parse session list: {parse_error}")
+                # If we can't parse, assume session might exist
+                return True
+
+            logger.info(f"Session {session_id} not found in session list")
+            return False
+
+        except FileNotFoundError:
+            logger.warning(f"Claude CLI not found at: {self.options.claude_cli_path}")
+            return False
+        except Exception as e:
+            logger.warning(f"Error checking session existence: {e}")
+            # On error, assume session might exist (let the actual resume handle it)
+            return True
+
     async def cancel(self, process: asyncio.subprocess.Process) -> None:
         """Cancel a running Claude Code process.
 
