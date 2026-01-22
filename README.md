@@ -1,4 +1,4 @@
-# zloth
+# zloth - The Lazy Coding Companion That Never Sleeps
 
 [![CI](https://github.com/hampen2929/zloth/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/zloth/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
