@@ -19,6 +19,7 @@ from zloth_api.services.pr_status_poller import PRStatusPoller
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.review_service import ReviewService
 from zloth_api.services.run_service import RunService
+from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import (
     PRDAO,
     AgenticRunDAO,
@@ -39,6 +40,7 @@ from zloth_api.storage.db import get_db
 _crypto_service: CryptoService | None = None
 _run_service: RunService | None = None
 _git_service: GitService | None = None
+_workspace_service: WorkspaceService | None = None
 _output_manager: OutputManager | None = None
 _breakdown_service: BreakdownService | None = None
 _review_service: ReviewService | None = None
@@ -114,6 +116,14 @@ def get_git_service() -> GitService:
     return _git_service
 
 
+def get_workspace_service() -> WorkspaceService:
+    """Get the workspace service singleton."""
+    global _workspace_service
+    if _workspace_service is None:
+        _workspace_service = WorkspaceService()
+    return _workspace_service
+
+
 def get_output_manager() -> OutputManager:
     """Get the output manager singleton."""
     global _output_manager
@@ -131,6 +141,7 @@ async def get_run_service() -> RunService:
         model_service = await get_model_service()
         repo_service = await get_repo_service()
         git_service = get_git_service()
+        workspace_service = get_workspace_service()
         user_preferences_dao = await get_user_preferences_dao()
         github_service = await get_github_service()
         output_manager = get_output_manager()
@@ -140,6 +151,7 @@ async def get_run_service() -> RunService:
             model_service,
             repo_service,
             git_service,
+            workspace_service,
             user_preferences_dao,
             github_service,
             output_manager,
