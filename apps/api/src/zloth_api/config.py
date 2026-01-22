@@ -105,7 +105,11 @@ class Settings(BaseSettings):
         description="Directory for git worktrees. Defaults to ~/.zloth/worktrees "
         "to avoid inheriting parent directory's CLAUDE.md",
     )
-    data_dir: Path | None = Field(default=None)
+    data_dir: Path | None = Field(
+        default=None,
+        description="Directory for SQLite database. Defaults to ~/.zloth/data "
+        "to store data outside the project directory",
+    )
 
     # Database
     database_url: str | None = Field(default=None)
@@ -186,7 +190,8 @@ class Settings(BaseSettings):
             # parent directory's CLAUDE.md when CLI agents run in worktrees
             self.worktrees_dir = Path.home() / ".zloth" / "worktrees"
         if self.data_dir is None:
-            self.data_dir = self.base_dir / "data"
+            # Default to ~/.zloth/data to store database outside the project directory
+            self.data_dir = Path.home() / ".zloth" / "data"
         if self.database_url is None:
             self.database_url = f"sqlite+aiosqlite:///{self.data_dir}/zloth.db"
 

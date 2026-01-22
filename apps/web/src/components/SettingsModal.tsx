@@ -893,7 +893,7 @@ export function DefaultsTab() {
               value={dataDir}
               onChange={(e) => setDataDir(e.target.value)}
               placeholder="~/.zloth/data"
-              hint="Directory for SQLite database. Leave blank to use the default (zloth/data). Changes require application restart to take effect."
+              hint="Directory for SQLite database. Leave blank to use the default (~/.zloth/data). Can also be set via ZLOTH_DATA_DIR environment variable. Changes require application restart."
             />
           </div>
         </div>
