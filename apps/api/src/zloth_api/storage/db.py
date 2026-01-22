@@ -122,6 +122,11 @@ class Database:
             )
             await conn.commit()
 
+        # Migration: Add data_dir column if it doesn't exist
+        if "data_dir" not in pref_column_names:
+            await conn.execute("ALTER TABLE user_preferences ADD COLUMN data_dir TEXT")
+            await conn.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""
