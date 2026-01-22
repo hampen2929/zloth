@@ -1,6 +1,6 @@
-# tazuna Documentation
+# zloth Documentation
 
-Welcome to the tazuna documentation. This guide will help you understand, develop, and contribute to the project.
+Welcome to the zloth documentation. This guide will help you understand, develop, and contribute to the project.
 
 ## Documentation Index
 
@@ -27,8 +27,8 @@ Welcome to the tazuna documentation. This guide will help you understand, develo
 
 ```bash
 # Clone repository
-git clone https://github.com/hampen2929/tazuna.git
-cd tazuna
+git clone https://github.com/hampen2929/zloth.git
+cd zloth
 
 # Backend setup
 cd apps/api
@@ -57,7 +57,7 @@ flowchart LR
 ### Project Structure
 
 ```
-tazuna/
+zloth/
 ├── apps/
 │   ├── api/          # FastAPI backend
 │   └── web/          # Next.js frontend
@@ -77,5 +77,5 @@ tazuna/
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/hampen2929/tazuna/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/hampen2929/tazuna/discussions)
+- **Issues**: [GitHub Issues](https://github.com/hampen2929/zloth/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/hampen2929/zloth/discussions)

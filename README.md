@@ -1,15 +1,15 @@
-# tazuna
+# zloth
 
-[![CI](https://github.com/hampen2929/tazuna/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/tazuna/actions/workflows/ci.yml)
+[![CI](https://github.com/hampen2929/zloth/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/zloth/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink)](https://github.com/sponsors/hampen2929)
-[![GitHub stars](https://img.shields.io/github/stars/hampen2929/tazuna.svg?style=social&label=Star)](https://github.com/hampen2929/tazuna)
-[![GitHub issues](https://img.shields.io/github/issues/hampen2929/tazuna.svg)](https://github.com/hampen2929/tazuna/issues)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/tazuna.svg)](https://github.com/hampen2929/tazuna/pulls)
+[![GitHub stars](https://img.shields.io/github/stars/hampen2929/zloth.svg?style=social&label=Star)](https://github.com/hampen2929/zloth)
+[![GitHub issues](https://img.shields.io/github/issues/hampen2929/zloth.svg)](https://github.com/hampen2929/zloth/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/zloth.svg)](https://github.com/hampen2929/zloth/pulls)
 
 > BYO API Key / Multi-model Parallel Execution / Conversation-driven PR Development
 
-**tazuna** is a self-hostable cloud coding agent that lets you:
+**zloth** is a self-hostable cloud coding agent that lets you:
 - Use your own API keys (OpenAI, Anthropic, Google)
 - Run multiple models in parallel on the same task
 - Compare outputs side-by-side and choose the best
@@ -24,9 +24,9 @@
 - **Self-hosted**: Run locally or on your own infrastructure
 - **BYO API Keys**: Securely store and use your own LLM API keys
 
-## Who is tazuna for?
+## Who is zloth for?
 
-tazuna is designed for:
+zloth is designed for:
 
 - **People who prefer a web-based chat interface**
   - Tired of AI conversations in CLI tools
@@ -45,7 +45,7 @@ tazuna is designed for:
 
 ### Comparison Matrix
 
-|  | tazuna | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini) | AI Coding Cloud (Claude Code, Codex, Gemini) |
+|  | zloth | Cursor (Cloud Agents) | Cursor (IDE) | AI Coding CLIs (Claude Code, Codex, Gemini) | AI Coding Cloud (Claude Code, Codex, Gemini) |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Web-based chat interface | ✅ | ✅ | ❌ | ❌ | ✅ |
 | On-premises / Localhost | ✅ | ❌ | ✅ | ✅ | ❌ |
@@ -55,9 +55,9 @@ tazuna is designed for:
 | CLI integration | ✅* | ❌ | ❌ | ✅ | ❌ |
 | IDE integration | ❌ | ❌ | ✅ | ❌ | ❌ |
 
-*tazuna runs AI Coding CLIs on localhost behind the scenes
+*zloth runs AI Coding CLIs on localhost behind the scenes
 
-> **tazuna is the OSS solution that combines a web-based chat interface, localhost deployment, multiple AI models, BYO API Key support, and CLI integration.**
+> **zloth is the OSS solution that combines a web-based chat interface, localhost deployment, multiple AI models, BYO API Key support, and CLI integration.**
 
 ## Quick Start
 
@@ -72,8 +72,8 @@ tazuna is designed for:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/hampen2929/tazuna.git
-   cd tazuna
+   git clone https://github.com/hampen2929/zloth.git
+   cd zloth
    ```
 
 2. **Set up the API server**
@@ -98,7 +98,7 @@ tazuna is designed for:
    ```bash
    # Terminal 1: API server
    cd apps/api
-   uv run python -m tazuna_api.main
+   uv run python -m zloth_api.main
 
    # Terminal 2: Web frontend
    cd apps/web
@@ -130,10 +130,10 @@ docker-compose up -d
 ## Project Structure
 
 ```
-tazuna/
+zloth/
 ├── apps/
 │   ├── api/                    # FastAPI backend
-│   │   └── src/tazuna_api/
+│   │   └── src/zloth_api/
 │   │       ├── agents/         # LLM agents (PatchAgent)
 │   │       ├── domain/         # Pydantic models
 │   │       ├── routes/         # API endpoints
@@ -178,10 +178,10 @@ tazuna/
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `TAZUNA_ENCRYPTION_KEY` | Key for encrypting API keys | Yes |
-| `TAZUNA_GITHUB_PAT` | GitHub token for PR operations | Yes |
-| `TAZUNA_DEBUG` | Enable debug mode | No |
-| `TAZUNA_LOG_LEVEL` | Log level (DEBUG/INFO/WARNING/ERROR) | No |
+| `ZLOTH_ENCRYPTION_KEY` | Key for encrypting API keys | Yes |
+| `ZLOTH_GITHUB_PAT` | GitHub token for PR operations | Yes |
+| `ZLOTH_DEBUG` | Enable debug mode | No |
+| `ZLOTH_LOG_LEVEL` | Log level (DEBUG/INFO/WARNING/ERROR) | No |
 
 ## Security
 
@@ -205,13 +205,13 @@ tazuna/
 
 ## Contributing
 
-We welcome bug reports and feature requests via [GitHub Issues](https://github.com/hampen2929/tazuna/issues).
+We welcome bug reports and feature requests via [GitHub Issues](https://github.com/hampen2929/zloth/issues).
 
 > **Note**: This project is primarily developed using AI-assisted coding. Pull requests may not be reviewed or merged. If you have ideas or find bugs, please open an Issue instead.
 
 ## Sponsors
 
-tazuna is free and open source. If you find it useful, please consider sponsoring the project.
+zloth is free and open source. If you find it useful, please consider sponsoring the project.
 
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?style=for-the-badge)](https://github.com/sponsors/hampen2929)
 

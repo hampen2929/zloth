@@ -1,10 +1,10 @@
 # Sponsors
 
-Thank you to all our sponsors who support the development of tazuna!
+Thank you to all our sponsors who support the development of zloth!
 
 ## How to Sponsor
 
-You can sponsor tazuna through [GitHub Sponsors](https://github.com/sponsors/hampen2929).
+You can sponsor zloth through [GitHub Sponsors](https://github.com/sponsors/hampen2929).
 
 ### Sponsor Tiers
 

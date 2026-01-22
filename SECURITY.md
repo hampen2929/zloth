@@ -8,17 +8,17 @@
 
 ## Reporting a Vulnerability
 
-We take the security of tazuna seriously. If you believe you have found a security vulnerability, please report it to us as described below.
+We take the security of zloth seriously. If you believe you have found a security vulnerability, please report it to us as described below.
 
 ### How to Report
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
 Instead, please report them via email to:
-- **Email**: [Create a private security advisory](https://github.com/hampen2929/tazuna/security/advisories/new)
+- **Email**: [Create a private security advisory](https://github.com/hampen2929/zloth/security/advisories/new)
 
 You can also use GitHub's private vulnerability reporting feature:
-1. Go to the [Security tab](https://github.com/hampen2929/tazuna/security) of this repository
+1. Go to the [Security tab](https://github.com/hampen2929/zloth/security) of this repository
 2. Click "Report a vulnerability"
 3. Fill in the details
 
@@ -45,11 +45,11 @@ Please include the following information in your report:
 
 ### API Key Storage
 - API keys are encrypted at rest using Fernet (AES-128)
-- Set a strong `TAZUNA_ENCRYPTION_KEY` environment variable
+- Set a strong `ZLOTH_ENCRYPTION_KEY` environment variable
 - Never commit `.env` files to version control
 
 ### Self-Hosting
-- Keep your tazuna installation updated
+- Keep your zloth installation updated
 - Use HTTPS in production
 - Restrict network access to the API server
 - Regularly rotate your encryption keys

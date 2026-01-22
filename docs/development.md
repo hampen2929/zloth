@@ -22,9 +22,9 @@ cp ../../.env.example ../../.env
 # Edit .env
 
 # Start dev server
-uv run python -m tazuna_api.main
+uv run python -m zloth_api.main
 # or
-uv run uvicorn tazuna_api.main:app --reload --port 8000
+uv run uvicorn zloth_api.main:app --reload --port 8000
 ```
 
 ### Frontend (Next.js)
@@ -100,7 +100,7 @@ cd apps/api
 uv run pytest
 
 # With coverage
-uv run pytest --cov=tazuna_api
+uv run pytest --cov=zloth_api
 
 # Specific test
 uv run pytest tests/test_runs.py -v
@@ -129,7 +129,7 @@ npm test
       "type": "python",
       "request": "launch",
       "module": "uvicorn",
-      "args": ["tazuna_api.main:app", "--reload", "--port", "8000"],
+      "args": ["zloth_api.main:app", "--reload", "--port", "8000"],
       "cwd": "${workspaceFolder}/apps/api",
       "envFile": "${workspaceFolder}/.env"
     }
@@ -139,7 +139,7 @@ npm test
 
 **Change log level:**
 ```bash
-TAZUNA_LOG_LEVEL=DEBUG uv run python -m tazuna_api.main
+ZLOTH_LOG_LEVEL=DEBUG uv run python -m zloth_api.main
 ```
 
 ### Frontend
@@ -156,31 +156,31 @@ Browser DevTools > Network tab
 
 ```bash
 # 1. Add domain model
-apps/api/src/tazuna_api/domain/models.py
+apps/api/src/zloth_api/domain/models.py
 
 # 2. Update schema (if needed)
-apps/api/src/tazuna_api/storage/schema.sql
+apps/api/src/zloth_api/storage/schema.sql
 
 # 3. Add DAO
-apps/api/src/tazuna_api/storage/dao.py
+apps/api/src/zloth_api/storage/dao.py
 
 # 4. Add service
-apps/api/src/tazuna_api/services/new_service.py
+apps/api/src/zloth_api/services/new_service.py
 
 # 5. Add route
-apps/api/src/tazuna_api/routes/new_route.py
+apps/api/src/zloth_api/routes/new_route.py
 
 # 6. Register router in main.py
-apps/api/src/tazuna_api/main.py
+apps/api/src/zloth_api/main.py
 
 # 7. Add DI in dependencies.py
-apps/api/src/tazuna_api/dependencies.py
+apps/api/src/zloth_api/dependencies.py
 ```
 
 ### 2. New LLM Provider
 
 ```python
-# apps/api/src/tazuna_api/agents/llm_router.py
+# apps/api/src/zloth_api/agents/llm_router.py
 
 # 1. Add enum
 class Provider(str, Enum):
@@ -218,13 +218,13 @@ v0.1 uses SQLite with manual migration.
 
 ```bash
 # 1. Edit schema.sql
-apps/api/src/tazuna_api/storage/schema.sql
+apps/api/src/zloth_api/storage/schema.sql
 
 # 2. Delete existing DB (dev environment)
-rm data/tazuna.db
+rm data/zloth.db
 
 # 3. Restart to auto-create
-python -m tazuna_api.main
+python -m zloth_api.main
 ```
 
 ### Production Migration
@@ -238,16 +238,16 @@ ALTER TABLE runs ADD COLUMN new_column TEXT;
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TAZUNA_HOST` | API server host | `0.0.0.0` |
-| `TAZUNA_PORT` | API server port | `8000` |
-| `TAZUNA_DEBUG` | Debug mode | `false` |
-| `TAZUNA_LOG_LEVEL` | Log level | `INFO` |
-| `TAZUNA_ENCRYPTION_KEY` | Encryption key | Required |
-| `TAZUNA_GITHUB_APP_ID` | GitHub App ID | Optional* |
-| `TAZUNA_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (base64) | Optional* |
-| `TAZUNA_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Optional* |
-| `TAZUNA_WORKSPACES_DIR` | Workspaces path | `./workspaces` |
-| `TAZUNA_DATA_DIR` | Data directory | `./data` |
+| `ZLOTH_HOST` | API server host | `0.0.0.0` |
+| `ZLOTH_PORT` | API server port | `8000` |
+| `ZLOTH_DEBUG` | Debug mode | `false` |
+| `ZLOTH_LOG_LEVEL` | Log level | `INFO` |
+| `ZLOTH_ENCRYPTION_KEY` | Encryption key | Required |
+| `ZLOTH_GITHUB_APP_ID` | GitHub App ID | Optional* |
+| `ZLOTH_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (base64) | Optional* |
+| `ZLOTH_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Optional* |
+| `ZLOTH_WORKSPACES_DIR` | Workspaces path | `./workspaces` |
+| `ZLOTH_DATA_DIR` | Data directory | `./data` |
 
 *GitHub App configuration can also be set via the Settings UI.
 
@@ -255,7 +255,7 @@ ALTER TABLE runs ADD COLUMN new_column TEXT;
 
 ### Common Issues
 
-**Q: `ModuleNotFoundError: No module named 'tazuna_api'`**
+**Q: `ModuleNotFoundError: No module named 'zloth_api'`**
 
 A: Run `uv sync` to install the package
 
@@ -268,7 +268,7 @@ A:
 
 **Q: SQLite error: `no such table`**
 
-A: Delete `data/tazuna.db` and restart
+A: Delete `data/zloth.db` and restart
 
 **Q: Git clone fails**
 
@@ -289,15 +289,15 @@ A:
 
 ```bash
 # Increase workers (production)
-uvicorn tazuna_api.main:app --workers 4
+uvicorn zloth_api.main:app --workers 4
 
 # Timeout settings
-uvicorn tazuna_api.main:app --timeout-keep-alive 120
+uvicorn zloth_api.main:app --timeout-keep-alive 120
 ```
 
 ### Profiling
 
 ```python
 # Profile with cProfile
-python -m cProfile -o profile.stats -m tazuna_api.main
+python -m cProfile -o profile.stats -m zloth_api.main
 ```

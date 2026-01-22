@@ -1,5 +1,5 @@
 /**
- * Terminology and Microcopy for tazuna UI
+ * Terminology and Microcopy for zloth UI
  * Centralized text strings for consistent UI language
  */
 
@@ -106,7 +106,7 @@ export const emptyStates = {
   },
   noModels: {
     title: 'No models configured',
-    description: 'Add a model in Settings to start using tazuna',
+    description: 'Add a model in Settings to start using zloth',
     action: 'Add Model',
   },
   noRepos: {
@@ -129,7 +129,7 @@ export const emptyStatesJa = {
   },
   noModels: {
     title: 'モデルが未設定です',
-    description: '設定からモデルを追加してtazunaを使い始めましょう',
+    description: '設定からモデルを追加してzlothを使い始めましょう',
     action: 'モデルを追加',
   },
   noRepos: {

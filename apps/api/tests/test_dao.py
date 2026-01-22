@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import pytest
 
-from tazuna_api.domain.enums import (
+from zloth_api.domain.enums import (
     ExecutorType,
     MessageRole,
     Provider,
     RunStatus,
 )
-from tazuna_api.storage.dao import (
+from zloth_api.storage.dao import (
     MessageDAO,
     ModelProfileDAO,
     RepoDAO,
     RunDAO,
     TaskDAO,
 )
-from tazuna_api.storage.db import Database
+from zloth_api.storage.db import Database
 
 
 class TestModelProfileDAO:

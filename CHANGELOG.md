@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2024-01-01
 
 ### Added
-- Initial release of tazuna
+- Initial release of zloth
 - Multi-model parallel execution (OpenAI, Anthropic, Google)
 - BYO API key support with encrypted storage
 - GitHub PR creation and update functionality
@@ -35,5 +35,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLite database with aiosqlite
 - Fernet (AES-128) encryption for API keys
 
-[Unreleased]: https://github.com/hampen2929/tazuna/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/hampen2929/tazuna/releases/tag/v0.1.0
+[Unreleased]: https://github.com/hampen2929/zloth/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hampen2929/zloth/releases/tag/v0.1.0

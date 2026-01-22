@@ -1,12 +1,12 @@
-# Contributing to tazuna
+# Contributing to zloth
 
-Thank you for your interest in tazuna!
+Thank you for your interest in zloth!
 
 ## How to Contribute
 
 ### Bug Reports & Feature Requests (Welcome!)
 
-We actively welcome bug reports and feature requests via [GitHub Issues](https://github.com/hampen2929/tazuna/issues).
+We actively welcome bug reports and feature requests via [GitHub Issues](https://github.com/hampen2929/zloth/issues).
 
 #### Bug Reports
 
@@ -35,14 +35,14 @@ If you still wish to submit a PR:
 
 ## Development Reference
 
-If you want to run tazuna locally for testing or personal use:
+If you want to run zloth locally for testing or personal use:
 
 ### Setup
 
 ```bash
 # Clone
-git clone https://github.com/hampen2929/tazuna.git
-cd tazuna
+git clone https://github.com/hampen2929/zloth.git
+cd zloth
 
 # Backend
 cd apps/api
@@ -78,4 +78,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Questions
 
-For questions and discussions, please use [GitHub Issues](https://github.com/hampen2929/tazuna/issues).
+For questions and discussions, please use [GitHub Issues](https://github.com/hampen2929/zloth/issues).

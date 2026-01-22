@@ -1,5 +1,5 @@
 /**
- * API client for tazuna backend
+ * API client for zloth backend
  */
 
 import type {

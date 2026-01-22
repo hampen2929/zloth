@@ -3,7 +3,7 @@
 import pytest
 from cryptography.fernet import InvalidToken
 
-from tazuna_api.services.crypto_service import CryptoService
+from zloth_api.services.crypto_service import CryptoService
 
 
 class TestCryptoService:

@@ -25,7 +25,7 @@ API_HOST ?= 0.0.0.0
 dev-api:
 	@API_PORT=$${API_PORT:-$$(python3 -c 'exec("import socket\nfor port in range(8000, 8011):\n    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    try:\n        s.bind((\"0.0.0.0\", port))\n    except OSError:\n        continue\n    else:\n        s.close()\n        print(port)\n        break\nelse:\n    print(8000)\n")')}; \
 	echo "API will run on: http://localhost:$$API_PORT"; \
-	cd apps/api && PYTHONPATH=src uv run uvicorn tazuna_api.main:app --host $(API_HOST) --port $$API_PORT --reload
+	cd apps/api && PYTHONPATH=src uv run uvicorn zloth_api.main:app --host $(API_HOST) --port $$API_PORT --reload
 
 dev-web:
 	@API_PORT=$${API_PORT:-8000}; \
@@ -39,7 +39,7 @@ dev:
 	API_URL=$${API_URL:-http://localhost:$$API_PORT}; \
 	echo "API will run on: $$API_URL"; \
 	trap 'kill 0' EXIT; \
-	(cd apps/api && PYTHONPATH=src uv run uvicorn tazuna_api.main:app --host $(API_HOST) --port $$API_PORT --reload) & \
+	(cd apps/api && PYTHONPATH=src uv run uvicorn zloth_api.main:app --host $(API_HOST) --port $$API_PORT --reload) & \
 	(cd apps/web && API_URL=$$API_URL npm run dev)
 
 # CLI Agents Installation

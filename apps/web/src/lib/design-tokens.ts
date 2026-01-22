@@ -1,5 +1,5 @@
 /**
- * Design Tokens for tazuna UI
+ * Design Tokens for zloth UI
  * Centralized design system values for consistent styling
  */
 

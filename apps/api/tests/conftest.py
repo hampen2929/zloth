@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for tazuna API tests."""
+"""Pytest configuration and fixtures for zloth API tests."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_asyncio
 
-from tazuna_api.services.crypto_service import CryptoService
-from tazuna_api.storage.db import Database
+from zloth_api.services.crypto_service import CryptoService
+from zloth_api.storage.db import Database
 
 if TYPE_CHECKING:
     import aiosqlite

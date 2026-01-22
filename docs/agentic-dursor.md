@@ -1,8 +1,8 @@
-# Agentic Tazuna - 自律的開発フロー設計
+# Agentic Zloth - 自律的開発フロー設計
 
 ## 概要
 
-tazuna をコーディングエージェントが**自律的に開発を行える**システムとして設計する。
+zloth をコーディングエージェントが**自律的に開発を行える**システムとして設計する。
 
 本ドキュメントは [Coding Mode 設計](./coding-mode.md) の **Semi Auto** と **Full Auto** モードの詳細実装を定義する。
 
@@ -39,19 +39,19 @@ flowchart LR
 2. **Strict Merge Gates**: マージ条件を明確かつ厳格に定義
 3. **Agent Specialization**: コーディング(Claude)とレビュー(Codex)を分離
 4. **Fail-fast Feedback Loop**: CI/レビュー失敗を検知し自動修正
-5. **tazuna as Orchestrator**: CIはチェックのみ、tazunaが全体を制御
+5. **zloth as Orchestrator**: CIはチェックのみ、zlothが全体を制御
 6. **Human-in-the-loop Option**: Semi Autoでは最終承認を人間が行う
 
 ---
 
-## CIとtazunaの責務分離
+## CIとzlothの責務分離
 
 ### 責務分担
 
 | 担当 | 責務 | 実行場所 |
 |------|------|----------|
 | **GitHub Actions (CI)** | チェック実行、結果通知 | GitHub |
-| **tazuna Orchestrator** | 失敗検知、自動修正、マージ制御 | tazuna API |
+| **zloth Orchestrator** | 失敗検知、自動修正、マージ制御 | zloth API |
 
 ```mermaid
 flowchart LR
@@ -63,7 +63,7 @@ flowchart LR
         CI5[Codexレビュー]
     end
 
-    subgraph Orchestrator["tazuna Orchestrator<br/>制御中枢"]
+    subgraph Orchestrator["zloth Orchestrator<br/>制御中枢"]
         OR1[結果監視]
         OR2[失敗時修正指示]
         OR3[マージ判断]
@@ -82,11 +82,11 @@ flowchart LR
     Orchestrator --> CI
 ```
 
-### なぜtazunaがオーケストレーションするのか
+### なぜzlothがオーケストレーションするのか
 
 CIだけでは実現できない機能：
 
-| 機能 | CI単独 | tazuna + CI |
+| 機能 | CI単独 | zloth + CI |
 |------|--------|-------------|
 | テスト/Lint実行 | ✅ | ✅ |
 | 失敗時の自動修正 | ❌ | ✅ |
@@ -103,7 +103,7 @@ CIだけでは実現できない機能：
 
 ```mermaid
 flowchart TB
-    subgraph System["Agentic Tazuna System"]
+    subgraph System["Agentic Zloth System"]
         subgraph Orchestrator["AgenticOrchestrator"]
             TM[Task Manager] --> CP[Coding Phase]
             CP --> RP[Review Phase]
@@ -154,7 +154,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant GH as GitHub Actions
-    participant WH as tazuna Webhook
+    participant WH as zloth Webhook
     participant OR as Orchestrator
     participant CC as Claude Code
     participant GIT as Git
@@ -348,17 +348,17 @@ jobs:
       - run: echo "All checks passed!"
 
   # ============================================
-  # Notify tazuna (Webhook)
+  # Notify zloth (Webhook)
   # ============================================
-  notify-tazuna:
+  notify-zloth:
     runs-on: ubuntu-latest
     needs: [all-checks-passed]
     if: always()
     steps:
-      - name: Notify tazuna orchestrator
+      - name: Notify zloth orchestrator
         env:
-          TAZUNA_WEBHOOK_URL: ${{ secrets.TAZUNA_WEBHOOK_URL }}
-          TAZUNA_WEBHOOK_SECRET: ${{ secrets.TAZUNA_WEBHOOK_SECRET }}
+          ZLOTH_WEBHOOK_URL: ${{ secrets.ZLOTH_WEBHOOK_URL }}
+          ZLOTH_WEBHOOK_SECRET: ${{ secrets.ZLOTH_WEBHOOK_SECRET }}
         run: |
           # Collect job results
           PAYLOAD=$(cat <<EOF
@@ -385,19 +385,19 @@ jobs:
           )
 
           # Calculate HMAC signature
-          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$TAZUNA_WEBHOOK_SECRET" | awk '{print $2}')
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$ZLOTH_WEBHOOK_SECRET" | awk '{print $2}')
 
           # Send webhook
-          curl -X POST "$TAZUNA_WEBHOOK_URL/v1/webhooks/ci" \
+          curl -X POST "$ZLOTH_WEBHOOK_URL/v1/webhooks/ci" \
             -H "Content-Type: application/json" \
             -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
             -d "$PAYLOAD"
 ```
 
-### Webhook Handler (tazuna側)
+### Webhook Handler (zloth側)
 
 ```python
-# apps/api/src/tazuna_api/routes/webhooks.py
+# apps/api/src/zloth_api/routes/webhooks.py
 
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
@@ -504,7 +504,7 @@ async def fetch_job_logs(workflow_run_id: int, job_name: str) -> str:
 ### AgenticOrchestrator 完全実装
 
 ```python
-# apps/api/src/tazuna_api/services/agentic_orchestrator.py
+# apps/api/src/zloth_api/services/agentic_orchestrator.py
 
 from enum import Enum
 from dataclasses import dataclass
@@ -1155,7 +1155,7 @@ flowchart TD
     subgraph CI["Phase 2: CI"]
         F --> G[GitHub Actions Triggered]
         G --> H{CI Result}
-        H -->|Webhook| I[tazuna Webhook Handler]
+        H -->|Webhook| I[zloth Webhook Handler]
     end
 
     subgraph CIFix["Phase 2a: CI Fix Loop"]
@@ -1384,7 +1384,7 @@ POST /v1/webhooks/ci:
 ### Webhook Handler (approve/reject)
 
 ```python
-# apps/api/src/tazuna_api/routes/tasks.py
+# apps/api/src/zloth_api/routes/tasks.py
 
 @router.post("/{task_id}/approve-merge")
 async def approve_merge(
@@ -1432,25 +1432,25 @@ class RejectMergeRequest(BaseModel):
 
 ```bash
 # Agentic Mode
-TAZUNA_AGENTIC_ENABLED=true
-TAZUNA_AGENTIC_AUTO_MERGE=true
+ZLOTH_AGENTIC_ENABLED=true
+ZLOTH_AGENTIC_AUTO_MERGE=true
 
 # Iteration Limits
-TAZUNA_AGENTIC_MAX_TOTAL_ITERATIONS=10
-TAZUNA_AGENTIC_MAX_CI_ITERATIONS=5
-TAZUNA_AGENTIC_MAX_REVIEW_ITERATIONS=3
-TAZUNA_AGENTIC_TIMEOUT_MINUTES=60
+ZLOTH_AGENTIC_MAX_TOTAL_ITERATIONS=10
+ZLOTH_AGENTIC_MAX_CI_ITERATIONS=5
+ZLOTH_AGENTIC_MAX_REVIEW_ITERATIONS=3
+ZLOTH_AGENTIC_TIMEOUT_MINUTES=60
 
 # Quality Thresholds
-TAZUNA_REVIEW_MIN_SCORE=0.75
-TAZUNA_COVERAGE_THRESHOLD=80
+ZLOTH_REVIEW_MIN_SCORE=0.75
+ZLOTH_COVERAGE_THRESHOLD=80
 
 # Webhook
-TAZUNA_WEBHOOK_SECRET=your-secret-here
+ZLOTH_WEBHOOK_SECRET=your-secret-here
 
 # Merge
-TAZUNA_MERGE_METHOD=squash
-TAZUNA_MERGE_DELETE_BRANCH=true
+ZLOTH_MERGE_METHOD=squash
+ZLOTH_MERGE_DELETE_BRANCH=true
 ```
 
 ---
@@ -1469,7 +1469,7 @@ TAZUNA_MERGE_DELETE_BRANCH=true
 ### Notification Service 実装
 
 ```python
-# apps/api/src/tazuna_api/services/notification_service.py
+# apps/api/src/zloth_api/services/notification_service.py
 
 from enum import Enum
 from dataclasses import dataclass
@@ -1555,7 +1555,7 @@ class EmailNotifier(NotificationChannel):
         self.config = smtp_config
 
     async def send(self, event: NotificationEvent) -> bool:
-        subject = f"[tazuna] {event.type.value.replace('_', ' ').title()}: {event.task_title}"
+        subject = f"[zloth] {event.type.value.replace('_', ' ').title()}: {event.task_title}"
         body = self._build_email_body(event)
         # ... SMTP send implementation
         return True
@@ -1584,17 +1584,17 @@ class NotificationService:
 
 ```bash
 # 通知チャネル
-TAZUNA_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
-TAZUNA_NOTIFY_EMAIL=dev-alerts@example.com
+ZLOTH_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
+ZLOTH_NOTIFY_EMAIL=dev-alerts@example.com
 
 # 通知トリガー
-TAZUNA_NOTIFY_ON_READY=true      # Semi Auto: PR準備完了
-TAZUNA_NOTIFY_ON_COMPLETE=true   # 完了通知
-TAZUNA_NOTIFY_ON_FAILURE=true    # 失敗通知
-TAZUNA_NOTIFY_ON_WARNING=true    # 警告（高イテレーション）
+ZLOTH_NOTIFY_ON_READY=true      # Semi Auto: PR準備完了
+ZLOTH_NOTIFY_ON_COMPLETE=true   # 完了通知
+ZLOTH_NOTIFY_ON_FAILURE=true    # 失敗通知
+ZLOTH_NOTIFY_ON_WARNING=true    # 警告（高イテレーション）
 
 # 警告閾値
-TAZUNA_WARN_ITERATION_THRESHOLD=7  # この回数を超えると警告
+ZLOTH_WARN_ITERATION_THRESHOLD=7  # この回数を超えると警告
 ```
 
 ---
