@@ -57,10 +57,10 @@ const STATUS_CONFIG: Record<
 type FilterType = 'all' | 'succeeded' | 'failed' | 'running';
 
 const FILTER_OPTIONS: { id: FilterType; label: string; icon?: React.ReactNode }[] = [
-  { id: 'all', label: 'すべて' },
-  { id: 'succeeded', label: '成功', icon: <CheckCircleIcon className="w-3.5 h-3.5" /> },
-  { id: 'failed', label: '失敗', icon: <ExclamationCircleIcon className="w-3.5 h-3.5" /> },
-  { id: 'running', label: '実行中', icon: <ArrowPathIcon className="w-3.5 h-3.5" /> },
+  { id: 'all', label: 'All' },
+  { id: 'succeeded', label: 'Succeeded', icon: <CheckCircleIcon className="w-3.5 h-3.5" /> },
+  { id: 'failed', label: 'Failed', icon: <ExclamationCircleIcon className="w-3.5 h-3.5" /> },
+  { id: 'running', label: 'Running', icon: <ArrowPathIcon className="w-3.5 h-3.5" /> },
 ];
 
 export function RunsPanel({
