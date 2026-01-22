@@ -144,7 +144,7 @@ zloth/
 │           ├── app/            # Pages (App Router)
 │           ├── components/     # React components
 │           └── lib/            # API client
-├── workspaces/                 # Git clones (gitignored)
+├── workspaces/                 # Git clones (gitignored; clone-first by default)
 ├── data/                       # SQLite database (gitignored)
 ├── docker-compose.yml
 └── .env.example

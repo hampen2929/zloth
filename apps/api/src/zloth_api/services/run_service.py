@@ -379,15 +379,33 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         workspace_info: WorktreeInfo | WorkspaceInfo | None = None
 
         if existing_run and existing_run.worktree_path:
-            workspace_path = Path(existing_run.worktree_path)
+            workspace_path: Path | None = Path(existing_run.worktree_path)
+
+            # If clone isolation is enabled but the previous workspace is a worktree,
+            # do not reuse it. We prefer clone-based isolation going forward.
+            if self.use_clone_isolation:
+                try:
+                    worktrees_root = getattr(self.git_service, "worktrees_dir", None)
+                except Exception:
+                    worktrees_root = None
+
+                if worktrees_root and str(workspace_path).startswith(str(worktrees_root)):
+                    logger.info(
+                        "Clone isolation enabled; skipping reuse of legacy worktree: %s",
+                        workspace_path,
+                    )
+                    workspace_path = None  # Force fresh clone-based workspace
 
             # Check validity based on isolation mode
-            if self.use_clone_isolation:
-                is_valid = await self.workspace_service.is_valid_workspace(workspace_path)
+            if workspace_path is not None:
+                if self.use_clone_isolation:
+                    is_valid = await self.workspace_service.is_valid_workspace(workspace_path)
+                else:
+                    is_valid = await self.git_service.is_valid_worktree(workspace_path)
             else:
-                is_valid = await self.git_service.is_valid_worktree(workspace_path)
+                is_valid = False
 
-            if is_valid:
+            if is_valid and workspace_path is not None:
                 # If we're working from the repo's default branch, ensure the workspace
                 # still contains the latest origin/<default>. Otherwise, create fresh.
                 should_check_default = (base_ref == repo.default_branch) and bool(
