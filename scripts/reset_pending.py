@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-DEFAULT_DB_PATH = Path("data/zloth.db")
+DEFAULT_DB_PATH = Path.home() / ".zloth" / "data" / "zloth.db"
 
 
 def get_db_path(custom_path: str | None = None) -> Path:
