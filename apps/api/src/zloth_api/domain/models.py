@@ -1261,3 +1261,26 @@ class MetricsDetail(BaseModel):
     agentic_metrics: AgenticMetrics
     productivity_metrics: ProductivityMetrics
     realtime: RealtimeMetrics
+
+
+# ============================================================
+# CLI Tools Status
+# ============================================================
+
+
+class CLIToolStatus(BaseModel):
+    """Status of a single CLI tool."""
+
+    name: str = Field(..., description="CLI tool name (claude, codex, gemini)")
+    available: bool = Field(..., description="Whether the CLI tool is available")
+    version: str | None = Field(None, description="CLI tool version if available")
+    path: str = Field(..., description="Configured path for the CLI tool")
+    error: str | None = Field(None, description="Error message if not available")
+
+
+class CLIToolsStatus(BaseModel):
+    """Status of all CLI tools."""
+
+    claude: CLIToolStatus
+    codex: CLIToolStatus
+    gemini: CLIToolStatus

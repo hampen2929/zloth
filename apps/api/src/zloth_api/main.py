@@ -20,6 +20,7 @@ from zloth_api.routes import (
     repos_router,
     reviews_router,
     runs_router,
+    system_router,
     tasks_router,
 )
 from zloth_api.storage.db import get_db
@@ -75,6 +76,7 @@ app.include_router(reviews_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")
 app.include_router(prs_router, prefix="/v1")
+app.include_router(system_router, prefix="/v1")
 # Note: webhooks_router removed - using CI polling instead (see ci_polling_service.py)
 
 

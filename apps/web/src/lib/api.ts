@@ -54,6 +54,7 @@ import type {
   MetricsSummary,
   MetricsTrend,
   RealtimeMetrics,
+  CLIToolsStatus,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -745,6 +746,14 @@ export const metricsApi = {
     if (repoId) params.set('repo_id', repoId);
     return fetchApi<MetricsTrend[]>(`/metrics/trends?${params.toString()}`);
   },
+};
+
+// System
+export const systemApi = {
+  /**
+   * Get CLI tools status (claude, codex, gemini).
+   */
+  getCLIToolsStatus: () => fetchApi<CLIToolsStatus>('/system/cli-tools'),
 };
 
 export { ApiError };

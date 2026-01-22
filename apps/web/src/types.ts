@@ -711,3 +711,18 @@ export interface MetricsDetail {
   productivity_metrics: ProductivityMetrics;
   realtime: RealtimeMetrics;
 }
+
+// CLI Tools Status
+export interface CLIToolStatus {
+  name: string;
+  available: boolean;
+  version: string | null;
+  path: string;
+  error: string | null;
+}
+
+export interface CLIToolsStatus {
+  claude: CLIToolStatus;
+  codex: CLIToolStatus;
+  gemini: CLIToolStatus;
+}

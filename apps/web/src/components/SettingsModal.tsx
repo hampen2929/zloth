@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
-import { modelsApi, githubApi, preferencesApi } from '@/lib/api';
+import { modelsApi, githubApi, preferencesApi, systemApi } from '@/lib/api';
 import type {
   Provider,
   ModelProfileCreate,
   PRCreationMode,
   CodingMode,
+  CLIToolStatus,
 } from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
@@ -23,6 +24,9 @@ import {
   TrashIcon,
   PlusIcon,
   Cog6ToothIcon,
+  CommandLineIcon,
+  ArrowPathIcon,
+  XCircleIcon,
 } from '@heroicons/react/24/outline';
 
 const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
@@ -43,7 +47,7 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
-export type SettingsTabType = 'models' | 'github' | 'defaults';
+export type SettingsTabType = 'models' | 'github' | 'cli-tools' | 'defaults';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -54,6 +58,7 @@ interface SettingsModalProps {
 export const settingsTabConfig: { id: SettingsTabType; label: string; icon: React.ReactNode }[] = [
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
+  { id: 'cli-tools', label: 'CLI Tools', icon: <CommandLineIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
 ];
 
@@ -102,6 +107,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
       <ModalBody className="max-h-[calc(85vh-180px)] overflow-y-auto">
         {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
+        {activeTab === 'cli-tools' && <CLIToolsTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
       </ModalBody>
     </Modal>
@@ -508,6 +514,163 @@ export function GitHubAppTab() {
           <div>ZLOTH_GITHUB_APP_PRIVATE_KEY=&lt;base64_encoded_key&gt;</div>
           <div className="text-gray-500"># Optional: if not set, all installations are available</div>
           <div>ZLOTH_GITHUB_APP_INSTALLATION_ID=&lt;installation_id&gt;</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CLIToolStatusCard({ tool }: { tool: CLIToolStatus }) {
+  return (
+    <div
+      className={cn(
+        'p-4 rounded-lg border',
+        tool.available
+          ? 'bg-gray-800/30 border-gray-700'
+          : 'bg-red-900/10 border-red-800/50'
+      )}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-gray-100 capitalize">{tool.name}</span>
+          {tool.available ? (
+            <CheckCircleIcon className="w-5 h-5 text-green-400" />
+          ) : (
+            <XCircleIcon className="w-5 h-5 text-red-400" />
+          )}
+        </div>
+        <span
+          className={cn(
+            'text-xs px-2 py-0.5 rounded font-medium',
+            tool.available
+              ? 'bg-green-900/30 text-green-400'
+              : 'bg-red-900/30 text-red-400'
+          )}
+        >
+          {tool.available ? 'Available' : 'Not Found'}
+        </span>
+      </div>
+
+      <div className="space-y-1.5 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-gray-500">Path:</span>
+          <span className="font-mono text-xs text-gray-300 bg-gray-800 px-2 py-0.5 rounded">
+            {tool.path}
+          </span>
+        </div>
+        {tool.available && tool.version && (
+          <div className="flex items-center justify-between">
+            <span className="text-gray-500">Version:</span>
+            <span className="text-gray-300 text-xs">{tool.version}</span>
+          </div>
+        )}
+        {!tool.available && tool.error && (
+          <div className="mt-2 p-2 bg-red-900/20 rounded text-xs text-red-400">
+            {tool.error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function CLIToolsTab() {
+  const { data: cliStatus, error, isLoading } = useSWR('cli-tools-status', systemApi.getCLIToolsStatus);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await mutate('cli-tools-status');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const availableCount = cliStatus
+    ? [cliStatus.claude, cliStatus.codex, cliStatus.gemini].filter((t) => t.available).length
+    : 0;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-100">CLI Tools Status</h3>
+          <p className="text-sm text-gray-400 mt-1">
+            Check availability of coding agent CLI tools
+          </p>
+        </div>
+        <Button
+          onClick={handleRefresh}
+          variant="secondary"
+          size="sm"
+          disabled={isLoading || isRefreshing}
+          leftIcon={<ArrowPathIcon className={cn('w-4 h-4', (isLoading || isRefreshing) && 'animate-spin')} />}
+        >
+          Refresh
+        </Button>
+      </div>
+
+      {/* Summary */}
+      {cliStatus && !error && (
+        <div
+          className={cn(
+            'mb-4 p-3 rounded-lg border flex items-center gap-2',
+            availableCount === 3
+              ? 'bg-green-900/20 border-green-800/50 text-green-400'
+              : availableCount > 0
+                ? 'bg-yellow-900/20 border-yellow-800/50 text-yellow-400'
+                : 'bg-red-900/20 border-red-800/50 text-red-400'
+          )}
+        >
+          {availableCount === 3 ? (
+            <>
+              <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm font-medium">All CLI tools are available</span>
+            </>
+          ) : availableCount > 0 ? (
+            <>
+              <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm font-medium">{availableCount} of 3 CLI tools available</span>
+            </>
+          ) : (
+            <>
+              <XCircleIcon className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm font-medium">No CLI tools available</span>
+            </>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-900/20 border border-red-800/50 rounded-lg text-red-400 text-sm mb-4">
+          <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+          Failed to check CLI tools status.
+        </div>
+      )}
+
+      {isLoading && !cliStatus ? (
+        <div className="flex items-center justify-center py-8">
+          <ArrowPathIcon className="w-6 h-6 text-gray-400 animate-spin" />
+        </div>
+      ) : cliStatus ? (
+        <div className="space-y-3">
+          <CLIToolStatusCard tool={cliStatus.claude} />
+          <CLIToolStatusCard tool={cliStatus.codex} />
+          <CLIToolStatusCard tool={cliStatus.gemini} />
+        </div>
+      ) : null}
+
+      {/* Environment variable info */}
+      <div className="mt-6 p-4 bg-gray-800/20 border border-gray-700 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-300 mb-2">Configuration</h4>
+        <p className="text-xs text-gray-500 mb-3">
+          You can configure custom CLI paths via environment variables:
+        </p>
+        <div className="font-mono text-xs text-gray-400 space-y-1 bg-gray-800/50 p-3 rounded">
+          <div>ZLOTH_CLAUDE_CLI_PATH=claude</div>
+          <div>ZLOTH_CODEX_CLI_PATH=codex</div>
+          <div>ZLOTH_GEMINI_CLI_PATH=gemini</div>
         </div>
       </div>
     </div>
