@@ -816,8 +816,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                             logs.append("Successfully merged base branch (no conflicts)")
                             logger.info(f"[{run.id[:8]}] Merged base branch successfully")
                         elif (
-                            merge_result.conflict_info
-                            and merge_result.conflict_info.has_conflicts
+                            merge_result.conflict_info and merge_result.conflict_info.has_conflicts
                         ):
                             conflict_files = merge_result.conflict_info.conflict_files
                             conflict_files_str = ", ".join(conflict_files)
