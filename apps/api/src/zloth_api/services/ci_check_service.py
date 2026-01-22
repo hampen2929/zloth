@@ -142,10 +142,22 @@ class CICheckService:
         sha = ci_data.get("sha")
 
         # Create or update CICheck record
-        # Look for existing check with the same SHA to avoid duplicate records
-        existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha) if sha else None
+        # Look for existing check to avoid duplicate records
+        existing = None
+        if sha:
+            # If we have SHA, look for existing record with this SHA
+            existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha)
+            if not existing:
+                # Also check if there's a pending record without SHA that we should update
+                pending_without_sha = await self.ci_check_dao.get_latest_pending_by_pr_id(pr_id)
+                if pending_without_sha and pending_without_sha.sha is None:
+                    existing = pending_without_sha
+        else:
+            # No SHA available - look for any existing pending record for this PR
+            existing = await self.ci_check_dao.get_latest_pending_by_pr_id(pr_id)
+
         if existing:
-            # Update existing check for this SHA
+            # Update existing check
             ci_check = await self.ci_check_dao.update(
                 id=existing.id,
                 status=status,
@@ -157,7 +169,7 @@ class CICheckService:
             if not ci_check:
                 raise ValueError(f"Failed to update CI check: {existing.id}")
         else:
-            # Create new check record for this SHA
+            # Create new check record
             ci_check = await self.ci_check_dao.create(
                 task_id=task_id,
                 pr_id=pr_id,

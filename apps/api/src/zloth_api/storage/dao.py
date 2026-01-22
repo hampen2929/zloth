@@ -1833,6 +1833,25 @@ class CICheckDAO:
             return None
         return self._row_to_model(row)
 
+    async def get_latest_pending_by_pr_id(self, pr_id: str) -> CICheck | None:
+        """Get the latest pending CI check for a PR (regardless of SHA).
+
+        This is used when SHA is not yet available to avoid creating duplicate
+        pending records.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM ci_checks
+            WHERE pr_id = ? AND status = 'pending'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (pr_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
     async def list_by_task_id(self, task_id: str) -> builtins.list[CICheck]:
         """List all CI checks for a task.
 
