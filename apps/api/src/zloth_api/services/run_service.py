@@ -381,11 +381,29 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if existing_run and existing_run.worktree_path:
             workspace_path = Path(existing_run.worktree_path)
 
-            # Check validity based on isolation mode
+            # If clone isolation is enabled but the previous workspace is a worktree,
+            # do not reuse it. We prefer clone-based isolation going forward.
             if self.use_clone_isolation:
-                is_valid = await self.workspace_service.is_valid_workspace(workspace_path)
+                try:
+                    worktrees_root = getattr(self.git_service, "worktrees_dir", None)
+                except Exception:
+                    worktrees_root = None
+
+                if worktrees_root and str(workspace_path).startswith(str(worktrees_root)):
+                    logger.info(
+                        "Clone isolation enabled; skipping reuse of legacy worktree: %s",
+                        workspace_path,
+                    )
+                    workspace_path = None  # Force fresh clone-based workspace
+
+            # Check validity based on isolation mode
+            if workspace_path is not None:
+                if self.use_clone_isolation:
+                    is_valid = await self.workspace_service.is_valid_workspace(workspace_path)
+                else:
+                    is_valid = await self.git_service.is_valid_worktree(workspace_path)
             else:
-                is_valid = await self.git_service.is_valid_worktree(workspace_path)
+                is_valid = False
 
             if is_valid:
                 # If we're working from the repo's default branch, ensure the workspace
@@ -434,17 +452,17 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             base_ref=base_ref,
         )
 
-        if not workspace_info:
-            branch_prefix: str | None = None
-            if self.user_preferences_dao:
-                prefs = await self.user_preferences_dao.get()
-                branch_prefix = prefs.default_branch_prefix if prefs else None
-                # Apply custom directory from UserPreferences if set
-                if prefs and prefs.worktrees_dir:
-                    if self.use_clone_isolation:
-                        self.workspace_service.set_workspaces_dir(prefs.worktrees_dir)
-                    else:
-                        self.git_service.set_worktrees_dir(prefs.worktrees_dir)
+            if not workspace_info:
+                branch_prefix: str | None = None
+                if self.user_preferences_dao:
+                    prefs = await self.user_preferences_dao.get()
+                    branch_prefix = prefs.default_branch_prefix if prefs else None
+                    # Apply custom directory from UserPreferences if set
+                    if prefs and prefs.worktrees_dir:
+                        if self.use_clone_isolation:
+                            self.workspace_service.set_workspaces_dir(prefs.worktrees_dir)
+                        else:
+                            self.git_service.set_worktrees_dir(prefs.worktrees_dir)
 
             # Get auth_url for private repos
             auth_url: str | None = None

@@ -8,7 +8,7 @@ zlothは2つのワークスペース分離モードをサポートしていま�
 
 | モード | 設定値 | 特徴 |
 |--------|--------|------|
-| **Clone方式** (推奨) | `use_clone_isolation=true` | フルgit clone。リモート同期・コンフリクト解消が容易 |
+| **Clone方式** (推奨/デフォルト) | `use_clone_isolation=true` | フルgit clone。リモート同期・コンフリクト解消が容易 |
 | **Worktree方式** (レガシー) | `use_clone_isolation=false` | git worktree。高速だがgit操作に制約あり |
 
 ## 全体アーキテクチャ
@@ -253,7 +253,7 @@ sequenceDiagram
 flowchart TD
     subgraph Phase1["Phase 1: ワークスペース作成"]
         A[Task/Run作成] --> B{既存ワークスペースあり?}
-        B -->|Yes| C{有効?}
+    B -->|Yes| C{有効?}
         B -->|No| D[shallow clone]
         C -->|Yes| E[再利用]
         C -->|No| D
@@ -343,6 +343,11 @@ use_clone_isolation: bool = Field(
 ZLOTH_USE_CLONE_ISOLATION=true  # Clone方式（推奨）
 ZLOTH_USE_CLONE_ISOLATION=false # Worktree方式（レガシー）
 ```
+
+### 互換メモ（Clone優先ポリシー）
+
+- `use_clone_isolation=true` の場合、過去のRunで作成された「worktreeベースのワークスペース」は再利用しません。
+- 既存のワークツリーが見つかった場合でも、Clone方式の新しいワークスペースを作成して実行します（安全なリモート同期のため）。
 
 ## 関連ファイル
 

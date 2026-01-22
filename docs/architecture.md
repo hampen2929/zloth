@@ -21,7 +21,7 @@ flowchart TB
 
     subgraph External["External Services"]
         SQLite[(SQLite DB)]
-        Workspace[Workspace<br/>Git Clone]
+        Workspace[Workspace<br/>Git Clone (default)]
         LLM[LLM APIs<br/>OpenAI/Anthropic/Google]
         GitHub[GitHub API]
     end
