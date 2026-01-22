@@ -172,6 +172,13 @@ class Settings(BaseSettings):
     merge_method: str = Field(default="squash", description="Merge method: merge, squash, rebase")
     merge_delete_branch: bool = Field(default=True, description="Delete branch after merge")
 
+    # Workspace Isolation Mode
+    use_clone_isolation: bool = Field(
+        default=True,
+        description="Use git clone instead of worktree for workspace isolation. "
+        "Clone mode provides better support for remote sync and conflict resolution.",
+    )
+
     # Notification
     slack_webhook_url: str = Field(default="", description="Slack webhook URL")
     notify_email: str = Field(default="", description="Notification email address")
