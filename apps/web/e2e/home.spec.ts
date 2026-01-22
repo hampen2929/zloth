@@ -11,7 +11,7 @@ test.describe('Home Page', () => {
     // Check placeholder text
     await expect(textarea).toHaveAttribute(
       'placeholder',
-      'Ask tazuna to build, fix bugs, explore...'
+      'Ask zloth to build, fix bugs, explore...'
     );
   });
 

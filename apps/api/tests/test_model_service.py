@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from tazuna_api.domain.enums import Provider
-from tazuna_api.domain.models import ModelProfileCreate
-from tazuna_api.services.crypto_service import CryptoService
-from tazuna_api.services.model_service import ModelService
-from tazuna_api.storage.dao import ModelProfileDAO
-from tazuna_api.storage.db import Database
+from zloth_api.domain.enums import Provider
+from zloth_api.domain.models import ModelProfileCreate
+from zloth_api.services.crypto_service import CryptoService
+from zloth_api.services.model_service import ModelService
+from zloth_api.storage.dao import ModelProfileDAO
+from zloth_api.storage.db import Database
 
 
 class TestModelService:

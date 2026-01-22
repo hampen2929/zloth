@@ -1,28 +1,28 @@
 # Skill: Add New API Endpoint
 
 ## Description
-Guide for adding a new API endpoint to the tazuna backend.
+Guide for adding a new API endpoint to the zloth backend.
 
 ## Steps
 
 ### 1. Create Route File (if new resource)
-- Location: `apps/api/src/tazuna_api/routes/{resource_name}.py`
+- Location: `apps/api/src/zloth_api/routes/{resource_name}.py`
 - Follow existing patterns in `routes/models.py` or `routes/tasks.py`
 
 ### 2. Create Service (if needed)
-- Location: `apps/api/src/tazuna_api/services/{resource_name}_service.py`
+- Location: `apps/api/src/zloth_api/services/{resource_name}_service.py`
 - Implement business logic separate from routes
 
 ### 3. Add Domain Models (if needed)
-- Add Pydantic models in `apps/api/src/tazuna_api/domain/models.py`
-- Add enums in `apps/api/src/tazuna_api/domain/enums.py`
+- Add Pydantic models in `apps/api/src/zloth_api/domain/models.py`
+- Add enums in `apps/api/src/zloth_api/domain/enums.py`
 
 ### 4. Add DAO Methods (if needed)
-- Location: `apps/api/src/tazuna_api/storage/dao.py`
-- Update schema in `apps/api/src/tazuna_api/storage/schema.sql`
+- Location: `apps/api/src/zloth_api/storage/dao.py`
+- Update schema in `apps/api/src/zloth_api/storage/schema.sql`
 
 ### 5. Register Router
-- Add router import and registration in `apps/api/src/tazuna_api/main.py`
+- Add router import and registration in `apps/api/src/zloth_api/main.py`
 
 ### 6. Verify
 ```bash
@@ -38,9 +38,9 @@ uv run pytest
 ```python
 from fastapi import APIRouter, Depends, HTTPException
 
-from tazuna_api.dependencies import get_dao
-from tazuna_api.domain.models import YourModel
-from tazuna_api.storage.dao import DAO
+from zloth_api.dependencies import get_dao
+from zloth_api.domain.models import YourModel
+from zloth_api.storage.dao import DAO
 
 router = APIRouter(prefix="/v1/your-resource", tags=["your-resource"])
 

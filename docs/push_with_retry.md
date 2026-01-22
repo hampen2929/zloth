@@ -11,7 +11,7 @@ GitHubのUIで「Update branch」ボタンをクリックしてリモートブ�
 ```mermaid
 sequenceDiagram
     participant U as ユーザー
-    participant D as tazuna
+    participant D as zloth
     participant A as AI Agent
     participant G as Git/GitHub
 
@@ -39,7 +39,7 @@ sequenceDiagram
 
 ```
 Push failed (will retry on PR creation): Cmd('git') failed due to: exit code(1)
-cmdline: git push -u origin tazuna/dcffe73f
+cmdline: git push -u origin zloth/dcffe73f
 stderr: 'To https://github.com/...
 ```
 
@@ -70,7 +70,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant U as ユーザー
-    participant D as tazuna
+    participant D as zloth
     participant A as AI Agent
     participant G as Git/GitHub
 
@@ -232,13 +232,13 @@ PushResult(
 ### 正常時（リトライなし）
 
 ```
-Pushed to branch: tazuna/abc12345
+Pushed to branch: zloth/abc12345
 ```
 
 ### 正常時（リトライあり）
 
 ```
-Pulled remote changes and pushed to branch: tazuna/abc12345
+Pulled remote changes and pushed to branch: zloth/abc12345
 ```
 
 ### 失敗時
@@ -251,10 +251,10 @@ Push failed (will retry on PR creation): <エラーメッセージ>
 
 ### 手動テスト手順
 
-1. tazunaでタスクを作成し、AIに実装させる
+1. zlothでタスクを作成し、AIに実装させる
 2. PRを作成する
 3. GitHubのPRページで「Update branch」をクリック
-4. tazunaで追加指示を送信
+4. zlothで追加指示を送信
 5. pushが成功することを確認
 
 ### 期待される動作

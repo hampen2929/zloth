@@ -255,7 +255,7 @@ wheels = [
 ]
 
 [[package]]
-name = "tazuna-api"
+name = "zloth-api"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

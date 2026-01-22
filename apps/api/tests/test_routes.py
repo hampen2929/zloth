@@ -9,13 +9,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tazuna_api.domain.enums import Provider
-from tazuna_api.domain.models import ModelProfile
-from tazuna_api.routes.models import router as models_router
-from tazuna_api.services.crypto_service import CryptoService
-from tazuna_api.services.model_service import ModelService
-from tazuna_api.storage.dao import ModelProfileDAO
-from tazuna_api.storage.db import Database
+from zloth_api.domain.enums import Provider
+from zloth_api.domain.models import ModelProfile
+from zloth_api.routes.models import router as models_router
+from zloth_api.services.crypto_service import CryptoService
+from zloth_api.services.model_service import ModelService
+from zloth_api.storage.dao import ModelProfileDAO
+from zloth_api.storage.db import Database
 
 if TYPE_CHECKING:
     pass
@@ -35,8 +35,8 @@ class TestHealthEndpoint:
         """Test basic health check."""
 
         # We need to mock the lifespan to avoid DB initialization
-        with patch("tazuna_api.main.get_db", new_callable=AsyncMock):
-            with patch("tazuna_api.main.get_pr_status_poller", new_callable=AsyncMock):
+        with patch("zloth_api.main.get_db", new_callable=AsyncMock):
+            with patch("zloth_api.main.get_pr_status_poller", new_callable=AsyncMock):
                 # Create a simple test app without lifespan
                 test_app = FastAPI()
 
@@ -62,8 +62,8 @@ class TestModelsRoutes:
     @pytest.fixture
     def test_app(self, mock_model_service: AsyncMock) -> FastAPI:
         """Create test app with mocked dependencies."""
-        from tazuna_api.dependencies import get_model_service
-        from tazuna_api.routes.models import router
+        from zloth_api.dependencies import get_model_service
+        from zloth_api.routes.models import router
 
         app = FastAPI()
         app.include_router(router, prefix="/v1")
@@ -206,8 +206,8 @@ class TestModelsRoutesIntegration:
     @pytest.fixture
     def test_app_with_db(self, test_db: Database, crypto_service: CryptoService) -> FastAPI:
         """Create test app with real database."""
-        from tazuna_api.dependencies import get_model_service
-        from tazuna_api.routes.models import router
+        from zloth_api.dependencies import get_model_service
+        from zloth_api.routes.models import router
 
         app = FastAPI()
         app.include_router(router, prefix="/v1")

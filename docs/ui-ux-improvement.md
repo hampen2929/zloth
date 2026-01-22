@@ -1,6 +1,6 @@
-# UI/UX Improvement Plan for tazuna
+# UI/UX Improvement Plan for zloth
 
-This document outlines the current state of tazuna's UI/UX, identifies issues and opportunities for improvement, and provides actionable recommendations with implementation guidelines.
+This document outlines the current state of zloth's UI/UX, identifies issues and opportunities for improvement, and provides actionable recommendations with implementation guidelines.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ This document outlines the current state of tazuna's UI/UX, identifies issues an
 
 ## Executive Summary
 
-tazuna is a self-hostable multi-model parallel coding agent with a Next.js 14 frontend. The current UI features a dark theme with a functional but inconsistent design. This document proposes improvements across responsiveness, consistency, accessibility, and user experience to create a more polished and professional interface.
+zloth is a self-hostable multi-model parallel coding agent with a Next.js 14 frontend. The current UI features a dark theme with a functional but inconsistent design. This document proposes improvements across responsiveness, consistency, accessibility, and user experience to create a more polished and professional interface.
 
 ### Key Focus Areas
 - **Mobile Responsiveness**: Currently broken, needs complete overhaul

@@ -1,5 +1,5 @@
 /**
- * Type definitions for tazuna frontend
+ * Type definitions for zloth frontend
  */
 
 // Enums

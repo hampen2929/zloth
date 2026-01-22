@@ -20,10 +20,10 @@ RUN mkdir -p /app/workspaces /app/data
 
 # Set environment variables
 ENV PYTHONPATH=/app/src
-ENV TAZUNA_BASE_DIR=/app
-ENV TAZUNA_WORKSPACES_DIR=/app/workspaces
-ENV TAZUNA_DATA_DIR=/app/data
+ENV ZLOTH_BASE_DIR=/app
+ENV ZLOTH_WORKSPACES_DIR=/app/workspaces
+ENV ZLOTH_DATA_DIR=/app/data
 
 EXPOSE 8000
 
-CMD ["uvicorn", "tazuna_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "zloth_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

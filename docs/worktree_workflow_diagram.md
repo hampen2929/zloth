@@ -1,10 +1,10 @@
 # Workspace Workflow Diagram
 
-このドキュメントでは、tazunaにおけるワークスペースの作成から実装、commit、pushまでの全体フローを図示します。
+このドキュメントでは、zlothにおけるワークスペースの作成から実装、commit、pushまでの全体フローを図示します。
 
 ## 分離モード
 
-tazunaは2つのワークスペース分離モードをサポートしています：
+zlothは2つのワークスペース分離モードをサポートしています：
 
 | モード | 設定値 | 特徴 |
 |--------|--------|------|
@@ -19,7 +19,7 @@ graph TB
         UI[Web Interface]
     end
 
-    subgraph Orchestrator["tazuna (Orchestrator)"]
+    subgraph Orchestrator["zloth (Orchestrator)"]
         RS[RunService]
         WS[WorkspaceService]
         GS[GitService]
@@ -73,7 +73,7 @@ PRの「Update Branch」ボタンでベースブランチの更新を取り込�
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant T as tazuna
+    participant T as zloth
     participant AI as AI Agent
     participant W as Workspace
     participant GH as GitHub
@@ -116,7 +116,7 @@ PRがベースブランチ（main/master）とコンフリクトを起こした�
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant T as tazuna
+    participant T as zloth
     participant AI as AI Agent
     participant W as Workspace
     participant GH as GitHub
@@ -170,7 +170,7 @@ sequenceDiagram
 
     RS->>WS: create_workspace(repo, base_branch, run_id)
 
-    Note over WS: branch_name = "tazuna/{run_id[:8]}"
+    Note over WS: branch_name = "zloth/{run_id[:8]}"
     Note over WS: workspace_path = "workspaces/run_{run_id}"
 
     WS->>Git: git clone --depth 1 --single-branch -b {base} {url}
@@ -326,7 +326,7 @@ flowchart TD
 
 ## 設定
 
-`apps/api/src/tazuna_api/config.py`:
+`apps/api/src/zloth_api/config.py`:
 
 ```python
 # Workspace Isolation Mode
@@ -340,16 +340,16 @@ use_clone_isolation: bool = Field(
 環境変数での設定:
 
 ```bash
-TAZUNA_USE_CLONE_ISOLATION=true  # Clone方式（推奨）
-TAZUNA_USE_CLONE_ISOLATION=false # Worktree方式（レガシー）
+ZLOTH_USE_CLONE_ISOLATION=true  # Clone方式（推奨）
+ZLOTH_USE_CLONE_ISOLATION=false # Worktree方式（レガシー）
 ```
 
 ## 関連ファイル
 
 | ファイル | 役割 |
 |---------|------|
-| `apps/api/src/tazuna_api/services/workspace_service.py` | Clone方式のワークスペース管理 |
-| `apps/api/src/tazuna_api/services/git_service.py` | Worktree方式（レガシー） |
-| `apps/api/src/tazuna_api/services/run_service.py` | Run実行制御 |
-| `apps/api/src/tazuna_api/services/pr_service.py` | PR作成・更新 |
-| `apps/api/src/tazuna_api/config.py` | 設定 |
+| `apps/api/src/zloth_api/services/workspace_service.py` | Clone方式のワークスペース管理 |
+| `apps/api/src/zloth_api/services/git_service.py` | Worktree方式（レガシー） |
+| `apps/api/src/zloth_api/services/run_service.py` | Run実行制御 |
+| `apps/api/src/zloth_api/services/pr_service.py` | PR作成・更新 |
+| `apps/api/src/zloth_api/config.py` | 設定 |

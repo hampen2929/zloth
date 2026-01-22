@@ -192,7 +192,7 @@ export default function ReposPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Link href="/" className="text-gray-400 hover:text-white transition-colors">
-                tazuna
+                zloth
               </Link>
               <span className="text-gray-600">/</span>
               <h1 className="text-xl font-semibold">Repositories</h1>

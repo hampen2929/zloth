@@ -1,4 +1,4 @@
-# CLAUDE.md - tazuna Development Context
+# CLAUDE.md - zloth Development Context
 
 This file provides context for Claude Code to understand the project.
 
@@ -25,7 +25,7 @@ docker compose down           # Stop all services
 
 ## Project Overview
 
-**tazuna** is a self-hostable multi-model parallel coding agent.
+**zloth** is a self-hostable multi-model parallel coding agent.
 
 ### Concept
 - **BYO API Key**: Users bring their own API keys (OpenAI/Anthropic/Google)
@@ -41,12 +41,12 @@ docker compose down           # Stop all services
 ## Directory Structure
 
 ```
-tazuna/
+zloth/
 ├── apps/
 │   ├── api/                    # FastAPI backend
 │   │   ├── pyproject.toml
 │   │   ├── Dockerfile
-│   │   └── src/tazuna_api/
+│   │   └── src/zloth_api/
 │   │       ├── main.py         # FastAPI entrypoint
 │   │       ├── config.py       # Configuration (env vars)
 │   │       ├── dependencies.py # Dependency Injection
@@ -178,7 +178,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync --extra dev
 
 # Start dev server
-uv run python -m tazuna_api.main
+uv run python -m zloth_api.main
 
 # Test
 uv run pytest
@@ -219,15 +219,15 @@ docker compose down
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `TAZUNA_ENCRYPTION_KEY` | API key encryption key | Yes |
-| `TAZUNA_GITHUB_APP_ID` | GitHub App ID | Yes* |
-| `TAZUNA_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (base64) | Yes* |
-| `TAZUNA_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Yes* |
-| `TAZUNA_DEBUG` | Debug mode | No |
-| `TAZUNA_LOG_LEVEL` | Log level | No |
-| `TAZUNA_CLAUDE_CLI_PATH` | Path to Claude Code CLI | No (default: `claude`) |
-| `TAZUNA_CODEX_CLI_PATH` | Path to Codex CLI | No (default: `codex`) |
-| `TAZUNA_GEMINI_CLI_PATH` | Path to Gemini CLI | No (default: `gemini`) |
+| `ZLOTH_ENCRYPTION_KEY` | API key encryption key | Yes |
+| `ZLOTH_GITHUB_APP_ID` | GitHub App ID | Yes* |
+| `ZLOTH_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (base64) | Yes* |
+| `ZLOTH_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | Yes* |
+| `ZLOTH_DEBUG` | Debug mode | No |
+| `ZLOTH_LOG_LEVEL` | Log level | No |
+| `ZLOTH_CLAUDE_CLI_PATH` | Path to Claude Code CLI | No (default: `claude`) |
+| `ZLOTH_CODEX_CLI_PATH` | Path to Codex CLI | No (default: `codex`) |
+| `ZLOTH_GEMINI_CLI_PATH` | Path to Gemini CLI | No (default: `gemini`) |
 
 *GitHub App can be configured via environment variables or through the Settings UI.
 
@@ -348,7 +348,7 @@ if not run.model_id or not run.provider:
 A: Try `docker compose build --no-cache`
 
 **Q: API keys not saving**
-A: Check that `TAZUNA_ENCRYPTION_KEY` is set
+A: Check that `ZLOTH_ENCRYPTION_KEY` is set
 
 **Q: Cannot create PR**
 A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull requests` permissions.
@@ -362,7 +362,7 @@ A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull req
 - Frontend: `cd apps/web && npm run lint && npm run build`
 
 ### File Organization Rules
-- Python source code goes in `apps/api/src/tazuna_api/`
+- Python source code goes in `apps/api/src/zloth_api/`
 - TypeScript source code goes in `apps/web/src/`
 - New API routes should follow the existing pattern in `routes/`
 - New services should follow the existing pattern in `services/`
