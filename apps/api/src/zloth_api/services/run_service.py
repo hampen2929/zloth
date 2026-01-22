@@ -378,8 +378,18 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         # workspace_info holds path and branch info, works for both modes
         workspace_info: WorktreeInfo | WorkspaceInfo | None = None
 
+        # Get auth_url early for workspace operations
+        auth_url_for_sync: str | None = None
+        if self.github_service and repo.repo_url:
+            try:
+                owner, repo_name = self._parse_github_url(repo.repo_url)
+                auth_url_for_sync = await self.github_service.get_auth_url(owner, repo_name)
+            except Exception as e:
+                logger.warning(f"Could not get auth_url for workspace sync: {e}")
+
         if existing_run and existing_run.worktree_path:
             workspace_path = Path(existing_run.worktree_path)
+            existing_branch = existing_run.working_branch or ""
 
             # Check validity based on isolation mode
             if self.use_clone_isolation:
@@ -388,40 +398,33 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 is_valid = await self.git_service.is_valid_worktree(workspace_path)
 
             if is_valid:
-                # If we're working from the repo's default branch, ensure the workspace
-                # still contains the latest origin/<default>. Otherwise, create fresh.
-                should_check_default = (base_ref == repo.default_branch) and bool(
-                    repo.default_branch
+                # Always reuse existing workspace to maintain branch consistency with PR.
+                # If we're behind remote (e.g., after GitHub's "Update branch"), sync instead
+                # of creating a new workspace to keep working on the same branch.
+                workspace_info = WorktreeInfo(
+                    path=workspace_path,
+                    branch_name=existing_branch,
+                    base_branch=existing_run.base_ref or base_ref,
+                    created_at=existing_run.created_at,
                 )
-                if should_check_default:
-                    default_ref = f"origin/{repo.default_branch}"
-                    up_to_date = await self.git_service.is_ancestor(
-                        repo_path=workspace_path,
-                        ancestor=default_ref,
-                        descendant="HEAD",
-                    )
-                    if not up_to_date:
-                        logger.info(
-                            "Existing workspace is behind latest default; creating new "
-                            f"(workspace={workspace_path}, default={default_ref})"
+                logger.info(f"Reusing existing workspace: {workspace_path}")
+
+                # Check if we need to sync with remote (workspace may be behind after
+                # GitHub's "Update branch" button or other remote changes)
+                if self.use_clone_isolation and existing_branch:
+                    try:
+                        is_behind = await self.workspace_service.is_behind_remote(
+                            workspace_path,
+                            existing_branch,
+                            auth_url=auth_url_for_sync,
                         )
-                    else:
-                        workspace_info = WorktreeInfo(
-                            path=workspace_path,
-                            branch_name=existing_run.working_branch or "",
-                            base_branch=existing_run.base_ref or base_ref,
-                            created_at=existing_run.created_at,
-                        )
-                        logger.info(f"Reusing existing workspace: {workspace_path}")
-                else:
-                    # Reuse existing workspace (no default-base freshness check)
-                    workspace_info = WorktreeInfo(
-                        path=workspace_path,
-                        branch_name=existing_run.working_branch or "",
-                        base_branch=existing_run.base_ref or base_ref,
-                        created_at=existing_run.created_at,
-                    )
-                    logger.info(f"Reusing existing workspace: {workspace_path}")
+                        if is_behind:
+                            logger.info(
+                                f"Workspace is behind remote, syncing branch {existing_branch}"
+                            )
+                            # Sync will happen in _execute_cli_run, just log here
+                    except Exception as sync_check_error:
+                        logger.warning(f"Could not check remote sync status: {sync_check_error}")
             else:
                 logger.warning(f"Workspace invalid or broken, will create new: {workspace_path}")
 
@@ -446,16 +449,8 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     else:
                         self.git_service.set_worktrees_dir(prefs.worktrees_dir)
 
-            # Get auth_url for private repos
-            auth_url: str | None = None
-            if self.github_service and repo.repo_url:
-                try:
-                    owner, repo_name = self._parse_github_url(repo.repo_url)
-                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
-                except Exception as e:
-                    logger.warning(f"Could not get auth_url for workspace creation: {e}")
-
             # Create workspace based on isolation mode
+            # Use auth_url_for_sync which was retrieved earlier
             if self.use_clone_isolation:
                 # Clone mode: use WorkspaceService
                 logger.info(f"Creating clone-based workspace for run {run.id[:8]}")
@@ -464,7 +459,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     base_branch=base_ref,
                     run_id=run.id,
                     branch_prefix=branch_prefix,
-                    auth_url=auth_url,
+                    auth_url=auth_url_for_sync,
                 )
             else:
                 # Worktree mode: use GitService
@@ -474,7 +469,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     base_branch=base_ref,
                     run_id=run.id,
                     branch_prefix=branch_prefix,
-                    auth_url=auth_url,
+                    auth_url=auth_url_for_sync,
                 )
 
         # Update run with workspace info
@@ -827,7 +822,24 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             # 3. Execute the CLI (file editing only)
             logger.info(f"[{run.id[:8]}] Executing CLI...")
             await self._log_output(run.id, f"Launching {executor_name} CLI...")
+
+            # Pre-validate session if we have one (for Claude Code only)
             attempt_session_id = resume_session_id
+            if attempt_session_id and executor_type == ExecutorType.CLAUDE_CODE:
+                # Check if session exists before attempting to resume
+                session_exists = await self.claude_executor.check_session_exists(
+                    attempt_session_id,
+                    worktree_path=worktree_info.path,
+                )
+                if not session_exists:
+                    logs.append(
+                        f"Session {attempt_session_id[:8]}... not found, starting new session"
+                    )
+                    logger.info(
+                        f"[{run.id[:8]}] Session {attempt_session_id} not found, will start fresh"
+                    )
+                    attempt_session_id = None
+
             result = await executor.execute(
                 worktree_path=worktree_info.path,
                 instruction=instruction_with_constraints,
@@ -931,6 +943,9 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             logs.append(f"Committed: {commit_sha[:8]}")
 
             # 8. Push (automatic)
+            push_success = False
+            push_error_msg: str | None = None
+
             if self.github_service and repo:
                 owner, repo_name = self._parse_github_url(repo.repo_url)
                 auth_url = await self.github_service.get_auth_url(owner, repo_name)
@@ -944,8 +959,11 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                             auth_url=auth_url,
                         )
                         logs.append(f"Pushed to branch: {worktree_info.branch_name}")
+                        push_success = True
                     except Exception as push_error:
-                        logs.append(f"Push failed (will retry on PR creation): {push_error}")
+                        push_error_msg = str(push_error)
+                        logs.append(f"Push failed: {push_error_msg}")
+                        logger.error(f"[{run.id[:8]}] Push failed: {push_error_msg}")
                 else:
                     # Worktree mode: push with retry (GitService)
                     push_result = await self.git_service.push_with_retry(
@@ -955,6 +973,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     )
 
                     if push_result.success:
+                        push_success = True
                         if push_result.required_pull:
                             logs.append(
                                 f"Pulled remote changes and pushed to branch: "
@@ -963,20 +982,41 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                         else:
                             logs.append(f"Pushed to branch: {worktree_info.branch_name}")
                     else:
-                        logs.append(f"Push failed (will retry on PR creation): {push_result.error}")
+                        push_error_msg = push_result.error
+                        logs.append(f"Push failed: {push_error_msg}")
+                        logger.error(f"[{run.id[:8]}] Push failed: {push_error_msg}")
+            else:
+                # No GitHub service configured - skip push but note it
+                logs.append("GitHub service not configured, skipping push")
+                push_success = True  # Not a failure if no GitHub configured
 
             # 9. Save results
-            await self.run_dao.update_status(
-                run.id,
-                RunStatus.SUCCEEDED,
-                summary=final_summary,
-                patch=patch,
-                files_changed=files_changed,
-                logs=logs + result.logs,
-                warnings=result.warnings,
-                session_id=result.session_id or resume_session_id,
-                commit_sha=commit_sha,
-            )
+            # If push failed, mark as failed with error but preserve commit info
+            if not push_success and push_error_msg:
+                await self.run_dao.update_status(
+                    run.id,
+                    RunStatus.FAILED,
+                    summary=final_summary,
+                    patch=patch,
+                    files_changed=files_changed,
+                    logs=logs + result.logs,
+                    warnings=result.warnings + [f"Push failed: {push_error_msg}"],
+                    session_id=result.session_id or resume_session_id,
+                    commit_sha=commit_sha,
+                    error=f"Push to remote failed: {push_error_msg}",
+                )
+            else:
+                await self.run_dao.update_status(
+                    run.id,
+                    RunStatus.SUCCEEDED,
+                    summary=final_summary,
+                    patch=patch,
+                    files_changed=files_changed,
+                    logs=logs + result.logs,
+                    warnings=result.warnings,
+                    session_id=result.session_id or resume_session_id,
+                    commit_sha=commit_sha,
+                )
 
         except asyncio.CancelledError:
             # Task was cancelled (e.g., due to timeout or user cancellation)
