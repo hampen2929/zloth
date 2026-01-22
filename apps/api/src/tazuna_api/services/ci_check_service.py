@@ -71,13 +71,9 @@ class CICheckService:
 
         # Clean up old entries (older than 5 minutes) to prevent memory growth
         cutoff = datetime.utcnow() - timedelta(minutes=5)
-        cls._last_check_times = {
-            k: v for k, v in cls._last_check_times.items() if v > cutoff
-        }
+        cls._last_check_times = {k: v for k, v in cls._last_check_times.items() if v > cutoff}
 
-    async def check_ci(
-        self, task_id: str, pr_id: str, force: bool = False
-    ) -> CICheckResponse:
+    async def check_ci(self, task_id: str, pr_id: str, force: bool = False) -> CICheckResponse:
         """Check CI status for a PR.
 
         Fetches current CI status from GitHub and creates/updates a CICheck record.

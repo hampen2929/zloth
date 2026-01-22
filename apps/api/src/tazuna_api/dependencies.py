@@ -19,6 +19,7 @@ from tazuna_api.services.pr_status_poller import PRStatusPoller
 from tazuna_api.services.repo_service import RepoService
 from tazuna_api.services.review_service import ReviewService
 from tazuna_api.services.run_service import RunService
+from tazuna_api.services.workspace_service import WorkspaceService
 from tazuna_api.storage.dao import (
     PRDAO,
     AgenticRunDAO,
@@ -47,6 +48,7 @@ _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
+_workspace_service: WorkspaceService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -114,6 +116,14 @@ def get_git_service() -> GitService:
     return _git_service
 
 
+def get_workspace_service() -> WorkspaceService:
+    """Get the workspace service singleton."""
+    global _workspace_service
+    if _workspace_service is None:
+        _workspace_service = WorkspaceService()
+    return _workspace_service
+
+
 def get_output_manager() -> OutputManager:
     """Get the output manager singleton."""
     global _output_manager
@@ -131,6 +141,7 @@ async def get_run_service() -> RunService:
         model_service = await get_model_service()
         repo_service = await get_repo_service()
         git_service = get_git_service()
+        workspace_service = get_workspace_service()
         user_preferences_dao = await get_user_preferences_dao()
         github_service = await get_github_service()
         output_manager = get_output_manager()
@@ -143,6 +154,7 @@ async def get_run_service() -> RunService:
             user_preferences_dao,
             github_service,
             output_manager,
+            workspace_service,
         )
     return _run_service
 
