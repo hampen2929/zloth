@@ -50,6 +50,9 @@ import type {
   FixInstructionResponse,
   CICheck,
   CICheckResponse,
+  Comparison,
+  ComparisonCreated,
+  ComparisonRequest,
   MetricsDetail,
   MetricsSummary,
   MetricsTrend,
@@ -694,6 +697,96 @@ export const reviewsApi = {
       onComplete: options.onComplete,
       onError: options.onError,
     });
+  },
+};
+
+// Compare
+export const compareApi = {
+  /**
+   * Create a new comparison for runs in a task.
+   */
+  create: (taskId: string, data: ComparisonRequest) =>
+    fetchApi<ComparisonCreated>(`/tasks/${taskId}/compare`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * List all comparisons for a task.
+   */
+  list: (taskId: string) => fetchApi<Comparison[]>(`/tasks/${taskId}/comparisons`),
+
+  /**
+   * Get comparison details by ID.
+   */
+  get: (comparisonId: string) => fetchApi<Comparison>(`/comparisons/${comparisonId}`),
+
+  /**
+   * Get logs for a comparison (REST endpoint for polling).
+   */
+  getLogs: (comparisonId: string, fromLine: number = 0) =>
+    fetchApi<{
+      logs: OutputLine[];
+      is_complete: boolean;
+      total_lines: number;
+      comparison_status: string;
+    }>(`/comparisons/${comparisonId}/logs?from_line=${fromLine}`),
+
+  /**
+   * Stream comparison logs by polling the logs endpoint.
+   *
+   * @param comparisonId - The comparison ID to stream logs for
+   * @param options - Streaming options
+   * @returns Cleanup function to stop polling
+   */
+  streamLogs: (
+    comparisonId: string,
+    options: {
+      fromLine?: number;
+      onLine: (line: OutputLine) => void;
+      onComplete: () => void;
+      onError: (error: Error) => void;
+    }
+  ): (() => void) => {
+    let cancelled = false;
+    let nextLine = options.fromLine ?? 0;
+    const pollInterval = 500;
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      try {
+        const result = await compareApi.getLogs(comparisonId, nextLine);
+
+        for (const log of result.logs) {
+          if (cancelled) break;
+          options.onLine(log);
+        }
+
+        if (result.logs.length > 0) {
+          nextLine = result.total_lines;
+        }
+
+        if (result.is_complete) {
+          options.onComplete();
+          return;
+        }
+
+        if (!cancelled) {
+          setTimeout(poll, pollInterval);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          options.onError(error instanceof Error ? error : new Error('Failed to fetch logs'));
+        }
+      }
+    };
+
+    poll();
+
+    return () => {
+      cancelled = true;
+    };
   },
 };
 

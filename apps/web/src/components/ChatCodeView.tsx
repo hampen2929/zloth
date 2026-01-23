@@ -24,6 +24,7 @@ import {
 import { ReviewButton } from './ReviewButton';
 import { ReviewResultCard } from './ReviewResultCard';
 import { CIResultCard } from './CIResultCard';
+import { CompareButton } from './CompareButton';
 
 interface ChatCodeViewProps {
   taskId: string;
@@ -649,7 +650,7 @@ export function ChatCodeView({
       {/* Executor Selector Cards - one per executor type */}
       {uniqueExecutorTypes.length > 0 && (
         <div className="px-4 py-3 border-b border-gray-800">
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {uniqueExecutorTypes.map((executorType) => {
               const stats = getExecutorStats(executorType);
               return (
@@ -662,6 +663,10 @@ export function ChatCodeView({
                 />
               );
             })}
+            {/* Compare Button - appears when 2+ runs have succeeded */}
+            <div className="ml-auto flex-shrink-0">
+              <CompareButton taskId={taskId} runs={runs} models={models} />
+            </div>
           </div>
         </div>
       )}

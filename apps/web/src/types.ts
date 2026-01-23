@@ -594,6 +594,53 @@ export interface CICheckResponse {
   is_complete: boolean;
 }
 
+// Comparison
+
+export type ComparisonStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+export interface RunComparisonMetrics {
+  run_id: string;
+  executor_type: ExecutorType;
+  model_name: string | null;
+  files_changed: number;
+  lines_added: number;
+  lines_removed: number;
+  execution_time_seconds: number | null;
+  status: RunStatus;
+}
+
+export interface ComparisonFileOverlap {
+  file_path: string;
+  appears_in_runs: string[];
+  appears_in_count: number;
+}
+
+export interface ComparisonRequest {
+  run_ids: string[];
+  model_id?: string;
+  executor_type?: ExecutorType;
+}
+
+export interface Comparison {
+  id: string;
+  task_id: string;
+  run_ids: string[];
+  model_id: string | null;
+  executor_type: ExecutorType | null;
+  status: ComparisonStatus;
+  analysis: string | null;
+  run_metrics: RunComparisonMetrics[];
+  file_overlaps: ComparisonFileOverlap[];
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ComparisonCreated {
+  comparison_id: string;
+}
+
 // Development Metrics
 
 export interface PRMetrics {

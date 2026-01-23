@@ -5,6 +5,7 @@ from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
 from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
 from zloth_api.services.ci_polling_service import CIPollingService
+from zloth_api.services.compare_service import CompareService
 from zloth_api.services.crypto_service import CryptoService
 from zloth_api.services.git_service import GitService
 from zloth_api.services.github_service import GitHubService
@@ -25,6 +26,7 @@ from zloth_api.storage.dao import (
     AgenticRunDAO,
     BacklogDAO,
     CICheckDAO,
+    ComparisonDAO,
     MessageDAO,
     MetricsDAO,
     ModelProfileDAO,
@@ -49,6 +51,7 @@ _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
+_compare_service: CompareService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -345,3 +348,30 @@ async def get_metrics_service() -> MetricsService:
     """Get the metrics service."""
     metrics_dao = await get_metrics_dao()
     return MetricsService(metrics_dao)
+
+
+async def get_comparison_dao() -> ComparisonDAO:
+    """Get Comparison DAO."""
+    db = await get_db()
+    return ComparisonDAO(db)
+
+
+async def get_compare_service() -> CompareService:
+    """Get the compare service singleton."""
+    global _compare_service
+    if _compare_service is None:
+        comparison_dao = await get_comparison_dao()
+        run_dao = await get_run_dao()
+        task_dao = await get_task_dao()
+        repo_service = await get_repo_service()
+        model_service = await get_model_service()
+        output_manager = get_output_manager()
+        _compare_service = CompareService(
+            comparison_dao,
+            run_dao,
+            task_dao,
+            repo_service,
+            model_service,
+            output_manager,
+        )
+    return _compare_service

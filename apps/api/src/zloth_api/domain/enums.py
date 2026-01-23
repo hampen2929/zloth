@@ -185,3 +185,12 @@ class NotificationType(str, Enum):
     COMPLETED = "completed"  # Task successfully completed
     FAILED = "failed"  # Task failed
     WARNING = "warning"  # Warning (high iteration count, etc.)
+
+
+class ComparisonStatus(str, Enum):
+    """Status for comparison execution."""
+
+    PENDING = "pending"  # Waiting to start
+    RUNNING = "running"  # Comparison in progress
+    SUCCEEDED = "succeeded"  # Comparison completed successfully
+    FAILED = "failed"  # Comparison failed

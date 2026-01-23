@@ -2,6 +2,7 @@
 
 from zloth_api.routes.backlog import router as backlog_router
 from zloth_api.routes.breakdown import router as breakdown_router
+from zloth_api.routes.compare import router as compare_router
 from zloth_api.routes.github import router as github_router
 from zloth_api.routes.kanban import router as kanban_router
 from zloth_api.routes.metrics import router as metrics_router
@@ -18,6 +19,7 @@ from zloth_api.routes.tasks import router as tasks_router
 __all__ = [
     "backlog_router",
     "breakdown_router",
+    "compare_router",
     "github_router",
     "kanban_router",
     "metrics_router",

@@ -10,6 +10,7 @@ from zloth_api.domain.enums import (
     BreakdownStatus,
     BrokenDownTaskType,
     CodingMode,
+    ComparisonStatus,
     EstimatedSize,
     ExecutorType,
     MessageRole,
@@ -1268,3 +1269,61 @@ class MetricsDetail(BaseModel):
     agentic_metrics: AgenticMetrics
     productivity_metrics: ProductivityMetrics
     realtime: RealtimeMetrics
+
+
+# ============================================================
+# Comparison
+# ============================================================
+
+
+class RunComparisonMetrics(BaseModel):
+    """Metrics for a single run in comparison."""
+
+    run_id: str
+    executor_type: ExecutorType
+    model_name: str | None = None
+    files_changed: int = 0
+    lines_added: int = 0
+    lines_removed: int = 0
+    execution_time_seconds: float | None = None
+    status: RunStatus
+
+
+class ComparisonFileOverlap(BaseModel):
+    """File overlap information across runs."""
+
+    file_path: str
+    appears_in_runs: list[str]  # Run IDs
+    appears_in_count: int
+
+
+class ComparisonRequest(BaseModel):
+    """Request to create a comparison."""
+
+    run_ids: list[str]
+    model_id: str | None = None  # LLM model ID for analysis
+    executor_type: ExecutorType | None = None  # CLI executor for analysis
+
+
+class Comparison(BaseModel):
+    """Comparison between multiple runs."""
+
+    id: str
+    task_id: str
+    run_ids: list[str]
+    model_id: str | None = None  # Model used for comparison analysis
+    executor_type: ExecutorType | None = None  # Executor used for comparison analysis
+    status: ComparisonStatus = ComparisonStatus.PENDING
+    analysis: str | None = None  # LLM-generated analysis
+    run_metrics: list[RunComparisonMetrics] = Field(default_factory=list)
+    file_overlaps: list[ComparisonFileOverlap] = Field(default_factory=list)
+    error: str | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class ComparisonCreated(BaseModel):
+    """Response after creating a comparison."""
+
+    comparison_id: str

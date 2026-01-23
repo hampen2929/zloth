@@ -254,3 +254,24 @@ CREATE TABLE IF NOT EXISTS ci_checks (
 
 CREATE INDEX IF NOT EXISTS idx_ci_checks_task_id ON ci_checks(task_id);
 CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
+
+-- Comparisons (comparison of multiple run outputs)
+CREATE TABLE IF NOT EXISTS comparisons (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    run_ids TEXT NOT NULL,             -- JSON array of run IDs
+    model_id TEXT,                      -- Model used for comparison analysis
+    executor_type TEXT,                 -- Executor used for comparison analysis
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending, running, succeeded, failed
+    analysis TEXT,                      -- LLM-generated analysis
+    run_metrics TEXT,                   -- JSON array of RunComparisonMetrics
+    file_overlaps TEXT,                 -- JSON array of ComparisonFileOverlap
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT,
+    completed_at TEXT,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_comparisons_task_id ON comparisons(task_id);
+CREATE INDEX IF NOT EXISTS idx_comparisons_status ON comparisons(status);

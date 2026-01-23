@@ -12,6 +12,7 @@ from zloth_api.domain.enums import (
     AgenticPhase,
     BrokenDownTaskType,
     CodingMode,
+    ComparisonStatus,
     EstimatedSize,
     ExecutorType,
     MessageRole,
@@ -29,6 +30,8 @@ from zloth_api.domain.models import (
     BacklogItem,
     CICheck,
     CIJobResult,
+    Comparison,
+    ComparisonFileOverlap,
     FileDiff,
     Message,
     ModelProfile,
@@ -37,6 +40,7 @@ from zloth_api.domain.models import (
     ReviewFeedbackItem,
     ReviewSummary,
     Run,
+    RunComparisonMetrics,
     SubTask,
     Task,
     UserPreferences,
@@ -2477,3 +2481,122 @@ class MetricsDAO:
         cursor = await self.db.connection.execute(query, params)
         rows = await cursor.fetchall()
         return [{"timestamp": row["period"], "value": row["value"] or 0.0} for row in rows]
+
+
+class ComparisonDAO:
+    """DAO for Comparison."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(self, comparison: Comparison) -> Comparison:
+        """Create a new comparison record."""
+        await self.db.connection.execute(
+            """
+            INSERT INTO comparisons (
+                id, task_id, run_ids, model_id, executor_type, status,
+                run_metrics, file_overlaps, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                comparison.id,
+                comparison.task_id,
+                json.dumps(comparison.run_ids),
+                comparison.model_id,
+                comparison.executor_type.value if comparison.executor_type else None,
+                comparison.status.value,
+                json.dumps([m.model_dump() for m in comparison.run_metrics]),
+                json.dumps([o.model_dump() for o in comparison.file_overlaps]),
+                comparison.created_at.isoformat(),
+            ),
+        )
+        await self.db.connection.commit()
+        return comparison
+
+    async def get(self, comparison_id: str) -> Comparison | None:
+        """Get a comparison by ID."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM comparisons WHERE id = ?", (comparison_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list_by_task(self, task_id: str) -> builtins.list[Comparison]:
+        """List all comparisons for a task."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM comparisons WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update_status(
+        self,
+        comparison_id: str,
+        status: ComparisonStatus,
+        analysis: str | None = None,
+        run_metrics: builtins.list[RunComparisonMetrics] | None = None,
+        file_overlaps: builtins.list[ComparisonFileOverlap] | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update comparison status and results."""
+        updates = ["status = ?"]
+        params: builtins.list[Any] = [status.value]
+
+        if status == ComparisonStatus.RUNNING:
+            updates.append("started_at = ?")
+            params.append(now_iso())
+        elif status in (ComparisonStatus.SUCCEEDED, ComparisonStatus.FAILED):
+            updates.append("completed_at = ?")
+            params.append(now_iso())
+
+        if analysis is not None:
+            updates.append("analysis = ?")
+            params.append(analysis)
+        if run_metrics is not None:
+            updates.append("run_metrics = ?")
+            params.append(json.dumps([m.model_dump() for m in run_metrics]))
+        if file_overlaps is not None:
+            updates.append("file_overlaps = ?")
+            params.append(json.dumps([o.model_dump() for o in file_overlaps]))
+        if error is not None:
+            updates.append("error = ?")
+            params.append(error)
+
+        params.append(comparison_id)
+
+        await self.db.connection.execute(
+            f"UPDATE comparisons SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.connection.commit()
+
+    def _row_to_model(self, row: Any) -> Comparison:
+        """Convert database row to Comparison model."""
+        run_ids = json.loads(row["run_ids"]) if row["run_ids"] else []
+        run_metrics_data = json.loads(row["run_metrics"]) if row["run_metrics"] else []
+        file_overlaps_data = json.loads(row["file_overlaps"]) if row["file_overlaps"] else []
+
+        run_metrics = [RunComparisonMetrics(**m) for m in run_metrics_data]
+        file_overlaps = [ComparisonFileOverlap(**o) for o in file_overlaps_data]
+
+        return Comparison(
+            id=row["id"],
+            task_id=row["task_id"],
+            run_ids=run_ids,
+            model_id=row["model_id"],
+            executor_type=ExecutorType(row["executor_type"]) if row["executor_type"] else None,
+            status=ComparisonStatus(row["status"]),
+            analysis=row["analysis"],
+            run_metrics=run_metrics,
+            file_overlaps=file_overlaps,
+            error=row["error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            ),
+        )

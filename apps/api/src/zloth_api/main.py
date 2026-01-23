@@ -11,6 +11,7 @@ from zloth_api.dependencies import get_pr_status_poller
 from zloth_api.routes import (
     backlog_router,
     breakdown_router,
+    compare_router,
     github_router,
     kanban_router,
     metrics_router,
@@ -75,6 +76,7 @@ app.include_router(reviews_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")
 app.include_router(prs_router, prefix="/v1")
+app.include_router(compare_router, prefix="/v1")
 # Note: webhooks_router removed - using CI polling instead (see ci_polling_service.py)
 
 
