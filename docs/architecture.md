@@ -480,9 +480,9 @@ flowchart LR
     end
 
     subgraph Workspaces["workspaces/"]
-        W1[run_{run_id_1}/<br/>Shallow Clone]
-        W2[run_{run_id_2}/<br/>Shallow Clone]
-        W3[run_{run_id_3}/<br/>Shallow Clone]
+        W1["run_xxx/<br/>Shallow Clone"]
+        W2["run_yyy/<br/>Shallow Clone"]
+        W3["run_zzz/<br/>Shallow Clone"]
     end
 
     OR -->|git clone --depth=1| W1
@@ -501,16 +501,16 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph Parent["Parent Repository"]
-        PR[repos/{repo_id}/]
+        REPO["repos/repo_id/"]
     end
 
     subgraph Worktrees["worktrees/"]
-        WT1[run_{run_id_1}/]
-        WT2[run_{run_id_2}/]
+        WT1["run_xxx/"]
+        WT2["run_yyy/"]
     end
 
-    PR -->|git worktree add| WT1
-    PR -->|git worktree add| WT2
+    REPO -->|git worktree add| WT1
+    REPO -->|git worktree add| WT2
 ```
 
 **Configuration**:
