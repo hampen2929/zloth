@@ -12,6 +12,7 @@ from zloth_api.routes.repos import router as repos_router
 from zloth_api.routes.reviews import router as reviews_router
 from zloth_api.routes.runs import router as runs_router
 from zloth_api.routes.tasks import router as tasks_router
+from zloth_api.routes.comparisons import router as comparisons_router
 
 # Note: webhooks router removed - using CI polling instead (see ci_polling_service.py)
 
@@ -28,4 +29,5 @@ __all__ = [
     "tasks_router",
     "runs_router",
     "prs_router",
+    "comparisons_router",
 ]

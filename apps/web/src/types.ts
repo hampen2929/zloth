@@ -167,6 +167,45 @@ export interface RunsCreated {
   run_ids: string[];
 }
 
+// Comparison (Judge)
+export interface ComparisonCreate {
+  target_run_ids: string[];
+  judge_model_id?: string;
+  message_id?: string;
+  criteria?: string[];
+}
+
+export interface ComparisonScore {
+  run_id: string;
+  executor_type: ExecutorType;
+  score: number;
+  pros: string[];
+  cons: string[];
+  rationale?: string | null;
+}
+
+export interface Comparison {
+  id: string;
+  task_id: string;
+  message_id: string | null;
+  target_run_ids: string[];
+  judge_model_id: string | null;
+  judge_model_name: string | null;
+  status: RunStatus;
+  overall_winner_run_id: string | null;
+  overall_summary: string | null;
+  scores: ComparisonScore[];
+  logs: string[];
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ComparisonCreated {
+  comparison_id: string;
+}
+
 // Streaming Output
 export interface OutputLine {
   line_number: number;

@@ -189,6 +189,30 @@ CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_review ON review_feedbacks(review_id);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_severity ON review_feedbacks(severity);
 
+-- Comparisons (judge multiple executor outputs)
+CREATE TABLE IF NOT EXISTS comparisons (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    message_id TEXT,                    -- message that triggered the compared runs
+    target_run_ids TEXT NOT NULL,       -- JSON array
+    judge_model_id TEXT,                -- ModelProfile id for judge (optional)
+    judge_model_name TEXT,              -- denormalized for display
+    status TEXT NOT NULL DEFAULT 'queued', -- queued, running, succeeded, failed
+    overall_winner_run_id TEXT,
+    overall_summary TEXT,
+    scores TEXT,                        -- JSON array of ComparisonScore
+    logs TEXT,                          -- JSON array
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT,
+    completed_at TEXT,
+
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_comparisons_task ON comparisons(task_id);
+CREATE INDEX IF NOT EXISTS idx_comparisons_status ON comparisons(status);
+
 -- Agentic execution runs
 CREATE TABLE IF NOT EXISTS agentic_runs (
     id TEXT PRIMARY KEY,

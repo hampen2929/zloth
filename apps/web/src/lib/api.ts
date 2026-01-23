@@ -54,6 +54,9 @@ import type {
   MetricsSummary,
   MetricsTrend,
   RealtimeMetrics,
+  Comparison,
+  ComparisonCreate,
+  ComparisonCreated,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -260,6 +263,19 @@ export const runsApi = {
       cancelled = true;
     };
   },
+};
+
+// Comparisons
+export const comparisonsApi = {
+  create: (taskId: string, data: ComparisonCreate) =>
+    fetchApi<ComparisonCreated>(`/tasks/${taskId}/comparisons`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  list: (taskId: string) => fetchApi<Comparison[]>(`/tasks/${taskId}/comparisons`),
+
+  get: (comparisonId: string) => fetchApi<Comparison>(`/comparisons/${comparisonId}`),
 };
 
 // PRs

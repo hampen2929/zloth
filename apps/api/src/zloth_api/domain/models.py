@@ -532,6 +532,70 @@ class RunsCreated(BaseModel):
     run_ids: list[str]
 
 
+# ============================================================
+# Comparison (Judge Outputs Across Runs)
+# ============================================================
+
+
+class ComparisonCreate(BaseModel):
+    """Request to create a comparison job."""
+
+    target_run_ids: list[str] = Field(..., description="Run IDs to compare")
+    judge_model_id: str | None = Field(
+        None, description="Optional ModelProfile ID to use as judge"
+    )
+    message_id: str | None = Field(None, description="Source message id for context")
+    criteria: list[str] | None = Field(
+        default_factory=lambda: [
+            "correctness",
+            "completeness",
+            "diff_quality",
+            "clarity",
+        ],
+        description="Evaluation criteria",
+    )
+
+
+class ComparisonScore(BaseModel):
+    """Score for a single run in a comparison."""
+
+    run_id: str
+    executor_type: ExecutorType
+    score: float = Field(ge=0.0, le=1.0)
+    pros: list[str] = []
+    cons: list[str] = []
+    rationale: str | None = None
+
+
+class Comparison(BaseModel):
+    """Comparison result record."""
+
+    id: str
+    task_id: str
+    message_id: str | None = None
+    target_run_ids: list[str]
+    judge_model_id: str | None = None
+    judge_model_name: str | None = None
+    status: RunStatus
+    overall_winner_run_id: str | None = None
+    overall_summary: str | None = None
+    scores: list[ComparisonScore] = []
+    logs: list[str] = []
+    error: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ComparisonCreated(BaseModel):
+    """Response for comparison creation."""
+
+    comparison_id: str
+
+
 class PRCreated(BaseModel):
     """Response for PR creation."""
 

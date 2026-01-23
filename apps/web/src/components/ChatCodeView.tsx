@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
-import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi, ciChecksApi } from '@/lib/api';
+import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi, ciChecksApi, comparisonsApi } from '@/lib/api';
 import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
@@ -63,11 +63,13 @@ export function ChatCodeView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
+  
 
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: prs } = useSWR(`prs-${taskId}`, () => prsApi.list(taskId), {
     refreshInterval: prLinkResult ? 2000 : 0,
   });
+  const { data: comparisons } = useSWR(`comparisons-${taskId}`, () => comparisonsApi.list(taskId));
 
   // Fetch reviews for the task
   const { data: reviewSummaries, mutate: mutateReviews } = useSWR(
@@ -649,7 +651,7 @@ export function ChatCodeView({
       {/* Executor Selector Cards - one per executor type */}
       {uniqueExecutorTypes.length > 0 && (
         <div className="px-4 py-3 border-b border-gray-800">
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-2 overflow-x-auto pb-1 items-center">
             {uniqueExecutorTypes.map((executorType) => {
               const stats = getExecutorStats(executorType);
               return (
@@ -662,6 +664,15 @@ export function ChatCodeView({
                 />
               );
             })}
+            {/* Compare button */}
+            {sortedRuns.length > 1 && (
+              <CompareButton
+                runs={sortedRuns}
+                models={models}
+                taskId={taskId}
+                onCreated={() => {}}
+              />
+            )}
           </div>
         </div>
       )}
@@ -923,6 +934,80 @@ function SessionHeader({
           {creatingPR ? 'Creating PR...' : 'Create PR'}
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+// Compare Button component
+interface CompareButtonProps {
+  runs: Run[];
+  models: ModelProfile[];
+  taskId: string;
+  onCreated: () => void;
+}
+
+function CompareButton({ runs, models, taskId, onCreated }: CompareButtonProps) {
+  const [open, setOpen] = useState(false);
+  const [judgeId, setJudgeId] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+
+  const lastUserMessageId = runs.map((r) => r.message_id).find(Boolean) as string | undefined;
+  const candidateRuns = runs.filter(
+    (r) => r.status === 'succeeded' && (!lastUserMessageId || r.message_id === lastUserMessageId)
+  );
+  const disabled = candidateRuns.length < 2;
+
+  const handleCreate = async () => {
+    if (disabled) return;
+    setLoading(true);
+    try {
+      const res = await comparisonsApi.create(taskId, {
+        target_run_ids: candidateRuns.map((r) => r.id),
+        judge_model_id: judgeId,
+        message_id: lastUserMessageId,
+      });
+      onCreated();
+      window.location.href = `/tasks/${taskId}/compare/${res.comparison_id}`;
+    } finally {
+      setLoading(false);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="ml-auto relative">
+      <Button variant="secondary" size="sm" onClick={() => setOpen(!open)} disabled={disabled}>
+        Compare
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-2">
+          <div className="px-3 py-2 border-b border-gray-700">
+            <p className="text-xs text-gray-400 font-medium">Judge Model</p>
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            <button
+              className={`w-full text-left px-3 py-2 text-sm ${!judgeId ? 'text-blue-400' : 'text-gray-300 hover:bg-gray-700'}`}
+              onClick={() => setJudgeId(undefined)}
+            >
+              Auto (first configured)
+            </button>
+            {models.map((m) => (
+              <button
+                key={m.id}
+                className={`w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 ${judgeId === m.id ? 'bg-gray-700' : ''}`}
+                onClick={() => setJudgeId(m.id)}
+              >
+                {m.display_name || `${m.provider}/${m.model_name}`}
+              </button>
+            ))}
+          </div>
+          <div className="px-3 pt-2">
+            <Button variant="primary" size="sm" onClick={handleCreate} isLoading={loading} disabled={disabled}>
+              Start Compare
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,8 @@ from zloth_api.domain.enums import (
 )
 from zloth_api.domain.models import (
     PR,
+    Comparison,
+    ComparisonScore,
     AgenticState,
     BacklogItem,
     CICheck,
@@ -1438,6 +1440,144 @@ class ReviewDAO:
         )
         rows = await cursor.fetchall()
         return [self._row_to_summary(row) for row in rows]
+
+
+class ComparisonDAO:
+    """DAO for Comparison records."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    async def create(
+        self,
+        *,
+        task_id: str,
+        message_id: str | None,
+        target_run_ids: list[str],
+        judge_model_id: str | None,
+        judge_model_name: str | None,
+    ) -> Comparison:
+        id = generate_id()
+        now = now_iso()
+        await self.db.connection.execute(
+            """
+            INSERT INTO comparisons (
+                id, task_id, message_id, target_run_ids, judge_model_id,
+                judge_model_name, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)
+            """,
+            (
+                id,
+                task_id,
+                message_id,
+                json.dumps(target_run_ids),
+                judge_model_id,
+                judge_model_name,
+                now,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return Comparison(
+            id=id,
+            task_id=task_id,
+            message_id=message_id,
+            target_run_ids=target_run_ids,
+            judge_model_id=judge_model_id,
+            judge_model_name=judge_model_name,
+            status=RunStatus.QUEUED,
+            overall_winner_run_id=None,
+            overall_summary=None,
+            scores=[],
+            logs=[],
+            error=None,
+            created_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, id: str) -> Comparison | None:
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM comparisons WHERE id = ?",
+            (id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list_by_task(self, task_id: str) -> list[Comparison]:
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM comparisons WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(r) for r in rows]
+
+    async def update_status(
+        self,
+        id: str,
+        status: RunStatus,
+        *,
+        overall_winner_run_id: str | None = None,
+        overall_summary: str | None = None,
+        scores: list[ComparisonScore] | None = None,
+        logs: list[str] | None = None,
+        error: str | None = None,
+        started_at: str | None = None,
+        completed_at: str | None = None,
+    ) -> None:
+        updates = ["status = ?"]
+        params: list[Any] = [status.value]
+
+        if overall_winner_run_id is not None:
+            updates.append("overall_winner_run_id = ?")
+            params.append(overall_winner_run_id)
+        if overall_summary is not None:
+            updates.append("overall_summary = ?")
+            params.append(overall_summary)
+        if scores is not None:
+            updates.append("scores = ?")
+            params.append(json.dumps([s.model_dump() for s in scores]))
+        if logs is not None:
+            updates.append("logs = ?")
+            params.append(json.dumps(logs))
+        if error is not None:
+            updates.append("error = ?")
+            params.append(error)
+        if started_at is not None:
+            updates.append("started_at = ?")
+            params.append(started_at)
+        if completed_at is not None:
+            updates.append("completed_at = ?")
+            params.append(completed_at)
+
+        params.append(id)
+        await self.db.connection.execute(
+            f"UPDATE comparisons SET {', '.join(updates)} WHERE id = ?",
+            tuple(params),
+        )
+        await self.db.connection.commit()
+
+    def _row_to_model(self, row: Any) -> Comparison:
+        scores_json = json.loads(row["scores"]) if row["scores"] else []
+        scores = [ComparisonScore(**s) for s in scores_json]
+        logs = json.loads(row["logs"]) if row["logs"] else []
+        return Comparison(
+            id=row["id"],
+            task_id=row["task_id"],
+            message_id=row["message_id"],
+            target_run_ids=json.loads(row["target_run_ids"]) if row["target_run_ids"] else [],
+            judge_model_id=row["judge_model_id"],
+            judge_model_name=row["judge_model_name"],
+            status=RunStatus(row["status"]),
+            overall_winner_run_id=row["overall_winner_run_id"],
+            overall_summary=row["overall_summary"],
+            scores=scores,
+            logs=logs,
+            error=row["error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
+            completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
+        )
 
     async def update_status(
         self,
