@@ -1,33 +1,33 @@
-# Architecture Design
+# アーキテクチャ設計
 
-## System Overview
+## システム概要
 
 ```mermaid
 flowchart TB
     subgraph UI["Web UI (Next.js)"]
-        Home[Home Page]
-        Settings[Settings]
-        TaskPage[Task Page]
-        Kanban[Kanban Board]
-        Backlog[Backlog]
-        Metrics[Metrics]
+        Home[ホームページ]
+        Settings[設定]
+        TaskPage[タスクページ]
+        Kanban[カンバンボード]
+        Backlog[バックログ]
+        Metrics[メトリクス]
     end
 
-    subgraph API["API Server (FastAPI)"]
-        Routes[Routes]
-        Services[Services]
-        Roles[Role Services]
-        Executors[Executors]
-        Agents[Agents]
-        Storage[Storage]
-        Queue[Queue]
+    subgraph API["APIサーバー (FastAPI)"]
+        Routes[ルート]
+        Services[サービス]
+        Roles[ロールサービス]
+        Executors[エグゼキューター]
+        Agents[エージェント]
+        Storage[ストレージ]
+        Queue[キュー]
     end
 
-    subgraph External["External Services"]
+    subgraph External["外部サービス"]
         SQLite[(SQLite DB)]
-        Workspace[Workspace<br/>Clone/Worktree]
+        Workspace[ワークスペース<br/>Clone/Worktree]
         LLM[LLM APIs<br/>OpenAI/Anthropic/Google]
-        CLI[CLI Tools<br/>Claude/Codex/Gemini]
+        CLI[CLIツール<br/>Claude/Codex/Gemini]
         GitHub[GitHub API]
     end
 
@@ -46,14 +46,14 @@ flowchart TB
     Services --> GitHub
 ```
 
-## Layer Architecture
+## レイヤーアーキテクチャ
 
-### 1. Routes Layer (`routes/`)
+### 1. ルートレイヤー (`routes/`)
 
-Receives HTTP requests and delegates to appropriate services.
+HTTPリクエストを受信し、適切なサービスに委譲します。
 
 ```python
-# Example: routes/runs.py
+# 例: routes/runs.py
 @router.post("/tasks/{task_id}/runs")
 async def create_runs(
     task_id: str,
@@ -64,55 +64,55 @@ async def create_runs(
     return RunsCreated(run_ids=[r.id for r in runs])
 ```
 
-**Responsibilities**:
-- Request validation (Pydantic)
-- Authentication/Authorization (planned for v0.2)
-- Response formatting
+**責務**:
+- リクエストバリデーション (Pydantic)
+- 認証/認可 (v0.2で予定)
+- レスポンスフォーマット
 
-**Available Endpoints**:
-| Category | Endpoints |
+**利用可能なエンドポイント**:
+| カテゴリ | エンドポイント |
 |----------|-----------|
-| Models | GET/POST/DELETE `/v1/models` |
-| Repos | POST `/v1/repos/clone` |
-| Tasks | GET/POST `/v1/tasks`, `/v1/tasks/{id}/messages` |
-| Runs | POST `/v1/tasks/{id}/runs`, GET `/v1/runs/{id}` |
-| PRs | POST `/v1/tasks/{id}/prs`, PUT `/v1/prs/{id}` |
-| Reviews | POST `/v1/tasks/{id}/reviews`, GET `/v1/reviews/{id}` |
-| Breakdown | POST `/v1/breakdown` |
-| Kanban | GET `/v1/kanban` |
-| Backlog | GET/POST/PUT/DELETE `/v1/backlog` |
+| モデル | GET/POST/DELETE `/v1/models` |
+| リポジトリ | POST `/v1/repos/clone` |
+| タスク | GET/POST `/v1/tasks`, `/v1/tasks/{id}/messages` |
+| 実行 | POST `/v1/tasks/{id}/runs`, GET `/v1/runs/{id}` |
+| PR | POST `/v1/tasks/{id}/prs`, PUT `/v1/prs/{id}` |
+| レビュー | POST `/v1/tasks/{id}/reviews`, GET `/v1/reviews/{id}` |
+| 分解 | POST `/v1/breakdown` |
+| カンバン | GET `/v1/kanban` |
+| バックログ | GET/POST/PUT/DELETE `/v1/backlog` |
 
-### 2. Services Layer (`services/`)
+### 2. サービスレイヤー (`services/`)
 
-Implements business logic.
+ビジネスロジックを実装します。
 
 ```python
-# Example: services/run_service.py
+# 例: services/run_service.py
 class RunService(BaseRoleService[Run, RunCreate, RunResult]):
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
-        # 1. Verify task exists
-        # 2. Create Run records for each model
-        # 3. Enqueue for execution
-        # 4. Return run list
+        # 1. タスクの存在確認
+        # 2. 各モデルのRunレコード作成
+        # 3. 実行キューに追加
+        # 4. 実行リストを返却
 ```
 
-**Core Services**:
-| Service | Description |
+**主要サービス**:
+| サービス | 説明 |
 |---------|-------------|
-| `RunService` | Implementation role - code generation |
-| `ReviewService` | Review role - code review execution |
-| `BreakdownService` | Breakdown role - task decomposition |
-| `PRService` | Pull request creation/management |
-| `WorkspaceService` | Clone-based workspace isolation |
-| `GitService` | Centralized git operations |
-| `AgenticOrchestrator` | Autonomous development cycle |
-| `CIPollingService` | CI status polling |
-| `GithubService` | GitHub API integration |
-| `CryptoService` | API key encryption |
+| `RunService` | 実装ロール - コード生成 |
+| `ReviewService` | レビューロール - コードレビュー実行 |
+| `BreakdownService` | 分解ロール - タスク分解 |
+| `PRService` | プルリクエスト作成/管理 |
+| `WorkspaceService` | クローンベースのワークスペース分離 |
+| `GitService` | 一元化されたgit操作 |
+| `AgenticOrchestrator` | 自律的開発サイクル |
+| `CIPollingService` | CIステータスポーリング |
+| `GithubService` | GitHub API連携 |
+| `CryptoService` | APIキー暗号化 |
 
-### 3. Role Services (`roles/`)
+### 3. ロールサービス (`roles/`)
 
-All AI roles inherit from `BaseRoleService` for consistent execution patterns.
+すべてのAIロールは`BaseRoleService`を継承し、一貫した実行パターンを持ちます。
 
 ```mermaid
 classDiagram
@@ -153,7 +153,7 @@ classDiagram
     BaseRoleService <|-- BreakdownService
 ```
 
-**Role Registry**:
+**ロールレジストリ**:
 ```python
 # roles/registry.py
 RoleRegistry.register("implementation", RunService)
@@ -161,9 +161,9 @@ RoleRegistry.register("review", ReviewService)
 RoleRegistry.register("breakdown", BreakdownService)
 ```
 
-### 4. Executors Layer (`executors/`)
+### 4. エグゼキューターレイヤー (`executors/`)
 
-CLI tool integration for code generation.
+コード生成のためのCLIツール連携。
 
 ```mermaid
 classDiagram
@@ -208,17 +208,17 @@ classDiagram
     BaseExecutor --> ExecutorResult
 ```
 
-**Executor Types**:
-| Type | Tool | Use Case |
+**エグゼキュータータイプ**:
+| タイプ | ツール | 用途 |
 |------|------|----------|
-| `PATCH_AGENT` | LLM API | Direct API-based patch generation |
-| `CLAUDE_CODE` | Claude Code CLI | Session-persistent code generation |
-| `CODEX_CLI` | Codex CLI | Review-focused operations |
-| `GEMINI_CLI` | Gemini CLI | Multi-modal code generation |
+| `PATCH_AGENT` | LLM API | APIベースの直接パッチ生成 |
+| `CLAUDE_CODE` | Claude Code CLI | セッション永続化対応のコード生成 |
+| `CODEX_CLI` | Codex CLI | レビュー特化の操作 |
+| `GEMINI_CLI` | Gemini CLI | マルチモーダルコード生成 |
 
-### 5. Agents Layer (`agents/`)
+### 5. エージェントレイヤー (`agents/`)
 
-LLM interaction and patch generation via direct API calls.
+直接API呼び出しによるLLM連携とパッチ生成。
 
 ```mermaid
 classDiagram
@@ -255,38 +255,38 @@ classDiagram
     LLMRouter --> LLMClient
 ```
 
-**Agent Interface**:
+**エージェントインターフェース**:
 ```python
 @dataclass
 class AgentRequest:
-    workspace_path: str      # Working directory
-    base_ref: str           # Base branch/commit
-    instruction: str        # Natural language instruction
-    context: dict | None    # Additional context
-    constraints: AgentConstraints  # Constraints (forbidden paths, etc.)
+    workspace_path: str      # 作業ディレクトリ
+    base_ref: str           # ベースブランチ/コミット
+    instruction: str        # 自然言語での指示
+    context: dict | None    # 追加コンテキスト
+    constraints: AgentConstraints  # 制約（禁止パス等）
 
 @dataclass
 class AgentResult:
-    summary: str            # Human-readable summary
+    summary: str            # 人間が読める要約
     patch: str              # Unified diff
-    files_changed: list     # List of changed files
-    logs: list[str]         # Operation logs
-    warnings: list[str]     # Warnings
+    files_changed: list     # 変更ファイルリスト
+    logs: list[str]         # 操作ログ
+    warnings: list[str]     # 警告
 
 @dataclass
 class AgentConstraints:
     max_files_changed: int | None
-    forbidden_paths: list[str]      # .git, .env, *.key, etc.
-    forbidden_commands: list[str]   # git commit, push, etc.
-    allowed_git_commands: list[str] # git status, diff, log, etc.
+    forbidden_paths: list[str]      # .git, .env, *.key など
+    forbidden_commands: list[str]   # git commit, push など
+    allowed_git_commands: list[str] # git status, diff, log など
 
     def to_prompt(self) -> str:
-        """Inject constraints into agent prompt"""
+        """制約をエージェントプロンプトに注入"""
 ```
 
-### 6. Storage Layer (`storage/`)
+### 6. ストレージレイヤー (`storage/`)
 
-Data persistence with SQLite.
+SQLiteによるデータ永続化。
 
 ```mermaid
 classDiagram
@@ -362,44 +362,44 @@ classDiagram
     Database <-- AgenticRunDAO
 ```
 
-## Data Flow
+## データフロー
 
-### 1. Run Creation to Completion
+### 1. Run作成から完了まで
 
 ```mermaid
 sequenceDiagram
-    participant U as User
+    participant U as ユーザー
     participant A as API
     participant RS as RunService
     participant Q as RoleQueueAdapter
     participant EX as Executor
-    participant CLI as CLI Tool
+    participant CLI as CLIツール
 
     U->>A: POST /tasks/{id}/runs
     A->>RS: create_runs()
-    RS->>RS: Create Run records (QUEUED)
+    RS->>RS: Runレコード作成 (QUEUED)
     RS->>Q: enqueue_execution(run_id)
-    RS-->>A: return run_ids
+    RS-->>A: run_ids返却
     A-->>U: 201 Created
 
     Q->>RS: _execute_run()
-    RS->>RS: Update status (RUNNING)
-    RS->>RS: Create workspace (clone)
+    RS->>RS: ステータス更新 (RUNNING)
+    RS->>RS: ワークスペース作成 (clone)
     RS->>EX: execute(workspace, instruction)
-    EX->>CLI: Run CLI tool
-    CLI-->>EX: output stream
-    EX->>EX: Parse diff
+    EX->>CLI: CLIツール実行
+    CLI-->>EX: 出力ストリーム
+    EX->>EX: diff解析
     EX-->>RS: ExecutorResult
     RS->>RS: Git commit & push branch
-    RS->>RS: Update status (SUCCEEDED)
-    RS->>RS: Cleanup workspace
+    RS->>RS: ステータス更新 (SUCCEEDED)
+    RS->>RS: ワークスペース削除
 ```
 
-### 2. Review Flow
+### 2. レビューフロー
 
 ```mermaid
 sequenceDiagram
-    participant U as User
+    participant U as ユーザー
     participant A as API
     participant RVS as ReviewService
     participant EX as CodexExecutor
@@ -407,76 +407,76 @@ sequenceDiagram
 
     U->>A: POST /tasks/{id}/reviews
     A->>RVS: create_review()
-    RVS->>RVS: Create Review record (QUEUED)
-    RVS->>RVS: Get target run diffs
+    RVS->>RVS: Reviewレコード作成 (QUEUED)
+    RVS->>RVS: 対象Runのdiff取得
     RVS->>EX: execute(workspace, review_instruction)
-    EX->>CLI: Run Codex review
-    CLI-->>EX: Review output (JSON)
+    EX->>CLI: Codexレビュー実行
+    CLI-->>EX: レビュー出力 (JSON)
     EX-->>RVS: ExecutorResult
-    RVS->>RVS: Parse review feedbacks
-    RVS->>RVS: Save ReviewFeedbackItems
-    RVS->>RVS: Update status (SUCCEEDED)
+    RVS->>RVS: レビューフィードバック解析
+    RVS->>RVS: ReviewFeedbackItems保存
+    RVS->>RVS: ステータス更新 (SUCCEEDED)
     RVS-->>A: ReviewResult
-    A-->>U: Review with feedbacks
+    A-->>U: フィードバック付きレビュー
 ```
 
-### 3. PR Creation Flow
+### 3. PR作成フロー
 
 ```mermaid
 sequenceDiagram
-    participant U as User
+    participant U as ユーザー
     participant A as API
     participant PS as PRService
     participant GH as GitHub API
 
     U->>A: POST /tasks/{id}/prs
     A->>PS: create()
-    PS->>PS: Get Run with pre-pushed branch
-    PS->>PS: Generate PR title/description (LLM)
-    PS->>GH: Create PR via API
-    GH-->>PS: PR number, URL
-    PS->>PS: Save PR record
+    PS->>PS: プッシュ済みブランチのRun取得
+    PS->>PS: PRタイトル/説明生成 (LLM)
+    PS->>GH: API経由でPR作成
+    GH-->>PS: PR番号, URL
+    PS->>PS: PRレコード保存
     PS-->>A: PRCreated
     A-->>U: 201 Created
 ```
 
-### 4. Agentic Execution Flow
+### 4. Agentic実行フロー
 
 ```mermaid
 stateDiagram-v2
     [*] --> CODING
-    CODING --> WAITING_CI: Run completed
-    WAITING_CI --> REVIEWING: CI passed
-    WAITING_CI --> FIXING_CI: CI failed
-    FIXING_CI --> WAITING_CI: Fix run completed
-    REVIEWING --> MERGE_CHECK: Review approved
-    REVIEWING --> FIXING_REVIEW: Review rejected
-    FIXING_REVIEW --> REVIEWING: Fix run completed
-    MERGE_CHECK --> MERGING: All checks pass
-    MERGE_CHECK --> AWAITING_HUMAN: Needs approval (SEMI_AUTO)
-    AWAITING_HUMAN --> MERGING: Human approved
-    MERGING --> COMPLETED: Merge success
-    MERGING --> FAILED: Merge failed
-    CODING --> FAILED: Error
-    FIXING_CI --> FAILED: Max iterations
-    FIXING_REVIEW --> FAILED: Max iterations
+    CODING --> WAITING_CI: Run完了
+    WAITING_CI --> REVIEWING: CI成功
+    WAITING_CI --> FIXING_CI: CI失敗
+    FIXING_CI --> WAITING_CI: 修正Run完了
+    REVIEWING --> MERGE_CHECK: レビュー承認
+    REVIEWING --> FIXING_REVIEW: レビュー却下
+    FIXING_REVIEW --> REVIEWING: 修正Run完了
+    MERGE_CHECK --> MERGING: 全チェック通過
+    MERGE_CHECK --> AWAITING_HUMAN: 承認待ち (SEMI_AUTO)
+    AWAITING_HUMAN --> MERGING: 人間が承認
+    MERGING --> COMPLETED: マージ成功
+    MERGING --> FAILED: マージ失敗
+    CODING --> FAILED: エラー
+    FIXING_CI --> FAILED: 最大反復回数
+    FIXING_REVIEW --> FAILED: 最大反復回数
 ```
 
-**Coding Modes**:
-| Mode | Description |
+**コーディングモード**:
+| モード | 説明 |
 |------|-------------|
-| `INTERACTIVE` | User controls each step |
-| `SEMI_AUTO` | Auto-fix CI/review, human approval for merge |
-| `FULL_AUTO` | Fully autonomous from coding to merge |
+| `INTERACTIVE` | ユーザーが各ステップを制御 |
+| `SEMI_AUTO` | CI/レビュー自動修正、マージは人間承認 |
+| `FULL_AUTO` | コーディングからマージまで完全自律 |
 
-## Workspace Isolation
+## ワークスペース分離
 
-### Clone-Based Workspaces (Default)
+### クローンベースワークスペース (デフォルト)
 
 ```mermaid
 flowchart LR
-    subgraph Original["Original Repository"]
-        OR[Remote Origin]
+    subgraph Original["元リポジトリ"]
+        OR[リモートオリジン]
     end
 
     subgraph Workspaces["workspaces/"]
@@ -490,17 +490,17 @@ flowchart LR
     OR -->|git clone --depth=1| W3
 ```
 
-**Benefits**:
-- Independent from parent repository state
-- Better support for remote sync
-- No worktree lock issues
-- Shallow clone (depth=1) for efficiency
+**メリット**:
+- 親リポジトリの状態から独立
+- リモート同期のサポートが良好
+- worktreeロック問題なし
+- Shallow clone (depth=1) で効率的
 
-### Worktree-Based Workspaces (Alternative)
+### Worktreeベースワークスペース (代替)
 
 ```mermaid
 flowchart LR
-    subgraph Parent["Parent Repository"]
+    subgraph Parent["親リポジトリ"]
         REPO["repos/repo_id/"]
     end
 
@@ -513,17 +513,17 @@ flowchart LR
     REPO -->|git worktree add| WT2
 ```
 
-**Configuration**:
+**設定**:
 ```python
 # settings.py
-use_clone_based_workspaces: bool = True  # Default: clone-based
-workspaces_dir: Path   # For clones
-worktrees_dir: Path    # For worktrees (separate to avoid inheriting CLAUDE.md)
+use_clone_based_workspaces: bool = True  # デフォルト: クローンベース
+workspaces_dir: Path   # クローン用
+worktrees_dir: Path    # worktree用 (CLAUDE.md継承を避けるため分離)
 ```
 
-## Parallel Execution Model
+## 並列実行モデル
 
-### Queue-Based Execution
+### キューベース実行
 
 ```python
 class RoleQueueAdapter:
@@ -542,72 +542,72 @@ class RoleQueueAdapter:
         return False
 ```
 
-**Characteristics**:
-- Semaphore-based concurrency control
-- Configurable timeout enforcement
-- Automatic cleanup of completed tasks
-- In-memory for v0.1 (replaceable with Celery/Redis)
+**特徴**:
+- セマフォベースの同時実行制御
+- 設定可能なタイムアウト強制
+- 完了タスクの自動クリーンアップ
+- v0.1はインメモリ (Celery/Redisに置換可能)
 
-### Scalability Path
+### スケーラビリティパス
 
 ```mermaid
 flowchart LR
-    subgraph v0.1["v0.1 (Current)"]
-        API1[API Server] --> IMQ[In-Memory Queue]
+    subgraph v0.1["v0.1 (現在)"]
+        API1[APIサーバー] --> IMQ[インメモリキュー]
     end
 
-    subgraph v0.2["v0.2+ (Planned)"]
-        API2[API Server] --> Redis[(Redis Queue)]
+    subgraph v0.2["v0.2+ (計画)"]
+        API2[APIサーバー] --> Redis[(Redisキュー)]
         Redis --> W1[Worker 1]
         Redis --> W2[Worker 2]
         Redis --> WN[Worker N]
     end
 ```
 
-## Security Architecture
+## セキュリティアーキテクチャ
 
-### API Key Encryption
+### APIキー暗号化
 
 ```mermaid
 flowchart LR
-    A[User Input<br/>plaintext] --> B[CryptoService.encrypt]
-    B -->|Fernet AES-128| C[(DB Storage<br/>encrypted)]
+    A[ユーザー入力<br/>平文] --> B[CryptoService.encrypt]
+    B -->|Fernet AES-128| C[(DB保存<br/>暗号化)]
     C --> D[CryptoService.decrypt]
-    D --> E[Plaintext<br/>for API call]
+    D --> E[平文<br/>API呼び出し用]
 ```
 
-### Constraint Injection
+### 制約インジェクション
 
-Constraints are injected into agent/executor prompts:
+制約はエージェント/エグゼキューターのプロンプトに注入されます:
 
 ```python
-# Example constraints
+# 制約の例
 AgentConstraints(
     forbidden_paths=[".git", ".env", "*.secret", "*.key", "credentials.*"],
     forbidden_commands=["git commit", "git push", "rm -rf"],
     allowed_git_commands=["git status", "git diff", "git log", "git show"],
 )
 
-# Injected into prompt as:
-# "You MUST NOT modify files matching: .git, .env, *.secret..."
-# "You MUST NOT execute: git commit, git push, rm -rf..."
+# プロンプトへの注入例:
+# "以下のファイルを変更してはいけません: .git, .env, *.secret..."
+# "以下のコマンドを実行してはいけません: git commit, git push, rm -rf..."
 ```
 
-### Orchestrator Pattern
+### オーケストレーターパターン
 
-zloth manages all git operations; agents/executors only edit files:
+zlothがすべてのgit操作を管理し、エージェント/エグゼキューターはファイル編集のみを行います:
 
 ```mermaid
 flowchart TB
-    subgraph Agent["Agent/Executor"]
-        Edit[Edit Files Only]
+    subgraph Agent["エージェント/エグゼキューター"]
+        Edit[ファイル編集のみ]
     end
 
-    subgraph zloth["zloth Orchestrator"]
-        WS[Create Workspace]
+    subgraph zloth["zlothオーケストレーター"]
+        WS[ワークスペース作成]
         Commit[Git Commit]
         Push[Git Push]
-        PR[Create PR]
+        PR[PR作成]
     end
 
     WS --> Agent
@@ -616,7 +616,7 @@ flowchart TB
     Push --> PR
 ```
 
-## Entity Relationships
+## エンティティ関係
 
 ```mermaid
 erDiagram
@@ -716,7 +716,7 @@ erDiagram
         string estimated_size
         json target_files
         json subtasks
-        string task_id FK "nullable - if promoted"
+        string task_id FK "nullable - 昇格時"
         datetime created_at
     }
 
@@ -757,31 +757,31 @@ erDiagram
     PR ||--o{ CICheck : has
 ```
 
-## Domain Enums
+## ドメインEnum
 
-### Execution Status
+### 実行ステータス
 ```python
 class RoleExecutionStatus(str, Enum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELED = "canceled"
+    QUEUED = "queued"       # キュー待ち
+    RUNNING = "running"     # 実行中
+    SUCCEEDED = "succeeded" # 成功
+    FAILED = "failed"       # 失敗
+    CANCELED = "canceled"   # キャンセル
 
-# Alias for backward compatibility
+# 後方互換性のためのエイリアス
 RunStatus = RoleExecutionStatus
 ```
 
-### Executor Types
+### エグゼキュータータイプ
 ```python
 class ExecutorType(str, Enum):
-    PATCH_AGENT = "patch_agent"    # Direct LLM API
+    PATCH_AGENT = "patch_agent"    # 直接LLM API
     CLAUDE_CODE = "claude_code"    # Claude Code CLI
     CODEX_CLI = "codex"            # Codex CLI
     GEMINI_CLI = "gemini"          # Gemini CLI
 ```
 
-### LLM Providers
+### LLMプロバイダー
 ```python
 class Provider(str, Enum):
     OPENAI = "openai"
@@ -789,134 +789,134 @@ class Provider(str, Enum):
     GOOGLE = "google"
 ```
 
-### Coding Modes
+### コーディングモード
 ```python
 class CodingMode(str, Enum):
-    INTERACTIVE = "interactive"  # User controls each step
-    SEMI_AUTO = "semi_auto"      # Auto-fix, human approval for merge
-    FULL_AUTO = "full_auto"      # Fully autonomous
+    INTERACTIVE = "interactive"  # ユーザーが各ステップを制御
+    SEMI_AUTO = "semi_auto"      # 自動修正、マージは人間承認
+    FULL_AUTO = "full_auto"      # 完全自律
 ```
 
-### Review Types
+### レビュータイプ
 ```python
 class ReviewSeverity(str, Enum):
-    CRITICAL = "critical"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
+    CRITICAL = "critical"  # 重大
+    HIGH = "high"          # 高
+    MEDIUM = "medium"      # 中
+    LOW = "low"            # 低
 
 class ReviewCategory(str, Enum):
-    SECURITY = "security"
-    BUG = "bug"
-    PERFORMANCE = "performance"
-    MAINTAINABILITY = "maintainability"
-    BEST_PRACTICE = "best_practice"
-    STYLE = "style"
-    DOCUMENTATION = "documentation"
-    TEST = "test"
+    SECURITY = "security"              # セキュリティ
+    BUG = "bug"                        # バグ
+    PERFORMANCE = "performance"        # パフォーマンス
+    MAINTAINABILITY = "maintainability" # 保守性
+    BEST_PRACTICE = "best_practice"    # ベストプラクティス
+    STYLE = "style"                    # スタイル
+    DOCUMENTATION = "documentation"    # ドキュメント
+    TEST = "test"                      # テスト
 ```
 
-### Kanban Status
+### カンバンステータス
 ```python
 class TaskKanbanStatus(str, Enum):
-    # Base status (stored in DB)
-    BACKLOG = "backlog"
-    TODO = "todo"
-    ARCHIVED = "archived"
+    # 基本ステータス (DBに保存)
+    BACKLOG = "backlog"    # バックログ
+    TODO = "todo"          # 予定
+    ARCHIVED = "archived"  # アーカイブ
 
-    # Computed status (dynamic)
-    IN_PROGRESS = "in_progress"  # Has running runs
-    IN_REVIEW = "in_review"      # Has active review
-    GATING = "gating"            # Waiting for CI/merge
-    DONE = "done"                # PR merged
+    # 計算ステータス (動的)
+    IN_PROGRESS = "in_progress"  # 実行中のRunあり
+    IN_REVIEW = "in_review"      # アクティブなレビューあり
+    GATING = "gating"            # CI/マージ待ち
+    DONE = "done"                # PRマージ済み
 ```
 
-## Configuration
+## 設定
 
-### Environment Variables
+### 環境変数
 
-| Variable | Description | Default |
+| 変数 | 説明 | デフォルト |
 |----------|-------------|---------|
-| `ZLOTH_ENCRYPTION_KEY` | API key encryption key | Required |
+| `ZLOTH_ENCRYPTION_KEY` | APIキー暗号化キー | 必須 |
 | `ZLOTH_GITHUB_APP_ID` | GitHub App ID | - |
-| `ZLOTH_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (base64) | - |
-| `ZLOTH_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID | - |
-| `ZLOTH_DEBUG` | Debug mode | `false` |
-| `ZLOTH_LOG_LEVEL` | Log level | `INFO` |
-| `ZLOTH_CLAUDE_CLI_PATH` | Claude Code CLI path | `claude` |
-| `ZLOTH_CODEX_CLI_PATH` | Codex CLI path | `codex` |
-| `ZLOTH_GEMINI_CLI_PATH` | Gemini CLI path | `gemini` |
-| `ZLOTH_WORKSPACES_DIR` | Clone workspaces directory | `~/.zloth/workspaces` |
-| `ZLOTH_WORKTREES_DIR` | Worktrees directory | `~/.zloth/worktrees` |
-| `ZLOTH_DATA_DIR` | Database directory | `~/.zloth/data` |
-| `ZLOTH_USE_CLONE_BASED_WORKSPACES` | Use clone-based isolation | `true` |
+| `ZLOTH_GITHUB_APP_PRIVATE_KEY` | GitHub App秘密鍵 (base64) | - |
+| `ZLOTH_GITHUB_APP_INSTALLATION_ID` | GitHub AppインストールID | - |
+| `ZLOTH_DEBUG` | デバッグモード | `false` |
+| `ZLOTH_LOG_LEVEL` | ログレベル | `INFO` |
+| `ZLOTH_CLAUDE_CLI_PATH` | Claude Code CLIパス | `claude` |
+| `ZLOTH_CODEX_CLI_PATH` | Codex CLIパス | `codex` |
+| `ZLOTH_GEMINI_CLI_PATH` | Gemini CLIパス | `gemini` |
+| `ZLOTH_WORKSPACES_DIR` | クローンワークスペースディレクトリ | `~/.zloth/workspaces` |
+| `ZLOTH_WORKTREES_DIR` | Worktreeディレクトリ | `~/.zloth/worktrees` |
+| `ZLOTH_DATA_DIR` | データベースディレクトリ | `~/.zloth/data` |
+| `ZLOTH_USE_CLONE_BASED_WORKSPACES` | クローンベース分離を使用 | `true` |
 
-### Agentic Settings
+### Agentic設定
 
-| Setting | Description | Default |
+| 設定 | 説明 | デフォルト |
 |---------|-------------|---------|
-| `max_ci_iterations` | Max CI fix attempts | 3 |
-| `max_review_iterations` | Max review fix attempts | 3 |
-| `max_total_iterations` | Max total iterations | 10 |
-| `ci_polling_interval` | CI poll interval (seconds) | 30 |
-| `ci_polling_timeout` | CI poll timeout (minutes) | 30 |
+| `max_ci_iterations` | CI修正の最大試行回数 | 3 |
+| `max_review_iterations` | レビュー修正の最大試行回数 | 3 |
+| `max_total_iterations` | 全体の最大反復回数 | 10 |
+| `ci_polling_interval` | CIポーリング間隔（秒） | 30 |
+| `ci_polling_timeout` | CIポーリングタイムアウト（分） | 30 |
 
-## Frontend Architecture
+## フロントエンドアーキテクチャ
 
-### App Structure (Next.js 14)
+### アプリ構造 (Next.js 14)
 
 ```
 apps/web/src/
 ├── app/                    # App Router
 │   ├── layout.tsx
-│   ├── page.tsx           # Home (task list)
-│   ├── tasks/             # Task detail view
-│   ├── repos/             # Repository selection
-│   ├── settings/          # Settings page
-│   ├── kanban/            # Kanban board
-│   ├── backlog/           # Backlog management
-│   └── metrics/           # Development metrics
+│   ├── page.tsx           # ホーム（タスク一覧）
+│   ├── tasks/             # タスク詳細ビュー
+│   ├── repos/             # リポジトリ選択
+│   ├── settings/          # 設定ページ
+│   ├── kanban/            # カンバンボード
+│   ├── backlog/           # バックログ管理
+│   └── metrics/           # 開発メトリクス
 ├── components/
-│   ├── ui/                # Base UI components
-│   ├── ChatPanel.tsx      # Message input/display
-│   ├── RunsPanel.tsx      # Run list
-│   ├── RunDetailPanel.tsx # Run details with diff
-│   ├── ReviewPanel.tsx    # Code review display
-│   ├── DiffViewer.tsx     # Syntax-highlighted diff
-│   ├── BreakdownModal.tsx # Task decomposition
-│   ├── ExecutorSelector.tsx # Executor selection
+│   ├── ui/                # 基本UIコンポーネント
+│   ├── ChatPanel.tsx      # メッセージ入力/表示
+│   ├── RunsPanel.tsx      # Run一覧
+│   ├── RunDetailPanel.tsx # Run詳細とdiff
+│   ├── ReviewPanel.tsx    # コードレビュー表示
+│   ├── DiffViewer.tsx     # シンタックスハイライト付きdiff
+│   ├── BreakdownModal.tsx # タスク分解UI
+│   ├── ExecutorSelector.tsx # エグゼキューター選択
 │   └── ...
 ├── lib/
-│   └── api.ts             # TypeScript API client
-└── types.ts               # Type definitions
+│   └── api.ts             # TypeScript APIクライアント
+└── types.ts               # 型定義
 ```
 
-### Key Components
+### 主要コンポーネント
 
-| Component | Description |
+| コンポーネント | 説明 |
 |-----------|-------------|
-| `ChatPanel` | Conversation interface with message history |
-| `RunsPanel` | List of parallel runs with status |
-| `RunDetailPanel` | Run output, diff viewer, PR actions |
-| `ReviewPanel` | Code review feedback display |
-| `DiffViewer` | Syntax-highlighted unified diff |
-| `ExecutorSelector` | Select executor type (Claude/Codex/Gemini) |
-| `BreakdownModal` | Task decomposition UI |
-| `StreamingLogs` | Real-time log display |
+| `ChatPanel` | メッセージ履歴付き会話インターフェース |
+| `RunsPanel` | ステータス付き並列Run一覧 |
+| `RunDetailPanel` | Run出力、diffビューア、PRアクション |
+| `ReviewPanel` | コードレビューフィードバック表示 |
+| `DiffViewer` | シンタックスハイライト付きUnified diff |
+| `ExecutorSelector` | エグゼキュータータイプ選択（Claude/Codex/Gemini） |
+| `BreakdownModal` | タスク分解UI |
+| `StreamingLogs` | リアルタイムログ表示 |
 
-## Roadmap
+## ロードマップ
 
 ### v0.2
-- [ ] Docker sandbox for command execution
-- [x] GitHub App authentication
-- [x] Agentic orchestrator (autonomous development cycle)
-- [x] Code review integration
-- [x] Clone-based workspace isolation
-- [ ] Multi-user support
+- [ ] Dockerサンドボックスでのコマンド実行
+- [x] GitHub App認証
+- [x] Agenticオーケストレーター（自律的開発サイクル）
+- [x] コードレビュー統合
+- [x] クローンベースワークスペース分離
+- [ ] マルチユーザーサポート
 
 ### v0.3
-- [ ] Distributed queue (Redis/Celery)
-- [ ] PostgreSQL support
-- [ ] Cost and budget management
-- [ ] Policy injection
-- [ ] Webhook-based CI integration
+- [ ] 分散キュー (Redis/Celery)
+- [ ] PostgreSQLサポート
+- [ ] コストと予算管理
+- [ ] ポリシーインジェクション
+- [ ] WebhookベースCI連携
