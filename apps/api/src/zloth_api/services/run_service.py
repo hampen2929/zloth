@@ -8,9 +8,7 @@ operations while AI Agents only edit files.
 from __future__ import annotations
 
 import asyncio
-import builtins
 import logging
-from collections.abc import Callable, Coroutine
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -20,10 +18,8 @@ from zloth_api.agents.patch_agent import PatchAgent
 from zloth_api.config import settings
 from zloth_api.domain.enums import ExecutorType, JobKind, RoleExecutionStatus, RunStatus
 from zloth_api.domain.models import (
-    SUMMARY_FILE_PATH,
     AgentConstraints,
     AgentRequest,
-    FileDiff,
     ImplementationResult,
     Job,
     Run,
@@ -35,12 +31,11 @@ from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from zloth_api.roles.base_service import BaseRoleService
 from zloth_api.roles.registry import RoleRegistry
-from zloth_api.services.commit_message import ensure_english_commit_message
-from zloth_api.services.diff_parser import parse_unified_diff
 from zloth_api.services.git_service import GitService
 from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
+from zloth_api.services.run_executor import ExecutorEntry, RunExecutor
 from zloth_api.services.workspace_adapters import (
     CloneWorkspaceAdapter,
     ExecutionWorkspaceInfo,
@@ -57,125 +52,8 @@ if TYPE_CHECKING:
     from zloth_api.services.output_manager import OutputManager
 
 
-# Note: QueueAdapter is kept for backward compatibility
-# New code should use RoleQueueAdapter from roles.base_service
-class QueueAdapter:
-    """In-memory queue adapter with concurrency control and timeout.
-
-    Features:
-    - Concurrency limit via semaphore to prevent resource exhaustion
-    - Execution timeout to prevent tasks from hanging indefinitely
-    - Automatic cleanup of completed tasks to prevent memory leaks
-
-    Can be replaced with Celery/RQ/Redis in v0.2+.
-    """
-
-    def __init__(
-        self,
-        max_concurrent: int | None = None,
-        default_timeout: int | None = None,
-    ) -> None:
-        """Initialize the queue adapter.
-
-        Args:
-            max_concurrent: Maximum concurrent task executions.
-                           Defaults to settings.queue_max_concurrent_tasks.
-            default_timeout: Default timeout in seconds for task execution.
-                            Defaults to settings.queue_task_timeout_seconds.
-        """
-        self._tasks: dict[str, asyncio.Task[None]] = {}
-        self._max_concurrent = max_concurrent or settings.queue_max_concurrent_tasks
-        self._default_timeout = default_timeout or settings.queue_task_timeout_seconds
-        self._semaphore = asyncio.Semaphore(self._max_concurrent)
-
-    def enqueue(
-        self,
-        run_id: str,
-        coro: Callable[[], Coroutine[Any, Any, None]],
-        timeout: int | None = None,
-    ) -> None:
-        """Enqueue a run for execution with concurrency control and timeout.
-
-        Args:
-            run_id: Run ID.
-            coro: Coroutine to execute.
-            timeout: Optional timeout override in seconds.
-        """
-        task_timeout = timeout or self._default_timeout
-
-        async def wrapped_execution() -> None:
-            """Execute with semaphore-based concurrency control and timeout."""
-            async with self._semaphore:
-                try:
-                    await asyncio.wait_for(coro(), timeout=task_timeout)
-                except TimeoutError:
-                    logger.error(f"Task {run_id} timed out after {task_timeout}s")
-                    raise
-                except asyncio.CancelledError:
-                    logger.info(f"Task {run_id} was cancelled")
-                    raise
-                except Exception as e:
-                    logger.error(f"Task {run_id} failed with error: {e}")
-                    raise
-                finally:
-                    # Cleanup completed task from memory if configured
-                    if settings.queue_cleanup_completed_tasks:
-                        self._cleanup_task(run_id)
-
-        task: asyncio.Task[None] = asyncio.create_task(wrapped_execution())
-        self._tasks[run_id] = task
-
-    def _cleanup_task(self, run_id: str) -> None:
-        """Remove completed task from internal tracking.
-
-        Args:
-            run_id: Run ID to clean up.
-        """
-        if run_id in self._tasks:
-            del self._tasks[run_id]
-            logger.debug(f"Cleaned up task {run_id} from queue")
-
-    def cancel(self, run_id: str) -> bool:
-        """Cancel a queued run.
-
-        Args:
-            run_id: Run ID.
-
-        Returns:
-            True if cancelled, False if not found or already completed.
-        """
-        task = self._tasks.get(run_id)
-        if task and not task.done():
-            task.cancel()
-            return True
-        return False
-
-    def is_running(self, run_id: str) -> bool:
-        """Check if a run is currently running.
-
-        Args:
-            run_id: Run ID.
-
-        Returns:
-            True if running.
-        """
-        task = self._tasks.get(run_id)
-        return task is not None and not task.done()
-
-    def get_queue_stats(self) -> dict[str, int]:
-        """Get queue statistics for monitoring.
-
-        Returns:
-            Dictionary with queue statistics.
-        """
-        running = sum(1 for t in self._tasks.values() if not t.done())
-        pending = len(self._tasks) - running
-        return {
-            "max_concurrent": self._max_concurrent,
-            "running": running,
-            "pending": pending,
-            "total_tracked": len(self._tasks),
-        }
+# Note: Removed legacy in-file QueueAdapter. Run execution is handled by
+# JobWorker (durable queue) + RunExecutor (encapsulated execution logic).
 
 
 @RoleRegistry.register("implementation")
@@ -236,6 +114,21 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 "zloth now uses clone-based workspaces only."
             )
         self.workspace_adapter: WorkspaceAdapter = CloneWorkspaceAdapter(self.workspace_service)
+
+        # Encapsulated CLI executor to reduce RunService responsibilities
+        self._run_executor = RunExecutor(
+            run_dao=self.run_dao,
+            git_service=self.git_service,
+            workspace_adapter=self.workspace_adapter,
+            executors={
+                ExecutorType.CLAUDE_CODE: ExecutorEntry(self.claude_executor, "Claude Code"),
+                ExecutorType.CODEX_CLI: ExecutorEntry(self.codex_executor, "Codex"),
+                ExecutorType.GEMINI_CLI: ExecutorEntry(self.gemini_executor, "Gemini"),
+            },
+            llm_router=self.llm_router,
+            output_manager=output_manager,
+            github_service=self.github_service,
+        )
 
     def set_job_worker(self, worker: JobWorker) -> None:
         """Attach the shared JobWorker instance (for best-effort cancellation)."""
@@ -462,7 +355,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             auth_url: str | None = None
             if self.github_service and repo.repo_url:
                 try:
-                    owner, repo_name = self._parse_github_url(repo.repo_url)
+                    owner, repo_name = parse_github_owner_repo(repo.repo_url)
                     auth_url = await self.github_service.get_auth_url(owner, repo_name)
                 except Exception as e:
                     logger.warning(f"Could not get auth_url for workspace creation: {e}")
@@ -722,429 +615,16 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         resume_session_id: str | None = None,
         repo: Any = None,
     ) -> None:
-        """Execute a CLI-based run with automatic commit/push.
-
-        Following the orchestrator management pattern:
-        1. Execute CLI (file editing only)
-        2. Stage all changes
-        3. Get patch
-        4. Commit (automatic)
-        5. Push (automatic)
-        6. Save results
-
-        Args:
-            run: Run object.
-            worktree_info: WorktreeInfo object with path and branch info.
-            executor_type: Type of CLI executor to use.
-            resume_session_id: Optional session ID to resume a previous conversation.
-            repo: Repository object for push operations.
-        """
-        logs: list[str] = []
-        commit_sha: str | None = None
-
-        # Map executor types to their executors and names
-        executor_map: dict[
-            ExecutorType, tuple[ClaudeCodeExecutor | CodexExecutor | GeminiExecutor, str]
-        ] = {
-            ExecutorType.CLAUDE_CODE: (self.claude_executor, "Claude Code"),
-            ExecutorType.CODEX_CLI: (self.codex_executor, "Codex"),
-            ExecutorType.GEMINI_CLI: (self.gemini_executor, "Gemini"),
-        }
-
-        executor, executor_name = executor_map[executor_type]
-
-        # Track if we need to add conflict resolution instructions
-        conflict_instruction: str | None = None
-
-        try:
-            # Update status to running
-            await self.run_dao.update_status(run.id, RunStatus.RUNNING)
-            logger.info(f"[{run.id[:8]}] Starting {executor_name} run")
-
-            # Publish initial progress log so frontend can see activity
-            await self._log_output(run.id, f"Starting {executor_name} execution...")
-
-            # 0. Sync with remote (pull latest changes from remote branch)
-            # This handles the case where the PR branch was updated on GitHub
-            # (e.g., via "Update branch" button) and we need to incorporate those changes.
-            if self.github_service and repo:
-                try:
-                    await self._log_output(run.id, "Checking for remote updates...")
-                    owner, repo_name = self._parse_github_url(repo.repo_url)
-                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
-
-                    is_behind = await self.workspace_adapter.is_behind_remote(
-                        worktree_info.path,
-                        branch=worktree_info.branch_name,
-                        auth_url=auth_url,
-                    )
-
-                    if is_behind:
-                        logger.info(
-                            f"[{run.id[:8]}] Local branch is behind remote, "
-                            "pulling latest changes..."
-                        )
-                        logs.append("Detected remote updates, pulling latest changes...")
-
-                        sync_result = await self.workspace_adapter.sync_with_remote(
-                            worktree_info.path,
-                            branch=worktree_info.branch_name,
-                            auth_url=auth_url,
-                        )
-
-                        if sync_result.success:
-                            logs.append("Successfully pulled latest changes from remote")
-                            logger.info(f"[{run.id[:8]}] Successfully pulled remote changes")
-                        elif sync_result.has_conflicts:
-                            # Conflicts detected - add resolution instructions for AI
-                            conflict_files_str = ", ".join(sync_result.conflict_files)
-                            logs.append(
-                                f"Merge conflicts detected in: {conflict_files_str}. "
-                                "AI will be asked to resolve them."
-                            )
-                            logger.warning(
-                                f"[{run.id[:8]}] Merge conflicts detected: "
-                                f"{sync_result.conflict_files}"
-                            )
-                            conflict_instruction = self._build_conflict_resolution_instruction(
-                                sync_result.conflict_files
-                            )
-                        else:
-                            logs.append(f"Pull failed: {sync_result.error}")
-                            logger.warning(f"[{run.id[:8]}] Pull failed: {sync_result.error}")
-                    else:
-                        logger.info(f"[{run.id[:8]}] Branch is up to date with remote")
-
-                except Exception as sync_error:
-                    # Log but don't fail - we can still proceed with the run
-                    logs.append(f"Remote sync warning: {sync_error}")
-                    logger.warning(f"[{run.id[:8]}] Remote sync failed: {sync_error}")
-
-            # 1. Record pre-execution status
-            pre_status = await self.git_service.get_status(worktree_info.path)
-            logs.append(f"Pre-execution status: {pre_status.has_changes} changes")
-
-            logs.append(f"Starting {executor_name} execution in {worktree_info.path}")
-            logs.append(f"Working branch: {worktree_info.branch_name}")
-            # We proactively attempt to resume conversations via session_id when available.
-            # If the CLI rejects the session (e.g., "already in use"), we retry once without it.
-
-            # 2. Build instruction with constraints
-            constraints = AgentConstraints()
-
-            # Include conflict resolution instruction if conflicts were detected
-            if conflict_instruction:
-                instruction_with_constraints = (
-                    f"{constraints.to_prompt()}\n\n"
-                    f"{conflict_instruction}\n\n"
-                    f"## Task\n{run.instruction}"
-                )
-            else:
-                instruction_with_constraints = (
-                    f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
-                )
-            logger.info(
-                f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars"
-            )
-
-            # 3. Execute the CLI (file editing only)
-            logger.info(f"[{run.id[:8]}] Executing CLI...")
-            await self._log_output(run.id, f"Launching {executor_name} CLI...")
-            attempt_session_id = resume_session_id
-            result = await executor.execute(
-                worktree_path=worktree_info.path,
-                instruction=instruction_with_constraints,
-                on_output=lambda line: self._log_output(run.id, line),
-                resume_session_id=attempt_session_id,
-            )
-            # Session error patterns that should trigger a retry without session continuation
-            session_error_patterns = [
-                "already in use",
-                "in use",
-                "no conversation found",
-                "not found",
-                "invalid session",
-                "session expired",
-            ]
-            error_lower = result.error.lower() if result.error else ""
-            if (
-                not result.success
-                and attempt_session_id
-                and result.error
-                and ("session" in error_lower)
-                and any(pattern in error_lower for pattern in session_error_patterns)
-            ):
-                # Retry once without session continuation if the CLI rejects the session.
-                logs.append(
-                    f"Session continuation failed ({result.error}). Retrying without session_id."
-                )
-                result = await executor.execute(
-                    worktree_path=worktree_info.path,
-                    instruction=instruction_with_constraints,
-                    on_output=lambda line: self._log_output(run.id, line),
-                    resume_session_id=None,
-                )
-            logger.info(f"[{run.id[:8]}] CLI execution completed: success={result.success}")
-
-            if not result.success:
-                await self.run_dao.update_status(
-                    run.id,
-                    RunStatus.FAILED,
-                    error=result.error,
-                    logs=logs + result.logs,
-                    session_id=result.session_id or resume_session_id,
-                )
-                return
-
-            # 4. Read and remove summary file (before staging)
-            summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
-
-            # 5. Stage all changes
-            await self.workspace_adapter.stage_all(worktree_info.path)
-
-            # 6. Get patch
-            patch = await self.workspace_adapter.get_diff(worktree_info.path, staged=True)
-
-            # Skip commit/push if no changes
-            if not patch.strip():
-                logs.append("No changes detected, skipping commit/push")
-                await self.run_dao.update_status(
-                    run.id,
-                    RunStatus.SUCCEEDED,
-                    summary="No changes made",
-                    patch="",
-                    files_changed=[],
-                    logs=logs + result.logs,
-                    session_id=result.session_id or resume_session_id,
-                )
-                return
-
-            # Parse diff to get file changes
-            files_changed = parse_unified_diff(patch)
-            logs.append(f"Detected {len(files_changed)} changed file(s)")
-
-            # Determine final summary (priority: file > CLI output > generated)
-            final_summary = (
-                summary_from_file or result.summary or self._generate_summary(files_changed)
-            )
-
-            # 7. Commit (automatic, use appropriate service)
-            commit_message = self._generate_commit_message(run.instruction, final_summary)
-            commit_message = await ensure_english_commit_message(
-                commit_message,
-                llm_router=self.llm_router,
-                hint=final_summary or "",
-            )
-            commit_sha = await self.workspace_adapter.commit(
-                worktree_info.path,
-                message=commit_message,
-            )
-            logs.append(f"Committed: {commit_sha[:8]}")
-
-            # 8. Push (automatic)
-            if self.github_service and repo:
-                owner, repo_name = self._parse_github_url(repo.repo_url)
-                auth_url = await self.github_service.get_auth_url(owner, repo_name)
-
-                push_result = await self.workspace_adapter.push(
-                    worktree_info.path,
-                    branch=worktree_info.branch_name,
-                    auth_url=auth_url,
-                )
-
-                if push_result.success:
-                    if push_result.required_pull:
-                        logs.append(
-                            f"Pulled remote changes and pushed to branch: "
-                            f"{worktree_info.branch_name}"
-                        )
-                    else:
-                        logs.append(f"Pushed to branch: {worktree_info.branch_name}")
-                else:
-                    logs.append(f"Push failed (will retry on PR creation): {push_result.error}")
-
-            # 9. Save results
-            await self.run_dao.update_status(
-                run.id,
-                RunStatus.SUCCEEDED,
-                summary=final_summary,
-                patch=patch,
-                files_changed=files_changed,
-                logs=logs + result.logs,
-                warnings=result.warnings,
-                session_id=result.session_id or resume_session_id,
-                commit_sha=commit_sha,
-            )
-
-        except asyncio.CancelledError:
-            # Task was cancelled (e.g., due to timeout or user cancellation)
-            logger.warning(f"[{run.id[:8]}] CLI run was cancelled")
-            await self.run_dao.update_status(
-                run.id,
-                RunStatus.FAILED,
-                error="Task was cancelled (timeout or user cancellation)",
-                logs=logs + ["Execution cancelled"],
-                commit_sha=commit_sha,
-            )
-            raise  # Re-raise to propagate cancellation
-
-        except Exception as e:
-            # Update status to failed
-            await self.run_dao.update_status(
-                run.id,
-                RunStatus.FAILED,
-                error=str(e),
-                logs=logs + [f"Execution failed: {str(e)}"],
-                commit_sha=commit_sha,
-            )
-
-        finally:
-            # Mark output stream as complete for SSE subscribers
-            if self.output_manager:
-                await self.output_manager.mark_complete(run.id)
-
-    async def _read_and_remove_summary_file(
-        self,
-        worktree_path: Path,
-        logs: builtins.list[str],
-    ) -> str | None:
-        """Read summary from the agent-generated summary file and remove it.
-
-        The summary file is created by the agent at the end of execution.
-        We read it before staging to use as the run summary, then delete it
-        so it's not included in the commit.
-
-        Args:
-            worktree_path: Path to the worktree.
-            logs: Log list to append to.
-
-        Returns:
-            Summary text if file exists, None otherwise.
-        """
-        summary_file = worktree_path / SUMMARY_FILE_PATH
-        summary: str | None = None
-
-        try:
-            if summary_file.exists():
-                summary = summary_file.read_text(encoding="utf-8").strip()
-                logs.append(f"Read summary from {SUMMARY_FILE_PATH}")
-
-                # Remove the file so it's not committed
-                summary_file.unlink()
-                logs.append(f"Removed {SUMMARY_FILE_PATH}")
-
-                # Clean up empty summary
-                if not summary:
-                    summary = None
-        except Exception as e:
-            logs.append(f"Warning: Could not read summary file: {e}")
-
-        return summary
-
-    async def _log_output(self, run_id: str, line: str) -> None:
-        """Log output from CLI execution.
-
-        This logs output to console for debugging and publishes to
-        OutputManager for SSE streaming to connected clients.
-
-        Args:
-            run_id: Run ID.
-            line: Output line.
-        """
-        # Log to console for debugging
-        logger.info(f"[{run_id[:8]}] {line}")
-
-        # Publish to OutputManager for SSE streaming
-        # Use await to ensure immediate delivery to subscribers
-        if self.output_manager:
-            await self.output_manager.publish_async(run_id, line)
-        else:
-            logger.warning(f"[{run_id[:8]}] OutputManager not available, cannot publish")
-
-    def _generate_commit_message(self, instruction: str, summary: str | None) -> str:
-        """Generate a commit message from instruction and summary.
-
-        Args:
-            instruction: Original user instruction.
-            summary: Optional summary from executor.
-
-        Returns:
-            Commit message string.
-        """
-        # Use first line of instruction (truncate if too long)
-        first_line = instruction.split("\n")[0][:72]
-        if summary:
-            return f"{first_line}\n\n{summary}"
-        return first_line
-
-    def _build_conflict_resolution_instruction(self, conflict_files: builtins.list[str]) -> str:
-        """Build instruction for AI to resolve merge conflicts.
-
-        Args:
-            conflict_files: List of files with merge conflicts.
-
-        Returns:
-            Instruction string for conflict resolution.
-        """
-        files_list = "\n".join(f"- {f}" for f in conflict_files)
-        return f"""## IMPORTANT: Merge Conflict Resolution Required
-
-The following files have merge conflicts that MUST be resolved before proceeding with the task:
-
-{files_list}
-
-### Instructions for Conflict Resolution:
-1. Open each conflicted file listed above
-2. Look for conflict markers: `<<<<<<<`, `=======`, and `>>>>>>>`
-3. Understand both versions of the conflicting code
-4. Resolve each conflict by keeping the correct code (you may combine both versions if appropriate)
-5. Remove ALL conflict markers completely
-6. Ensure the resolved code is syntactically correct and functional
-
-### Conflict Marker Format:
-```
-<<<<<<< HEAD
-(your local changes)
-=======
-(incoming changes from remote)
->>>>>>> branch-name
-```
-
-After resolving ALL conflicts, proceed with the original task below.
-"""
-
-    def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
-        """Backward-compatible wrapper (use parse_github_owner_repo)."""
-        return parse_github_owner_repo(repo_url)
-
-    def _generate_summary(self, files_changed: builtins.list[FileDiff]) -> str:
-        """Generate a human-readable summary of changes.
-
-        Args:
-            files_changed: List of changed files.
-
-        Returns:
-            Summary string.
-        """
-        if not files_changed:
-            return "No files were modified."
-
-        total_added = sum(f.added_lines for f in files_changed)
-        total_removed = sum(f.removed_lines for f in files_changed)
-
-        summary_parts = [
-            f"Modified {len(files_changed)} file(s)",
-            f"+{total_added} -{total_removed} lines",
-        ]
-
-        # List files
-        file_list = ", ".join(f.path for f in files_changed[:5])
-        if len(files_changed) > 5:
-            file_list += f" and {len(files_changed) - 5} more"
-
-        summary_parts.append(f"Files: {file_list}")
-
-        return ". ".join(summary_parts) + "."
+        """Delegate to RunExecutor for CLI execution."""
+        await self._run_executor.execute_cli_run(
+            run=run,
+            worktree=worktree_info,
+            executor_type=executor_type,
+            repo=repo,
+            resume_session_id=resume_session_id,
+        )
+
+    # Helper methods for CLI execution were moved to RunExecutor.
 
     # ==========================================
     # BaseRoleService Abstract Method Implementations
@@ -1169,7 +649,7 @@ After resolving ALL conflicts, proceed with the original task below.
 
     # Note: get() method is inherited from the existing implementation above (line ~395)
 
-    async def list_by_task(self, task_id: str) -> builtins.list[Run]:
+    async def list_by_task(self, task_id: str) -> list[Run]:
         """List runs for a task (BaseRoleService interface).
 
         Args:
