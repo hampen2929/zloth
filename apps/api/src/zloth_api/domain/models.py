@@ -12,6 +12,8 @@ from zloth_api.domain.enums import (
     CodingMode,
     EstimatedSize,
     ExecutorType,
+    JobKind,
+    JobStatus,
     MessageRole,
     NotificationType,
     PRCreationMode,
@@ -40,6 +42,33 @@ class ModelProfileCreate(ModelProfileBase):
     """Request model for creating a ModelProfile."""
 
     api_key: str = Field(..., description="API key for the provider")
+
+
+# ============================================================
+# Persistent Job Queue (SQLite-backed)
+# ============================================================
+
+
+class Job(BaseModel):
+    """Persistent job record stored in SQLite.
+
+    Internal model used by the backend worker to provide a durable execution
+    queue across process restarts.
+    """
+
+    id: str
+    kind: JobKind
+    ref_id: str = Field(..., description="Referenced record id (e.g., run_id, review_id)")
+    status: JobStatus
+    payload: dict[str, Any] = Field(default_factory=dict)
+    attempts: int = 0
+    max_attempts: int = 1
+    available_at: datetime | None = None
+    locked_at: datetime | None = None
+    locked_by: str | None = None
+    last_error: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ModelProfile(ModelProfileBase):

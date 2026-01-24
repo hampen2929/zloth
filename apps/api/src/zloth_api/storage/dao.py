@@ -14,6 +14,8 @@ from zloth_api.domain.enums import (
     CodingMode,
     EstimatedSize,
     ExecutorType,
+    JobKind,
+    JobStatus,
     MessageRole,
     PRCreationMode,
     Provider,
@@ -30,6 +32,7 @@ from zloth_api.domain.models import (
     CICheck,
     CIJobResult,
     FileDiff,
+    Job,
     Message,
     ModelProfile,
     Repo,
@@ -645,6 +648,20 @@ class RunDAO:
         )
         await self.db.connection.commit()
 
+    async def fail_all_running(self, *, error: str) -> int:
+        """Mark all RUNNING runs as FAILED (used during startup recovery)."""
+        now = now_iso()
+        cursor = await self.db.connection.execute(
+            """
+            UPDATE runs
+            SET status = ?, error = ?, completed_at = ?
+            WHERE status = ?
+            """,
+            (RunStatus.FAILED.value, error, now, RunStatus.RUNNING.value),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount
+
     async def update_worktree(
         self,
         id: str,
@@ -840,6 +857,279 @@ class RunDAO:
                 "status": row["status"],
             }
         return result
+
+
+class JobDAO:
+    """DAO for persistent jobs (SQLite-backed queue)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        *,
+        kind: JobKind,
+        ref_id: str,
+        payload: dict[str, Any] | None = None,
+        max_attempts: int = 1,
+        available_at: datetime | None = None,
+    ) -> Job:
+        """Create a new job in QUEUED state."""
+        job_id = generate_id()
+        now = now_iso()
+        payload_str = json.dumps(payload or {})
+        available_at_iso = (available_at.isoformat() if available_at else now)
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO jobs (
+                id, kind, ref_id, status, payload,
+                attempts, max_attempts,
+                available_at, locked_at, locked_by,
+                last_error, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                kind.value,
+                ref_id,
+                JobStatus.QUEUED.value,
+                payload_str,
+                0,
+                max_attempts,
+                available_at_iso,
+                None,
+                None,
+                None,
+                now,
+                now,
+            ),
+        )
+        await self.db.connection.commit()
+        created = await self.get(job_id)
+        if not created:
+            raise RuntimeError(f"Job not found after create: {job_id}")
+        return created
+
+    async def get(self, job_id: str) -> Job | None:
+        cursor = await self.db.connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def claim_next(
+        self,
+        *,
+        locked_by: str,
+    ) -> Job | None:
+        """Atomically claim the next available queued job.
+
+        This uses a short IMMEDIATE transaction to avoid double-claims.
+        """
+        conn = self.db.connection
+        now = now_iso()
+
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = await conn.execute(
+                """
+                SELECT id FROM jobs
+                WHERE status = ?
+                  AND available_at <= ?
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                (JobStatus.QUEUED.value, now),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                await conn.execute("COMMIT")
+                return None
+
+            job_id = row["id"]
+            await conn.execute(
+                """
+                UPDATE jobs
+                SET status = ?,
+                    attempts = attempts + 1,
+                    locked_at = ?,
+                    locked_by = ?,
+                    updated_at = ?
+                WHERE id = ?
+                  AND status = ?
+                """,
+                (
+                    JobStatus.RUNNING.value,
+                    now,
+                    locked_by,
+                    now,
+                    job_id,
+                    JobStatus.QUEUED.value,
+                ),
+            )
+            await conn.execute("COMMIT")
+        except Exception:
+            await conn.execute("ROLLBACK")
+            raise
+
+        return await self.get(job_id)
+
+    async def complete(self, job_id: str) -> None:
+        """Mark job succeeded and release the lock."""
+        now = now_iso()
+        await self.db.connection.execute(
+            """
+            UPDATE jobs
+            SET status = ?,
+                locked_at = NULL,
+                locked_by = NULL,
+                last_error = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (JobStatus.SUCCEEDED.value, now, job_id),
+        )
+        await self.db.connection.commit()
+
+    async def cancel(self, *, job_id: str, reason: str | None = None) -> None:
+        """Mark a job canceled and release the lock."""
+        now = now_iso()
+        await self.db.connection.execute(
+            """
+            UPDATE jobs
+            SET status = ?,
+                locked_at = NULL,
+                locked_by = NULL,
+                last_error = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (JobStatus.CANCELED.value, reason, now, job_id),
+        )
+        await self.db.connection.commit()
+
+    async def fail(self, job_id: str, *, error: str, retry_delay_seconds: int = 10) -> None:
+        """Record a failure and optionally requeue if attempts remain."""
+        job = await self.get(job_id)
+        if not job:
+            return
+
+        now_dt = datetime.utcnow()
+        now_iso_str = now_dt.isoformat()
+
+        if job.attempts < job.max_attempts:
+            # Requeue with simple linear delay.
+            available_at_iso = datetime.utcfromtimestamp(
+                now_dt.timestamp() + retry_delay_seconds
+            ).isoformat()
+            await self.db.connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?,
+                    available_at = ?,
+                    locked_at = NULL,
+                    locked_by = NULL,
+                    last_error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (JobStatus.QUEUED.value, available_at_iso, error, now_iso_str, job_id),
+            )
+        else:
+            await self.db.connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?,
+                    locked_at = NULL,
+                    locked_by = NULL,
+                    last_error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (JobStatus.FAILED.value, error, now_iso_str, job_id),
+            )
+        await self.db.connection.commit()
+
+    async def get_latest_by_ref(self, *, kind: JobKind, ref_id: str) -> Job | None:
+        """Get the most recent job for a referenced record."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM jobs
+            WHERE kind = ? AND ref_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (kind.value, ref_id),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def cancel_queued_by_ref(self, *, kind: JobKind, ref_id: str) -> bool:
+        """Cancel a queued job for a referenced record."""
+        now = now_iso()
+        cursor = await self.db.connection.execute(
+            """
+            UPDATE jobs
+            SET status = ?, updated_at = ?
+            WHERE kind = ?
+              AND ref_id = ?
+              AND status = ?
+            """,
+            (JobStatus.CANCELED.value, now, kind.value, ref_id, JobStatus.QUEUED.value),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount > 0
+
+    async def fail_all_running(self, *, error: str) -> int:
+        """Fail all running jobs (used during startup recovery)."""
+        now = now_iso()
+        cursor = await self.db.connection.execute(
+            """
+            UPDATE jobs
+            SET status = ?,
+                locked_at = NULL,
+                locked_by = NULL,
+                last_error = ?,
+                updated_at = ?
+            WHERE status = ?
+            """,
+            (JobStatus.FAILED.value, error, now, JobStatus.RUNNING.value),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount
+
+    def _row_to_model(self, row: Any) -> Job:
+        payload: dict[str, Any] = {}
+        if row["payload"]:
+            try:
+                payload = json.loads(row["payload"])
+            except Exception:
+                payload = {}
+
+        def _parse_dt(value: Any) -> datetime | None:
+            if not value:
+                return None
+            return datetime.fromisoformat(value)
+
+        return Job(
+            id=row["id"],
+            kind=JobKind(row["kind"]),
+            ref_id=row["ref_id"],
+            status=JobStatus(row["status"]),
+            payload=payload,
+            attempts=int(row["attempts"] or 0),
+            max_attempts=int(row["max_attempts"] or 1),
+            available_at=_parse_dt(row["available_at"]),
+            locked_at=_parse_dt(row["locked_at"]),
+            locked_by=row["locked_by"],
+            last_error=row["last_error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
 
 
 class PRDAO:
@@ -1513,6 +1803,20 @@ class ReviewDAO:
                 )
 
         await self.db.connection.commit()
+
+    async def fail_all_running(self, *, error: str) -> int:
+        """Mark all RUNNING reviews as FAILED (used during startup recovery)."""
+        now = now_iso()
+        cursor = await self.db.connection.execute(
+            """
+            UPDATE reviews
+            SET status = ?, error = ?, completed_at = ?
+            WHERE status = ?
+            """,
+            (ReviewStatus.FAILED.value, error, now, ReviewStatus.RUNNING.value),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount
 
     async def _get_feedbacks(self, review_id: str) -> builtins.list[ReviewFeedbackItem]:
         """Get feedbacks for a review."""

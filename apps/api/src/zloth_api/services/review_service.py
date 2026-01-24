@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from zloth_api.config import settings
 from zloth_api.domain.enums import (
     ExecutorType,
+    JobKind,
     MessageRole,
     ReviewCategory,
     ReviewSeverity,
@@ -28,6 +29,7 @@ from zloth_api.domain.models import (
     AgentConstraints,
     FixInstructionRequest,
     FixInstructionResponse,
+    Job,
     Message,
     Review,
     ReviewCreate,
@@ -40,7 +42,8 @@ from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from zloth_api.roles.base_service import BaseRoleService
 from zloth_api.roles.registry import RoleRegistry
-from zloth_api.storage.dao import MessageDAO, ReviewDAO, RunDAO, TaskDAO, generate_id
+from zloth_api.services.job_worker import JobWorker
+from zloth_api.storage.dao import JobDAO, MessageDAO, ReviewDAO, RunDAO, TaskDAO, generate_id
 
 if TYPE_CHECKING:
     from zloth_api.services.output_manager import OutputManager
@@ -161,6 +164,7 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
         run_dao: RunDAO,
         task_dao: TaskDAO,
         message_dao: MessageDAO,
+        job_dao: JobDAO,
         output_manager: OutputManager | None = None,
     ) -> None:
         # Initialize base class with output manager
@@ -170,8 +174,9 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
         self.run_dao = run_dao
         self.task_dao = task_dao
         self.message_dao = message_dao
+        self.job_dao = job_dao
         # Note: self.output_manager is set by base class
-        self.queue = ReviewQueueAdapter()
+        self.job_worker: JobWorker | None = None
         # Note: Executors are also available via self._executors from base class
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
@@ -180,6 +185,10 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
         self.gemini_executor = GeminiExecutor(
             GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
         )
+
+    def set_job_worker(self, worker: JobWorker) -> None:
+        """Attach the shared JobWorker instance (for best-effort cancellation)."""
+        self.job_worker = worker
 
     async def create_review(
         self,
@@ -217,11 +226,12 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
         )
         await self.review_dao.create(review)
 
-        # 4. Enqueue for execution
-        def make_coro(r: Review, rns: list[Any]) -> Callable[[], Coroutine[Any, Any, None]]:
-            return lambda: self._execute_review(r, rns)
-
-        self.queue.enqueue(review.id, make_coro(review, runs))
+        # 4. Enqueue for execution (persistent job)
+        await self.job_dao.create(
+            kind=JobKind.REVIEW_EXECUTE,
+            ref_id=review.id,
+            payload={},
+        )
 
         return review
 
@@ -232,6 +242,29 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
     async def list_reviews(self, task_id: str) -> list[ReviewSummary]:
         """List reviews for a task."""
         return await self.review_dao.list_by_task(task_id)
+
+    async def execute_job(self, job: Job) -> None:
+        """Execute a durable queue job for a review."""
+        if job.kind != JobKind.REVIEW_EXECUTE:
+            raise ValueError(f"Unsupported job kind for ReviewService: {job.kind}")
+
+        review = await self.review_dao.get(job.ref_id)
+        if not review:
+            raise ValueError(f"Review not found: {job.ref_id}")
+
+        # Rebuild target runs
+        runs = []
+        for run_id in review.target_run_ids:
+            run = await self.run_dao.get(run_id)
+            if not run:
+                raise ValueError(f"Run not found: {run_id}")
+            runs.append(run)
+
+        await self._execute_review(review, runs)
+
+        updated = await self.review_dao.get(review.id)
+        if updated and updated.status == ReviewStatus.FAILED:
+            raise RuntimeError(updated.error or "Review failed")
 
     async def get_logs(self, review_id: str, from_line: int = 0) -> dict[str, object]:
         """Get review execution logs."""
