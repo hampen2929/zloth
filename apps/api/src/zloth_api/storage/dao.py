@@ -937,8 +937,6 @@ class UserPreferencesDAO:
         default_pr_creation_mode: str | None = None,
         default_coding_mode: str | None = None,
         auto_generate_pr_description: bool | None = None,
-        worktrees_dir: str | None = None,
-        data_dir: str | None = None,
         enable_gating_status: bool | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
@@ -961,8 +959,6 @@ class UserPreferencesDAO:
                     default_pr_creation_mode = ?,
                     default_coding_mode = ?,
                     auto_generate_pr_description = ?,
-                    worktrees_dir = ?,
-                    data_dir = ?,
                     enable_gating_status = ?,
                     updated_at = ?
                 WHERE id = 1
@@ -975,8 +971,6 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_gen,
-                    worktrees_dir,
-                    data_dir,
                     gating_status,
                     now,
                 ),
@@ -993,13 +987,11 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_generate_pr_description,
-                    worktrees_dir,
-                    data_dir,
                     enable_gating_status,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1009,8 +1001,6 @@ class UserPreferencesDAO:
                     default_pr_creation_mode,
                     default_coding_mode,
                     auto_gen,
-                    worktrees_dir,
-                    data_dir,
                     gating_status,
                     now,
                     now,
@@ -1027,8 +1017,6 @@ class UserPreferencesDAO:
             default_pr_creation_mode=PRCreationMode(default_pr_creation_mode or "create"),
             default_coding_mode=CodingMode(default_coding_mode or "interactive"),
             auto_generate_pr_description=auto_generate_pr_description or False,
-            worktrees_dir=worktrees_dir,
-            data_dir=data_dir,
             enable_gating_status=enable_gating_status or False,
         )
 

@@ -111,20 +111,11 @@ class Database:
             await conn.commit()
 
         # Migration: Add worktrees_dir column if it doesn't exist
-        if "worktrees_dir" not in pref_column_names:
-            await conn.execute("ALTER TABLE user_preferences ADD COLUMN worktrees_dir TEXT")
-            await conn.commit()
-
         # Migration: Add enable_gating_status column if it doesn't exist
         if "enable_gating_status" not in pref_column_names:
             await conn.execute(
                 "ALTER TABLE user_preferences ADD COLUMN enable_gating_status INTEGER DEFAULT 0"
             )
-            await conn.commit()
-
-        # Migration: Add data_dir column if it doesn't exist
-        if "data_dir" not in pref_column_names:
-            await conn.execute("ALTER TABLE user_preferences ADD COLUMN data_dir TEXT")
             await conn.commit()
 
     @property
