@@ -27,7 +27,8 @@ def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
         ValueError: If the URL cannot be parsed.
     """
     if not repo_url:
-        raise ValidationError("repo_url is empty")
+        # Keep ValueError for backward compatibility with callers/tests.
+        raise ValueError("repo_url is empty")
 
     url = repo_url.strip()
 
@@ -46,4 +47,5 @@ def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
         if len(parts) == 2 and parts[0] and parts[1]:
             return parts[0], parts[1]
 
-    raise ValidationError("Could not parse GitHub URL", details={"repo_url": repo_url})
+    # Backward compatibility: raise ValueError expected by tests.
+    raise ValueError(f"Could not parse GitHub URL: {repo_url}")

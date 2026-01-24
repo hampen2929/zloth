@@ -48,5 +48,6 @@ async def delete_model(
         deleted = await model_service.delete(model_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Model not found")
-    except ZlothError:
-        raise
+    except ValueError as e:
+        # Backward compatibility with callers expecting 400 on env-model delete
+        raise HTTPException(status_code=400, detail=str(e))
