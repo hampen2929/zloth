@@ -42,6 +42,7 @@ from zloth_api.domain.models import (
     UserPreferences,
 )
 from zloth_api.storage.db import Database
+from zloth_api.storage.row_mapping import row_to_model
 
 
 def generate_id() -> str:
@@ -122,13 +123,7 @@ class ModelProfileDAO:
         return row["api_key_encrypted"] if row else None
 
     def _row_to_model(self, row: Any) -> ModelProfile:
-        return ModelProfile(
-            id=row["id"],
-            provider=Provider(row["provider"]),
-            model_name=row["model_name"],
-            display_name=row["display_name"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-        )
+        return row_to_model(ModelProfile, row)
 
 
 class RepoDAO:
@@ -212,15 +207,7 @@ class RepoDAO:
         return [self._row_to_model(row) for row in rows]
 
     def _row_to_model(self, row: Any) -> Repo:
-        return Repo(
-            id=row["id"],
-            repo_url=row["repo_url"],
-            default_branch=row["default_branch"],
-            selected_branch=row["selected_branch"],
-            latest_commit=row["latest_commit"],
-            workspace_path=row["workspace_path"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-        )
+        return row_to_model(Repo, row)
 
 
 class TaskDAO:
@@ -416,22 +403,11 @@ class TaskDAO:
         return result
 
     def _row_to_model(self, row: Any) -> Task:
-        # Handle kanban_status for backward compatibility
-        kanban_status = row["kanban_status"] if "kanban_status" in row.keys() else "backlog"
-        # Handle coding_mode for backward compatibility
-        coding_mode_str = (
-            row["coding_mode"]
-            if "coding_mode" in row.keys() and row["coding_mode"]
-            else "interactive"
-        )
-        return Task(
-            id=row["id"],
-            repo_id=row["repo_id"],
-            title=row["title"],
-            coding_mode=CodingMode(coding_mode_str),
-            kanban_status=kanban_status,
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
+        # Backward-compatible defaults for older DBs (missing columns / NULL values)
+        return row_to_model(
+            Task,
+            row,
+            defaults={"kanban_status": "backlog", "coding_mode": CodingMode.INTERACTIVE.value},
         )
 
 
@@ -473,13 +449,7 @@ class MessageDAO:
         return [self._row_to_model(row) for row in rows]
 
     def _row_to_model(self, row: Any) -> Message:
-        return Message(
-            id=row["id"],
-            task_id=row["task_id"],
-            role=MessageRole(row["role"]),
-            content=row["content"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-        )
+        return row_to_model(Message, row)
 
 
 class RunDAO:
@@ -737,55 +707,18 @@ class RunDAO:
         return self._row_to_model(row)
 
     def _row_to_model(self, row: Any) -> Run:
-        files_changed = []
-        if row["files_changed"]:
-            files_changed = [FileDiff(**f) for f in json.loads(row["files_changed"])]
-
-        logs = []
-        if row["logs"]:
-            logs = json.loads(row["logs"])
-
-        warnings = []
-        if row["warnings"]:
-            warnings = json.loads(row["warnings"])
-
-        # Handle nullable provider
-        provider = Provider(row["provider"]) if row["provider"] else None
-
-        # Handle executor_type with default for backward compatibility
-        executor_type = (
-            ExecutorType(row["executor_type"]) if row["executor_type"] else ExecutorType.PATCH_AGENT
-        )
-
-        # Handle message_id for backward compatibility
-        message_id = row["message_id"] if "message_id" in row.keys() else None
-
-        return Run(
-            id=row["id"],
-            task_id=row["task_id"],
-            message_id=message_id,
-            model_id=row["model_id"],
-            model_name=row["model_name"],
-            provider=provider,
-            executor_type=executor_type,
-            working_branch=row["working_branch"],
-            worktree_path=row["worktree_path"],
-            session_id=row["session_id"],
-            instruction=row["instruction"],
-            base_ref=row["base_ref"],
-            commit_sha=row["commit_sha"] if "commit_sha" in row.keys() else None,
-            status=RunStatus(row["status"]),
-            summary=row["summary"],
-            patch=row["patch"],
-            files_changed=files_changed,
-            logs=logs,
-            warnings=warnings,
-            error=row["error"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
-            completed_at=(
-                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
-            ),
+        # JSON fields are stored as TEXT in SQLite; decode before model validation.
+        # For backward compatibility / NULL handling, coalesce to empty list.
+        return row_to_model(
+            Run,
+            row,
+            json_fields={"files_changed", "logs", "warnings"},
+            defaults={
+                "executor_type": ExecutorType.PATCH_AGENT.value,
+                "files_changed": [],
+                "logs": [],
+                "warnings": [],
+            },
         )
 
     async def get_latest_runs_by_executor_for_tasks(
@@ -979,19 +912,7 @@ class PRDAO:
         return [self._row_to_model(row) for row in rows]
 
     def _row_to_model(self, row: Any) -> PR:
-        return PR(
-            id=row["id"],
-            task_id=row["task_id"],
-            number=row["number"],
-            url=row["url"],
-            branch=row["branch"],
-            title=row["title"],
-            body=row["body"],
-            latest_commit=row["latest_commit"],
-            status=row["status"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
-        )
+        return row_to_model(PR, row)
 
 
 class UserPreferencesDAO:
@@ -1113,33 +1034,18 @@ class UserPreferencesDAO:
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
-        return UserPreferences(
-            default_repo_owner=row["default_repo_owner"],
-            default_repo_name=row["default_repo_name"],
-            default_branch=row["default_branch"],
-            default_branch_prefix=(
-                row["default_branch_prefix"] if "default_branch_prefix" in row.keys() else None
-            ),
-            default_pr_creation_mode=PRCreationMode(
-                row["default_pr_creation_mode"]
-                if "default_pr_creation_mode" in row.keys() and row["default_pr_creation_mode"]
-                else "create"
-            ),
-            default_coding_mode=CodingMode(
-                row["default_coding_mode"]
-                if "default_coding_mode" in row.keys() and row["default_coding_mode"]
-                else "interactive"
-            ),
-            auto_generate_pr_description=bool(
-                row["auto_generate_pr_description"]
-                if "auto_generate_pr_description" in row.keys()
-                else False
-            ),
-            worktrees_dir=(row["worktrees_dir"] if "worktrees_dir" in row.keys() else None),
-            data_dir=(row["data_dir"] if "data_dir" in row.keys() else None),
-            enable_gating_status=bool(
-                row["enable_gating_status"] if "enable_gating_status" in row.keys() else False
-            ),
+        # Backward-compatible defaults for older DBs (missing columns / NULL values).
+        # Note: default_pr_creation_mode fallback intentionally uses "create"
+        # to preserve existing behavior in this DAO.
+        return row_to_model(
+            UserPreferences,
+            row,
+            defaults={
+                "default_pr_creation_mode": PRCreationMode.CREATE.value,
+                "default_coding_mode": CodingMode.INTERACTIVE.value,
+                "auto_generate_pr_description": 0,
+                "enable_gating_status": 0,
+            },
         )
 
 
@@ -1345,33 +1251,11 @@ class BacklogDAO:
 
     def _row_to_model(self, row: Any) -> BacklogItem:
         """Convert database row to BacklogItem model."""
-        target_files = []
-        if row["target_files"]:
-            target_files = json.loads(row["target_files"])
-
-        tags = []
-        if row["tags"]:
-            tags = json.loads(row["tags"])
-
-        subtasks = []
-        if row["subtasks"]:
-            subtask_data = json.loads(row["subtasks"])
-            subtasks = [SubTask(**st) for st in subtask_data]
-
-        return BacklogItem(
-            id=row["id"],
-            repo_id=row["repo_id"],
-            title=row["title"],
-            description=row["description"],
-            type=BrokenDownTaskType(row["type"]),
-            estimated_size=EstimatedSize(row["estimated_size"]),
-            target_files=target_files,
-            implementation_hint=row["implementation_hint"],
-            tags=tags,
-            subtasks=subtasks,
-            task_id=row["task_id"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
+        return row_to_model(
+            BacklogItem,
+            row,
+            json_fields={"target_files", "tags", "subtasks"},
+            defaults={"target_files": [], "tags": [], "subtasks": []},
         )
 
 
@@ -1539,42 +1423,26 @@ class ReviewDAO:
 
     def _row_to_model(self, row: Any, feedbacks: builtins.list[ReviewFeedbackItem]) -> Review:
         """Convert database row to Review model."""
-        target_run_ids = json.loads(row["target_run_ids"]) if row["target_run_ids"] else []
-        logs = json.loads(row["logs"]) if row["logs"] else []
-
-        return Review(
-            id=row["id"],
-            task_id=row["task_id"],
-            target_run_ids=target_run_ids,
-            executor_type=ExecutorType(row["executor_type"]),
-            model_id=row["model_id"],
-            model_name=row["model_name"],
-            status=ReviewStatus(row["status"]),
-            overall_summary=row["overall_summary"],
-            overall_score=row["overall_score"],
-            feedbacks=feedbacks,
-            logs=logs,
-            error=row["error"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            started_at=(datetime.fromisoformat(row["started_at"]) if row["started_at"] else None),
-            completed_at=(
-                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
-            ),
+        return row_to_model(
+            Review,
+            row,
+            json_fields={"target_run_ids", "logs"},
+            defaults={"target_run_ids": [], "logs": []},
+            overrides={"feedbacks": feedbacks},
         )
 
     def _row_to_summary(self, row: Any) -> ReviewSummary:
         """Convert database row to ReviewSummary model."""
-        return ReviewSummary(
-            id=row["id"],
-            task_id=row["task_id"],
-            status=ReviewStatus(row["status"]),
-            executor_type=ExecutorType(row["executor_type"]),
-            feedback_count=row["feedback_count"] or 0,
-            critical_count=row["critical_count"] or 0,
-            high_count=row["high_count"] or 0,
-            medium_count=row["medium_count"] or 0,
-            low_count=row["low_count"] or 0,
-            created_at=datetime.fromisoformat(row["created_at"]),
+        return row_to_model(
+            ReviewSummary,
+            row,
+            defaults={
+                "feedback_count": 0,
+                "critical_count": 0,
+                "high_count": 0,
+                "medium_count": 0,
+                "low_count": 0,
+            },
         )
 
     async def get_reviewed_run_ids(self, run_ids: builtins.list[str]) -> set[str]:
@@ -1721,29 +1589,11 @@ class AgenticRunDAO:
 
     def _row_to_model(self, row: Any) -> AgenticState:
         """Convert database row to AgenticState model."""
-        from zloth_api.domain.models import CIResult
-
-        last_ci_result = None
-        if row["last_ci_result"]:
-            ci_data = json.loads(row["last_ci_result"])
-            last_ci_result = CIResult(**ci_data)
-
-        return AgenticState(
-            id=row["id"],
-            task_id=row["task_id"],
-            mode=CodingMode(row["mode"]),
-            phase=AgenticPhase(row["phase"]),
-            iteration=row["iteration"],
-            ci_iterations=row["ci_iterations"],
-            review_iterations=row["review_iterations"],
-            started_at=datetime.fromisoformat(row["started_at"]),
-            last_activity=datetime.fromisoformat(row["last_activity"]),
-            pr_number=row["pr_number"],
-            current_sha=row["current_sha"],
-            last_ci_result=last_ci_result,
-            last_review_score=row["last_review_score"],
-            error=row["error"],
-            human_approved=bool(row["human_approved"]),
+        return row_to_model(
+            AgenticState,
+            row,
+            json_fields={"last_ci_result"},
+            defaults={"human_approved": 0},
         )
 
 
@@ -1903,21 +1753,11 @@ class CICheckDAO:
 
     def _row_to_model(self, row: Any) -> CICheck:
         """Convert database row to CICheck model."""
-        jobs = json.loads(row["jobs"]) if row["jobs"] else {}
-        failed_jobs_data = json.loads(row["failed_jobs"]) if row["failed_jobs"] else []
-        failed_jobs = [CIJobResult(**fj) for fj in failed_jobs_data]
-
-        return CICheck(
-            id=row["id"],
-            task_id=row["task_id"],
-            pr_id=row["pr_id"],
-            status=row["status"],
-            workflow_run_id=row["workflow_run_id"],
-            sha=row["sha"],
-            jobs=jobs,
-            failed_jobs=failed_jobs,
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
+        return row_to_model(
+            CICheck,
+            row,
+            json_fields={"jobs", "failed_jobs"},
+            defaults={"jobs": {}, "failed_jobs": []},
         )
 
 
