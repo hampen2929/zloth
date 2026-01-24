@@ -81,6 +81,27 @@ CREATE INDEX IF NOT EXISTS idx_runs_message ON runs(message_id);
 CREATE INDEX IF NOT EXISTS idx_runs_model ON runs(model_id);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 
+-- Persistent jobs (SQLite-backed queue)
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,                    -- run.execute, review.execute, ...
+    ref_id TEXT NOT NULL,                  -- referenced record id (run_id, review_id, ...)
+    status TEXT NOT NULL DEFAULT 'queued', -- queued, running, succeeded, failed, canceled
+    payload TEXT NOT NULL DEFAULT '{}',    -- JSON object
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 1,
+    available_at TEXT NOT NULL DEFAULT (datetime('now')),
+    locked_at TEXT,
+    locked_by TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status_available ON jobs(status, available_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_kind_ref ON jobs(kind, ref_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_locked ON jobs(locked_by, locked_at);
+
 -- Pull Requests
 CREATE TABLE IF NOT EXISTS prs (
     id TEXT PRIMARY KEY,

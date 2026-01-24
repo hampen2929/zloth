@@ -18,13 +18,14 @@ from typing import TYPE_CHECKING, Any
 from zloth_api.agents.llm_router import LLMConfig, LLMRouter
 from zloth_api.agents.patch_agent import PatchAgent
 from zloth_api.config import settings
-from zloth_api.domain.enums import ExecutorType, RoleExecutionStatus, RunStatus
+from zloth_api.domain.enums import ExecutorType, JobKind, RoleExecutionStatus, RunStatus
 from zloth_api.domain.models import (
     SUMMARY_FILE_PATH,
     AgentConstraints,
     AgentRequest,
     FileDiff,
     ImplementationResult,
+    Job,
     Run,
     RunCreate,
 )
@@ -37,6 +38,7 @@ from zloth_api.roles.registry import RoleRegistry
 from zloth_api.services.commit_message import ensure_english_commit_message
 from zloth_api.services.diff_parser import parse_unified_diff
 from zloth_api.services.git_service import GitService
+from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.workspace_adapters import (
@@ -45,7 +47,7 @@ from zloth_api.services.workspace_adapters import (
     WorkspaceAdapter,
 )
 from zloth_api.services.workspace_service import WorkspaceService
-from zloth_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
+from zloth_api.storage.dao import JobDAO, RunDAO, TaskDAO, UserPreferencesDAO
 from zloth_api.utils.github_url import parse_github_owner_repo
 
 logger = logging.getLogger(__name__)
@@ -194,6 +196,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self,
         run_dao: RunDAO,
         task_dao: TaskDAO,
+        job_dao: JobDAO,
         model_service: ModelService,
         repo_service: RepoService,
         git_service: GitService | None = None,
@@ -207,6 +210,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         self.run_dao = run_dao
         self.task_dao = task_dao
+        self.job_dao = job_dao
         self.model_service = model_service
         self.repo_service = repo_service
         self.git_service = git_service or GitService()
@@ -214,7 +218,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self.user_preferences_dao = user_preferences_dao
         self.github_service = github_service
         # Note: self.output_manager is set by base class
-        self.queue = QueueAdapter()
+        self.job_worker: JobWorker | None = None
         self.llm_router = LLMRouter()
         # Note: Executors are also available via self._executors from base class
         self.claude_executor = ClaudeCodeExecutor(
@@ -232,6 +236,10 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 "zloth now uses clone-based workspaces only."
             )
         self.workspace_adapter: WorkspaceAdapter = CloneWorkspaceAdapter(self.workspace_service)
+
+    def set_job_worker(self, worker: JobWorker) -> None:
+        """Attach the shared JobWorker instance (for best-effort cancellation)."""
+        self.job_worker = worker
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
         """Create runs for multiple models or CLI executors.
@@ -333,15 +341,11 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 )
                 runs.append(run)
 
-                # Enqueue for execution
-                def make_patch_agent_coro(
-                    r: Run, rp: Any
-                ) -> Callable[[], Coroutine[Any, Any, None]]:
-                    return lambda: self._execute_patch_agent_run(r, rp)
-
-                self.queue.enqueue(
-                    run.id,
-                    make_patch_agent_coro(run, repo),
+                # Enqueue for execution (persistent job)
+                await self.job_dao.create(
+                    kind=JobKind.RUN_EXECUTE,
+                    ref_id=run.id,
+                    payload={},
                 )
 
         return runs
@@ -484,15 +488,12 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if not updated_run:
             raise ValueError(f"Run not found after update: {run.id}")
 
-        # Enqueue for execution based on executor type
-        def make_coro(
-            r: Run, wt: Any, et: ExecutorType, ps: str | None, rp: Any
-        ) -> Callable[[], Coroutine[Any, Any, None]]:
-            return lambda: self._execute_cli_run(r, wt, et, ps, rp)
-
-        self.queue.enqueue(
-            updated_run.id,
-            make_coro(updated_run, workspace_info, executor_type, previous_session_id, repo),
+        # Enqueue for execution (persistent job).
+        # We store resume_session_id in payload because it is derived at enqueue-time.
+        await self.job_dao.create(
+            kind=JobKind.RUN_EXECUTE,
+            ref_id=updated_run.id,
+            payload={"resume_session_id": previous_session_id} if previous_session_id else {},
         )
 
         return updated_run
@@ -519,6 +520,57 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         """
         return await self.run_dao.list(task_id)
 
+    async def execute_job(self, job: Job) -> None:
+        """Execute a durable queue job for a run.
+
+        The worker calls this using only (run_id + payload). All runtime context
+        must be reconstructed from the database.
+        """
+        if job.kind != JobKind.RUN_EXECUTE:
+            raise ValueError(f"Unsupported job kind for RunService: {job.kind}")
+
+        run = await self.run_dao.get(job.ref_id)
+        if not run:
+            raise ValueError(f"Run not found: {job.ref_id}")
+
+        task = await self.task_dao.get(run.task_id)
+        if not task:
+            raise ValueError(f"Task not found for run: {run.task_id}")
+
+        repo = await self.repo_service.get(task.repo_id)
+        if not repo:
+            raise ValueError(f"Repo not found for task: {task.repo_id}")
+
+        if run.executor_type == ExecutorType.PATCH_AGENT:
+            await self._execute_patch_agent_run(run, repo)
+        else:
+            if not run.worktree_path or not run.working_branch:
+                raise ValueError(f"Run missing workspace info: {run.id}")
+
+            workspace_info = ExecutionWorkspaceInfo(
+                path=Path(run.worktree_path),
+                branch_name=run.working_branch,
+                base_branch=run.base_ref or repo.default_branch or "main",
+                created_at=datetime.utcnow(),
+            )
+
+            resume_session_id = None
+            if job.payload:
+                resume_session_id = job.payload.get("resume_session_id")
+
+            await self._execute_cli_run(
+                run=run,
+                worktree_info=workspace_info,
+                executor_type=run.executor_type,
+                resume_session_id=resume_session_id,
+                repo=repo,
+            )
+
+        # Determine success based on persisted run status
+        updated = await self.run_dao.get(run.id)
+        if updated and updated.status == RunStatus.FAILED:
+            raise RuntimeError(updated.error or "Run failed")
+
     async def cancel(self, run_id: str) -> bool:
         """Cancel a run.
 
@@ -529,7 +581,13 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             True if cancelled.
         """
         run = await self.run_dao.get(run_id)
-        cancelled = self.queue.cancel(run_id)
+        # Cancel queued job (durable queue) and best-effort cancel running job in this process.
+        if self.job_worker:
+            cancelled = await self.job_worker.cancel_ref(kind=JobKind.RUN_EXECUTE, ref_id=run_id)
+        else:
+            cancelled = await self.job_dao.cancel_queued_by_ref(
+                kind=JobKind.RUN_EXECUTE, ref_id=run_id
+            )
 
         if cancelled:
             await self.run_dao.update_status(run_id, RunStatus.CANCELED)

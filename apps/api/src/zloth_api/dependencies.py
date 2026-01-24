@@ -1,6 +1,7 @@
 """FastAPI dependency injection."""
 
 from zloth_api.config import settings
+from zloth_api.domain.enums import JobKind
 from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
 from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
@@ -8,6 +9,7 @@ from zloth_api.services.ci_polling_service import CIPollingService
 from zloth_api.services.crypto_service import CryptoService
 from zloth_api.services.git_service import GitService
 from zloth_api.services.github_service import GitHubService
+from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.kanban_service import KanbanService
 from zloth_api.services.merge_gate_service import MergeGateService
 from zloth_api.services.metrics_service import MetricsService
@@ -25,6 +27,7 @@ from zloth_api.storage.dao import (
     AgenticRunDAO,
     BacklogDAO,
     CICheckDAO,
+    JobDAO,
     MessageDAO,
     MetricsDAO,
     ModelProfileDAO,
@@ -49,6 +52,7 @@ _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
+_job_worker: JobWorker | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -87,6 +91,12 @@ async def get_run_dao() -> RunDAO:
     """Get Run DAO."""
     db = await get_db()
     return RunDAO(db)
+
+
+async def get_job_dao() -> JobDAO:
+    """Get Job DAO."""
+    db = await get_db()
+    return JobDAO(db)
 
 
 async def get_pr_dao() -> PRDAO:
@@ -138,6 +148,7 @@ async def get_run_service() -> RunService:
     if _run_service is None:
         run_dao = await get_run_dao()
         task_dao = await get_task_dao()
+        job_dao = await get_job_dao()
         model_service = await get_model_service()
         repo_service = await get_repo_service()
         git_service = get_git_service()
@@ -148,6 +159,7 @@ async def get_run_service() -> RunService:
         _run_service = RunService(
             run_dao,
             task_dao,
+            job_dao,
             model_service,
             repo_service,
             git_service,
@@ -239,15 +251,34 @@ async def get_review_service() -> ReviewService:
         run_dao = await get_run_dao()
         task_dao = await get_task_dao()
         message_dao = await get_message_dao()
+        job_dao = await get_job_dao()
         output_manager = get_output_manager()
         _review_service = ReviewService(
             review_dao,
             run_dao,
             task_dao,
             message_dao,
+            job_dao,
             output_manager,
         )
     return _review_service
+
+
+async def get_job_worker() -> JobWorker:
+    """Get the job worker singleton (persistent queue executor)."""
+    global _job_worker
+    if _job_worker is None:
+        job_dao = await get_job_dao()
+        run_service = await get_run_service()
+        review_service = await get_review_service()
+        handlers = {
+            JobKind.RUN_EXECUTE: run_service.execute_job,
+            JobKind.REVIEW_EXECUTE: review_service.execute_job,
+        }
+        _job_worker = JobWorker(job_dao=job_dao, handlers=handlers)
+        run_service.set_job_worker(_job_worker)
+        review_service.set_job_worker(_job_worker)
+    return _job_worker
 
 
 async def get_agentic_run_dao() -> AgenticRunDAO:

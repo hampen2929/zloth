@@ -21,6 +21,29 @@ class RoleExecutionStatus(str, Enum):
     CANCELED = "canceled"  # Canceled by user
 
 
+# ============================================================
+# Persistent Job Queue (SQLite-backed)
+# ============================================================
+
+
+class JobStatus(str, Enum):
+    """Persistent job status for the SQLite-backed queue."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class JobKind(str, Enum):
+    """Job kind identifiers for the persistent queue."""
+
+    RUN_EXECUTE = "run.execute"
+    REVIEW_EXECUTE = "review.execute"
+    # Note: Breakdown/PR-link jobs can be added later as needed.
+
+
 # Backward compatibility aliases
 RunStatus = RoleExecutionStatus
 

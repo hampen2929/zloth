@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from zloth_api.config import settings
-from zloth_api.dependencies import get_pr_status_poller
+from zloth_api.dependencies import get_job_worker, get_pr_status_poller
 from zloth_api.error_handling import install_error_handling
 from zloth_api.routes import (
     backlog_router,
@@ -23,6 +23,7 @@ from zloth_api.routes import (
     runs_router,
     tasks_router,
 )
+from zloth_api.storage.dao import ReviewDAO, RunDAO
 from zloth_api.storage.db import get_db
 
 
@@ -33,14 +34,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     db = await get_db()
     await db.initialize()
 
+    # Startup recovery for durable queue and domain statuses.
+    # Conservative behavior: mark orphaned RUNNING jobs/runs/reviews as FAILED.
+    run_dao = RunDAO(db)
+    review_dao = ReviewDAO(db)
+    await run_dao.fail_all_running(
+        error="Server restarted while run was running (startup recovery)"
+    )
+    await review_dao.fail_all_running(
+        error="Server restarted while review was running (startup recovery)"
+    )
+
     # Start PR status poller
     pr_status_poller = await get_pr_status_poller()
     pr_status_poller.start()
+
+    # Start persistent job worker
+    job_worker = await get_job_worker()
+    await job_worker.recover_startup()
+    job_worker.start()
 
     yield
 
     # Shutdown: stop PR status poller
     await pr_status_poller.stop()
+
+    # Shutdown: stop job worker
+    await job_worker.stop()
 
     # Shutdown: close database
     await db.disconnect()
