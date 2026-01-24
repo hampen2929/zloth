@@ -28,6 +28,9 @@ dev = [
     "mypy>=1.8.0",
     "types-aiofiles>=24.1.0",
 ]
+postgres = [
+    "asyncpg>=0.29.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -66,6 +69,8 @@ module = [
     "dotenv",
     "aiosqlite",
     "aiosqlite.*",
+    "asyncpg",
+    "asyncpg.*",
     "google.generativeai",
     "google.generativeai.*",
     "git",
