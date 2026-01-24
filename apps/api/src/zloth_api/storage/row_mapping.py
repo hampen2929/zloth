@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel
-
-ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 def row_to_dict(row: Any) -> dict[str, Any]:
@@ -66,7 +64,7 @@ def _decode_json_fields(data: dict[str, Any], json_fields: set[str]) -> None:
             raise ValueError(f"Failed to decode JSON field {key!r}: {e}") from e
 
 
-def row_to_model(
+def row_to_model[ModelT: BaseModel](
     model_cls: type[ModelT],
     row: Any,
     *,
@@ -100,4 +98,3 @@ def row_to_model(
         data = postprocess(data)
 
     return model_cls.model_validate(data)
-

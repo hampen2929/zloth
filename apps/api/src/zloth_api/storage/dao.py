@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Any
 
 from zloth_api.domain.enums import (
-    AgenticPhase,
     BrokenDownTaskType,
     CodingMode,
     EstimatedSize,
