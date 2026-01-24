@@ -41,13 +41,13 @@ from zloth_api.services.git_service import GitService
 from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
+from zloth_api.services.run_workspace_manager import RunWorkspaceManager
 from zloth_api.services.workspace_adapters import (
     CloneWorkspaceAdapter,
     ExecutionWorkspaceInfo,
     WorkspaceAdapter,
 )
 from zloth_api.services.workspace_service import WorkspaceService
-from zloth_api.services.run_workspace_manager import RunWorkspaceManager
 from zloth_api.storage.dao import JobDAO, RunDAO, TaskDAO, UserPreferencesDAO
 from zloth_api.utils.github_url import parse_github_owner_repo
 
