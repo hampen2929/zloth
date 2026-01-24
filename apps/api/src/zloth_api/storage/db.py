@@ -110,11 +110,52 @@ class Database:
             )
             await conn.commit()
 
-        # Migration: Add worktrees_dir column if it doesn't exist
         # Migration: Add enable_gating_status column if it doesn't exist
         if "enable_gating_status" not in pref_column_names:
             await conn.execute(
                 "ALTER TABLE user_preferences ADD COLUMN enable_gating_status INTEGER DEFAULT 0"
+            )
+            await conn.commit()
+
+        # Migration: Add notify_on_ready column if it doesn't exist
+        if "notify_on_ready" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN notify_on_ready INTEGER DEFAULT 1"
+            )
+            await conn.commit()
+
+        # Migration: Add notify_on_complete column if it doesn't exist
+        if "notify_on_complete" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN notify_on_complete INTEGER DEFAULT 1"
+            )
+            await conn.commit()
+
+        # Migration: Add notify_on_failure column if it doesn't exist
+        if "notify_on_failure" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN notify_on_failure INTEGER DEFAULT 1"
+            )
+            await conn.commit()
+
+        # Migration: Add notify_on_warning column if it doesn't exist
+        if "notify_on_warning" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN notify_on_warning INTEGER DEFAULT 1"
+            )
+            await conn.commit()
+
+        # Migration: Add merge_method column if it doesn't exist
+        if "merge_method" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN merge_method TEXT DEFAULT 'squash'"
+            )
+            await conn.commit()
+
+        # Migration: Add review_min_score column if it doesn't exist
+        if "review_min_score" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN review_min_score REAL DEFAULT 0.75"
             )
             await conn.commit()
 

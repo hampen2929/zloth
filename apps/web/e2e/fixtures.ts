@@ -45,6 +45,15 @@ export const mockResponses = {
     default_branch: null,
     default_branch_prefix: null,
     default_pr_creation_mode: 'create',
+    default_coding_mode: 'interactive',
+    auto_generate_pr_description: false,
+    enable_gating_status: false,
+    notify_on_ready: true,
+    notify_on_complete: true,
+    notify_on_failure: true,
+    notify_on_warning: true,
+    merge_method: 'squash',
+    review_min_score: 0.75,
   },
 
   branches: [

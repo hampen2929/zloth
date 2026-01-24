@@ -141,6 +141,12 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     auto_generate_pr_description INTEGER DEFAULT 0,  -- Auto-generate PR description: 0=no, 1=yes
     update_pr_title_on_regenerate INTEGER DEFAULT 1, -- Update PR title when regenerating: 0=no, 1=yes
     enable_gating_status INTEGER DEFAULT 0, -- Enable gating status for CI waiting: 0=disabled, 1=enabled
+    notify_on_ready INTEGER DEFAULT 1,      -- Notify when PR is ready
+    notify_on_complete INTEGER DEFAULT 1,   -- Notify on completion
+    notify_on_failure INTEGER DEFAULT 1,    -- Notify on failure
+    notify_on_warning INTEGER DEFAULT 1,    -- Notify on warning
+    merge_method TEXT DEFAULT 'squash',     -- Merge method preference
+    review_min_score REAL DEFAULT 0.75,     -- Minimum review score for merge gate
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
