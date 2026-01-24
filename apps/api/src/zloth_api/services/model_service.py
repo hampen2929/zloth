@@ -62,7 +62,13 @@ class ModelService:
 
         # Check against DB models
         existing = await self.dao.list()
-        if any(m.provider.value == target_provider and m.model_name == target_model for m in existing):
+        if any(
+            (
+                m.provider.value == target_provider
+                and m.model_name == target_model
+            )
+            for m in existing
+        ):
             raise ValueError("Model with the same provider and model_name already exists")
 
         # Encrypt the API key

@@ -1245,7 +1245,9 @@ class UserPreferencesDAO:
         complete_int = None if notify_on_complete is None else (1 if notify_on_complete else 0)
         failure_int = None if notify_on_failure is None else (1 if notify_on_failure else 0)
         warning_int = None if notify_on_warning is None else (1 if notify_on_warning else 0)
-        delete_branch_int = None if merge_delete_branch is None else (1 if merge_delete_branch else 0)
+        delete_branch_int = (
+            None if merge_delete_branch is None else (1 if merge_delete_branch else 0)
+        )
 
         # Try to update first
         cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")

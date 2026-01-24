@@ -15,13 +15,13 @@ from zloth_api.services.merge_gate_service import MergeGateService
 from zloth_api.services.metrics_service import MetricsService
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.notification_service import NotificationService
-from zloth_api.services.settings_service import SettingsService
 from zloth_api.services.output_manager import OutputManager
 from zloth_api.services.pr_service import PRService
 from zloth_api.services.pr_status_poller import PRStatusPoller
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.review_service import ReviewService
 from zloth_api.services.run_service import RunService
+from zloth_api.services.settings_service import SettingsService
 from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import (
     PRDAO,
