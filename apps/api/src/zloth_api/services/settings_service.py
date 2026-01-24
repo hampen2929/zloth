@@ -67,7 +67,9 @@ class SettingsService:
     def _resolve_bool(self, field_name: str, db_value: bool | None, default: bool) -> bool:
         return bool(self._resolve_value(field_name, db_value, default))
 
-    def _resolve_value(self, field_name: str, db_value: object | None, default: object) -> object:
+    def _resolve_value(
+        self, field_name: str, db_value: str | float | None, default: str | float
+    ) -> str | float:
         if self._env_override(field_name):
             return default
         if db_value is not None:
