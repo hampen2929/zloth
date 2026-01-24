@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 from zloth_api.config import settings
 from zloth_api.domain.enums import ExecutorType, PRUpdateMode
@@ -32,6 +32,7 @@ from zloth_api.domain.models import (
     Run,
     Task,
 )
+from zloth_api.errors import ForbiddenError, NotFoundError
 from zloth_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
@@ -40,6 +41,7 @@ from zloth_api.services.git_service import GitService
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.storage.dao import PRDAO, RunDAO, TaskDAO
+from zloth_api.utils.github_url import parse_github_owner_repo
 
 if TYPE_CHECKING:
     from zloth_api.services.github_service import GitHubService
@@ -47,10 +49,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class GitHubPermissionError(Exception):
+class GitHubPermissionError(ForbiddenError):
     """Raised when GitHub App lacks required permissions."""
 
-    pass
+    def __init__(self, message: str):
+        super().__init__(message, code="GITHUB_PERMISSION")
 
 
 @dataclass
@@ -155,26 +158,8 @@ class PRService:
         )
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
-        """Parse owner and repo from GitHub URL.
-
-        Args:
-            repo_url: GitHub repository URL.
-
-        Returns:
-            Tuple of (owner, repo_name).
-        """
-        # Handle different URL formats
-        if repo_url.startswith("git@github.com:"):
-            path = repo_url.replace("git@github.com:", "").replace(".git", "")
-        else:
-            parsed = urlparse(repo_url)
-            path = parsed.path.strip("/").replace(".git", "")
-
-        parts = path.split("/")
-        if len(parts) != 2:
-            raise ValueError(f"Invalid GitHub URL: {repo_url}")
-
-        return parts[0], parts[1]
+        """Backward-compatible wrapper (use parse_github_owner_repo)."""
+        return parse_github_owner_repo(repo_url)
 
     async def _ensure_branch_pushed(
         self, *, owner: str, repo: str, repo_obj: Repo, run: Run
@@ -243,16 +228,16 @@ class PRService:
         # Get task and repo
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         # Get run
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+            raise NotFoundError("Run not found", details={"run_id": data.selected_run_id})
 
         # Verify run has a branch and commit
         if not run.working_branch:

@@ -29,7 +29,7 @@ from zloth_api.domain.models import (
     PRUpdated,
 )
 from zloth_api.services.ci_check_service import CICheckService
-from zloth_api.services.pr_service import GitHubPermissionError, PRService
+from zloth_api.services.pr_service import PRService
 from zloth_api.storage.dao import RunDAO, UserPreferencesDAO
 
 logger = logging.getLogger(__name__)
@@ -120,24 +120,19 @@ async def create_pr(
     run_dao: RunDAO = Depends(get_run_dao),
 ) -> PRCreated:
     """Create a Pull Request from a run."""
-    try:
-        pr = await pr_service.create(task_id, data)
+    pr = await pr_service.create(task_id, data)
 
-        # Trigger CI check in background if gating is enabled
-        await _trigger_ci_check_if_enabled(
-            task_id, pr.id, ci_check_service, user_preferences_dao, run_dao
-        )
+    # Trigger CI check in background if gating is enabled
+    await _trigger_ci_check_if_enabled(
+        task_id, pr.id, ci_check_service, user_preferences_dao, run_dao
+    )
 
-        return PRCreated(
-            pr_id=pr.id,
-            url=pr.url,
-            branch=pr.branch,
-            number=pr.number,
-        )
-    except GitHubPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return PRCreated(
+        pr_id=pr.id,
+        url=pr.url,
+        branch=pr.branch,
+        number=pr.number,
+    )
 
 
 @router.post("/tasks/{task_id}/prs/auto", response_model=PRCreated, status_code=201)
@@ -154,24 +149,19 @@ async def create_pr_auto(
     This endpoint automatically generates the PR title and description
     using AI based on the diff and task context.
     """
-    try:
-        pr = await pr_service.create_auto(task_id, data)
+    pr = await pr_service.create_auto(task_id, data)
 
-        # Trigger CI check in background if gating is enabled
-        await _trigger_ci_check_if_enabled(
-            task_id, pr.id, ci_check_service, user_preferences_dao, run_dao
-        )
+    # Trigger CI check in background if gating is enabled
+    await _trigger_ci_check_if_enabled(
+        task_id, pr.id, ci_check_service, user_preferences_dao, run_dao
+    )
 
-        return PRCreated(
-            pr_id=pr.id,
-            url=pr.url,
-            branch=pr.branch,
-            number=pr.number,
-        )
-    except GitHubPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return PRCreated(
+        pr_id=pr.id,
+        url=pr.url,
+        branch=pr.branch,
+        number=pr.number,
+    )
 
 
 @router.post("/tasks/{task_id}/prs/link", response_model=PRCreateLink)
@@ -181,12 +171,7 @@ async def create_pr_link(
     pr_service: PRService = Depends(get_pr_service),
 ) -> PRCreateLink:
     """Generate a GitHub compare link for manual PR creation."""
-    try:
-        return await pr_service.create_link(task_id, data)
-    except GitHubPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return await pr_service.create_link(task_id, data)
 
 
 @router.post("/tasks/{task_id}/prs/auto/link", response_model=PRCreateLink)
@@ -196,12 +181,7 @@ async def create_pr_link_auto(
     pr_service: PRService = Depends(get_pr_service),
 ) -> PRCreateLink:
     """Generate a GitHub compare link for manual PR creation (auto flow)."""
-    try:
-        return await pr_service.create_link_auto(task_id, data)
-    except GitHubPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return await pr_service.create_link_auto(task_id, data)
 
 
 @router.post("/tasks/{task_id}/prs/auto/link/job", response_model=PRLinkJob)
@@ -246,20 +226,15 @@ async def sync_manual_pr(
     run_dao: RunDAO = Depends(get_run_dao),
 ) -> PRSyncResult:
     """Sync a manually created PR (created via the GitHub compare UI)."""
-    try:
-        result = await pr_service.sync_manual_pr(task_id, data.selected_run_id)
+    result = await pr_service.sync_manual_pr(task_id, data.selected_run_id)
 
-        # Trigger CI check in background if gating is enabled and PR was found
-        if result.found and result.pr:
-            await _trigger_ci_check_if_enabled(
-                task_id, result.pr.pr_id, ci_check_service, user_preferences_dao, run_dao
-            )
+    # Trigger CI check in background if gating is enabled and PR was found
+    if result.found and result.pr:
+        await _trigger_ci_check_if_enabled(
+            task_id, result.pr.pr_id, ci_check_service, user_preferences_dao, run_dao
+        )
 
-        return result
-    except GitHubPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return result
 
 
 @router.post("/tasks/{task_id}/prs/{pr_id}/update", response_model=PRUpdated)
@@ -273,22 +248,17 @@ async def update_pr(
     run_dao: RunDAO = Depends(get_run_dao),
 ) -> PRUpdated:
     """Update a Pull Request with a new run."""
-    try:
-        pr = await pr_service.update(task_id, pr_id, data)
+    pr = await pr_service.update(task_id, pr_id, data)
 
-        # Trigger CI check in background if gating is enabled
-        await _trigger_ci_check_if_enabled(
-            task_id, pr_id, ci_check_service, user_preferences_dao, run_dao
-        )
+    # Trigger CI check in background if gating is enabled
+    await _trigger_ci_check_if_enabled(
+        task_id, pr_id, ci_check_service, user_preferences_dao, run_dao
+    )
 
-        return PRUpdated(
-            url=pr.url,
-            latest_commit=pr.latest_commit,
-        )
-    except GitHubPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return PRUpdated(
+        url=pr.url,
+        latest_commit=pr.latest_commit,
+    )
 
 
 @router.get("/tasks/{task_id}/prs/{pr_id}", response_model=PR)
@@ -331,12 +301,7 @@ async def regenerate_pr_description(
     Args:
         mode: What to update - "both", "description", or "title". Defaults to "both".
     """
-    try:
-        return await pr_service.regenerate_description(task_id, pr_id, mode=mode)
-    except GitHubPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return await pr_service.regenerate_description(task_id, pr_id, mode=mode)
 
 
 @router.post("/tasks/{task_id}/prs/{pr_id}/check-ci", response_model=CICheckResponse)
