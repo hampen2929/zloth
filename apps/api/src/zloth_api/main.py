@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from zloth_api.config import settings
+from zloth_api.error_handling import install_error_handling
 from zloth_api.dependencies import get_job_worker, get_pr_status_poller
 from zloth_api.routes import (
     backlog_router,
@@ -71,6 +72,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Global error handling + request correlation
+install_error_handling(app)
 
 # CORS middleware for frontend
 # Allow all origins for SSE streaming support from various deployment scenarios

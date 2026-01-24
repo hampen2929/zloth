@@ -140,8 +140,6 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     default_coding_mode TEXT,               -- Default coding mode: interactive|semi_auto|full_auto
     auto_generate_pr_description INTEGER DEFAULT 0,  -- Auto-generate PR description: 0=no, 1=yes
     update_pr_title_on_regenerate INTEGER DEFAULT 1, -- Update PR title when regenerating: 0=no, 1=yes
-    worktrees_dir TEXT,                     -- Custom worktrees directory (e.g., "~/.zloth/worktrees")
-    data_dir TEXT,                          -- Custom data directory for SQLite database (e.g., "~/.zloth/data")
     enable_gating_status INTEGER DEFAULT 0, -- Enable gating status for CI waiting: 0=disabled, 1=enabled
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
