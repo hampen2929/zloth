@@ -12,6 +12,7 @@ import git
 
 from zloth_api.config import settings
 from zloth_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
+from zloth_api.errors import ForbiddenError
 from zloth_api.storage.dao import RepoDAO
 
 if TYPE_CHECKING:
@@ -37,11 +38,11 @@ class RepoService:
         """Ensure the workspaces directory exists and is writable.
 
         Raises:
-            PermissionError: If the directory is not writable.
+            ForbiddenError: If the directory is not writable.
         """
         self.workspaces_dir.mkdir(parents=True, exist_ok=True)
         if not os.access(self.workspaces_dir, os.W_OK):
-            raise PermissionError(
+            raise ForbiddenError(
                 f"Workspaces directory '{self.workspaces_dir}' is not writable. "
                 f"Please fix permissions with: chmod -R u+w {self.workspaces_dir}"
             )
@@ -56,7 +57,7 @@ class RepoService:
             Repo object with clone information.
 
         Raises:
-            PermissionError: If the workspaces directory is not writable.
+            ForbiddenError: If the workspaces directory is not writable.
         """
         # Ensure workspaces directory is writable
         self._ensure_workspaces_writable()
@@ -121,7 +122,7 @@ class RepoService:
             Repo object with clone information.
 
         Raises:
-            PermissionError: If the workspaces directory is not writable.
+            ForbiddenError: If the workspaces directory is not writable.
         """
         # Construct the repo URL
         repo_url = f"https://github.com/{data.owner}/{data.repo}"
@@ -242,7 +243,7 @@ class RepoService:
             Path to the working copy.
 
         Raises:
-            PermissionError: If the workspaces directory is not writable.
+            ForbiddenError: If the workspaces directory is not writable.
         """
         # Ensure workspaces directory is writable
         self._ensure_workspaces_writable()

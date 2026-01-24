@@ -48,5 +48,5 @@ async def delete_model(
         deleted = await model_service.delete(model_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Model not found")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
