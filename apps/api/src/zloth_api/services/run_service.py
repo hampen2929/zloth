@@ -241,7 +241,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         """Attach the shared JobWorker instance (for best-effort cancellation)."""
         self.job_worker = worker
 
-    async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
+    async def create_runs(self, task_id: str, data: RunCreate) -> builtins.list[Run]:
         """Create runs for multiple models or CLI executors.
 
         Supports parallel execution of multiple CLI executors (Claude Code, Codex, Gemini)
@@ -509,7 +509,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         """
         return await self.run_dao.get(run_id)
 
-    async def list(self, task_id: str) -> list[Run]:
+    async def list(self, task_id: str) -> builtins.list[Run]:
         """List runs for a task.
 
         Args:
