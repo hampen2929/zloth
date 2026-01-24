@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import builtins
 import logging
-import re
 from collections.abc import Callable, Coroutine
 from datetime import datetime
 from pathlib import Path
@@ -409,7 +408,9 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     )
                     workspace_path = None  # Force fresh clone-based workspace
 
-            is_valid = bool(workspace_path) and await self.workspace_adapter.is_valid(workspace_path)
+            is_valid = bool(workspace_path) and await self.workspace_adapter.is_valid(
+                workspace_path
+            )
 
             if is_valid and workspace_path is not None:
                 # If we're working from the repo's default branch, ensure the workspace
@@ -893,7 +894,10 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 llm_router=self.llm_router,
                 hint=final_summary or "",
             )
-            commit_sha = await self.workspace_adapter.commit(worktree_info.path, message=commit_message)
+            commit_sha = await self.workspace_adapter.commit(
+                worktree_info.path,
+                message=commit_message,
+            )
             logs.append(f"Committed: {commit_sha[:8]}")
 
             # 8. Push (automatic)

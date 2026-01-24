@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 from zloth_api.config import settings
 from zloth_api.domain.enums import ExecutorType, PRUpdateMode

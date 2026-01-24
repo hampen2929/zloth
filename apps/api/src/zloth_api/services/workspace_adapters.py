@@ -69,7 +69,13 @@ class WorkspaceAdapter(Protocol):
 
     async def commit(self, path: Path, *, message: str) -> str: ...
 
-    async def is_behind_remote(self, path: Path, *, branch: str, auth_url: str | None = None) -> bool: ...
+    async def is_behind_remote(
+        self,
+        path: Path,
+        *,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> bool: ...
 
     async def sync_with_remote(
         self, path: Path, *, branch: str, auth_url: str | None = None
@@ -127,7 +133,13 @@ class CloneWorkspaceAdapter:
     async def commit(self, path: Path, *, message: str) -> str:
         return await self._ws.commit(path, message=message)
 
-    async def is_behind_remote(self, path: Path, *, branch: str, auth_url: str | None = None) -> bool:
+    async def is_behind_remote(
+        self,
+        path: Path,
+        *,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> bool:
         return await self._ws.is_behind_remote(path, branch=branch, auth_url=auth_url)
 
     async def sync_with_remote(
@@ -195,7 +207,13 @@ class WorktreeWorkspaceAdapter:
     async def commit(self, path: Path, *, message: str) -> str:
         return await self._git.commit(path, message=message)
 
-    async def is_behind_remote(self, path: Path, *, branch: str, auth_url: str | None = None) -> bool:
+    async def is_behind_remote(
+        self,
+        path: Path,
+        *,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> bool:
         return await self._git.is_behind_remote(path, branch=branch, auth_url=auth_url)
 
     async def sync_with_remote(
@@ -213,4 +231,8 @@ class WorktreeWorkspaceAdapter:
         self, path: Path, *, branch: str, auth_url: str | None = None
     ) -> PushAttemptResult:
         res = await self._git.push_with_retry(path, branch=branch, auth_url=auth_url)
-        return PushAttemptResult(success=res.success, required_pull=res.required_pull, error=res.error)
+        return PushAttemptResult(
+            success=res.success,
+            required_pull=res.required_pull,
+            error=res.error,
+        )
