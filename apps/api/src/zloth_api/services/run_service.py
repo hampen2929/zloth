@@ -408,9 +408,10 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     )
                     workspace_path = None  # Force fresh clone-based workspace
 
-            is_valid = bool(workspace_path) and await self.workspace_adapter.is_valid(
-                workspace_path
-            )
+            if workspace_path is None:
+                is_valid = False
+            else:
+                is_valid = await self.workspace_adapter.is_valid(workspace_path)
 
             if is_valid and workspace_path is not None:
                 # If we're working from the repo's default branch, ensure the workspace
