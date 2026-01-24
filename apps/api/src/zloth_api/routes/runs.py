@@ -24,11 +24,8 @@ async def create_runs(
     run_service: RunService = Depends(get_run_service),
 ) -> RunsCreated:
     """Create runs for multiple models (parallel execution)."""
-    try:
-        runs = await run_service.create_runs(task_id, data)
-        return RunsCreated(run_ids=[r.id for r in runs])
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    runs = await run_service.create_runs(task_id, data)
+    return RunsCreated(run_ids=[r.id for r in runs])
 
 
 @router.get("/tasks/{task_id}/runs", response_model=list[Run])
