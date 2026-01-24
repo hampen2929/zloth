@@ -47,6 +47,7 @@ from zloth_api.services.workspace_adapters import (
     WorkspaceAdapter,
 )
 from zloth_api.services.workspace_service import WorkspaceService
+from zloth_api.services.run_workspace_manager import RunWorkspaceManager
 from zloth_api.storage.dao import JobDAO, RunDAO, TaskDAO, UserPreferencesDAO
 from zloth_api.utils.github_url import parse_github_owner_repo
 
@@ -236,6 +237,13 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 "zloth now uses clone-based workspaces only."
             )
         self.workspace_adapter: WorkspaceAdapter = CloneWorkspaceAdapter(self.workspace_service)
+        self.workspace_manager = RunWorkspaceManager(
+            run_dao=self.run_dao,
+            workspace_adapter=self.workspace_adapter,
+            git_service=self.git_service,
+            user_preferences_dao=self.user_preferences_dao,
+            github_service=self.github_service,
+        )
 
     def set_job_worker(self, worker: JobWorker) -> None:
         """Attach the shared JobWorker instance (for best-effort cancellation)."""
@@ -388,60 +396,11 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             executor_type=executor_type,
         )
 
-        workspace_info: ExecutionWorkspaceInfo | None = None
-
-        if existing_run and existing_run.worktree_path:
-            workspace_path: Path | None = Path(existing_run.worktree_path)
-
-            # Never reuse legacy worktrees (paths under worktrees_dir).
-            # We store the workspace path in Run.worktree_path for backward compatibility.
-            worktrees_root = getattr(self.git_service, "worktrees_dir", None)
-            if worktrees_root and str(workspace_path).startswith(str(worktrees_root)):
-                logger.info("Skipping reuse of legacy worktree path: %s", workspace_path)
-                workspace_path = None
-
-            if workspace_path is None:
-                is_valid = False
-            else:
-                is_valid = await self.workspace_adapter.is_valid(workspace_path)
-
-            if is_valid and workspace_path is not None:
-                # If we're working from the repo's default branch, ensure the workspace
-                # still contains the latest origin/<default>. Otherwise, create fresh.
-                should_check_default = (base_ref == repo.default_branch) and bool(
-                    repo.default_branch
-                )
-                if should_check_default:
-                    default_ref = f"origin/{repo.default_branch}"
-                    up_to_date = await self.git_service.is_ancestor(
-                        repo_path=workspace_path,
-                        ancestor=default_ref,
-                        descendant="HEAD",
-                    )
-                    if not up_to_date:
-                        logger.info(
-                            "Existing workspace is behind latest default; creating new "
-                            f"(workspace={workspace_path}, default={default_ref})"
-                        )
-                    else:
-                        workspace_info = ExecutionWorkspaceInfo(
-                            path=workspace_path,
-                            branch_name=existing_run.working_branch or "",
-                            base_branch=existing_run.base_ref or base_ref,
-                            created_at=existing_run.created_at or datetime.utcnow(),
-                        )
-                        logger.info(f"Reusing existing workspace: {workspace_path}")
-                else:
-                    # Reuse existing workspace (no default-base freshness check)
-                    workspace_info = ExecutionWorkspaceInfo(
-                        path=workspace_path,
-                        branch_name=existing_run.working_branch or "",
-                        base_branch=existing_run.base_ref or base_ref,
-                        created_at=existing_run.created_at or datetime.utcnow(),
-                    )
-                    logger.info(f"Reusing existing workspace: {workspace_path}")
-            else:
-                logger.warning(f"Workspace invalid or broken, will create new: {workspace_path}")
+        workspace_info = await self.workspace_manager.get_reusable_workspace(
+            existing_run=existing_run,
+            repo=repo,
+            base_ref=base_ref,
+        )
 
         # Create the run record
         run = await self.run_dao.create(
@@ -453,35 +412,14 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         )
 
         if not workspace_info:
-            branch_prefix: str | None = None
-            if self.user_preferences_dao:
-                prefs = await self.user_preferences_dao.get()
-                branch_prefix = prefs.default_branch_prefix if prefs else None
-
-            # Get auth_url for private repos
-            auth_url: str | None = None
-            if self.github_service and repo.repo_url:
-                try:
-                    owner, repo_name = self._parse_github_url(repo.repo_url)
-                    auth_url = await self.github_service.get_auth_url(owner, repo_name)
-                except Exception as e:
-                    logger.warning(f"Could not get auth_url for workspace creation: {e}")
-
-            logger.info(f"Creating execution workspace for run {run.id[:8]}")
-            workspace_info = await self.workspace_adapter.create(
-                repo=repo,
-                base_branch=base_ref,
+            workspace_info = await self.workspace_manager.create_workspace(
                 run_id=run.id,
-                branch_prefix=branch_prefix,
-                auth_url=auth_url,
+                repo=repo,
+                base_ref=base_ref,
             )
 
         # Update run with workspace info
-        await self.run_dao.update_worktree(
-            run.id,
-            working_branch=workspace_info.branch_name,
-            worktree_path=str(workspace_info.path),
-        )
+        await self.workspace_manager.update_run_workspace(run.id, workspace_info)
 
         # Update the run object with new info
         updated_run = await self.run_dao.get(run.id)
@@ -598,9 +536,8 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 ExecutorType.CODEX_CLI,
                 ExecutorType.GEMINI_CLI,
             }
-            if run and run.executor_type in cli_executors and run.worktree_path:
-                workspace_path = Path(run.worktree_path)
-                await self.workspace_adapter.cleanup(path=workspace_path, delete_branch=True)
+            if run and run.executor_type in cli_executors:
+                await self.workspace_manager.cleanup_workspace(run, delete_branch=True)
 
         return cancelled
 
@@ -614,12 +551,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             True if cleanup was successful.
         """
         run = await self.run_dao.get(run_id)
-        if not run or not run.worktree_path:
-            return False
-
-        workspace_path = Path(run.worktree_path)
-        await self.workspace_adapter.cleanup(path=workspace_path, delete_branch=False)
-        return True
+        return await self.workspace_manager.cleanup_workspace(run, delete_branch=False)
 
     # Keep old method name for backward compatibility
     async def cleanup_worktree(self, run_id: str) -> bool:
