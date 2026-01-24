@@ -54,96 +54,112 @@ run_service.py: 1360+ lines
 
 ### 🟡 中優先度（Important）
 
-#### 2. DAO層の重複コード
+#### ~~2. DAO層の重複コード~~ ✅ 解決済み
 
-**現状**: 各DAOに類似した `_row_to_model` メソッドが存在
+**現状**: `storage/row_mapping.py`に集中化された`row_to_model()`関数が導入済み
 
 ```python
-# 各DAOに同様のパターン
-def _row_to_model(self, row: Any) -> Model:
-    return Model(
-        id=row["id"],
-        field1=row["field1"],
-        ...
-    )
+# row_mapping.py - 全DAOが使用する共通関数
+def row_to_model[ModelT: BaseModel](
+    model_cls: type[ModelT],
+    row: Any,
+    *,
+    defaults: Mapping[str, Any] | None = None,
+    json_fields: set[str] | None = None,
+    overrides: Mapping[str, Any] | None = None,
+) -> ModelT:
+    data = row_to_dict(row)
+    # ... 前処理 ...
+    return model_cls.model_validate(data)
 ```
 
-**問題点**:
-- DRY原則違反
-- SQLiteの `row` 型に依存した脆弱なコード
-- 新規フィールド追加時の修正漏れリスク
-
-**改善案**:
-1. **Generic DAO パターン**の導入
-2. Pydantic の `model_validate` を活用
-3. ORM (SQLAlchemy + async) の検討（将来的に）
+**解決内容**:
+- Pydanticの`model_validate()`を活用
+- ジェネリクス`[ModelT: BaseModel]`で型安全
+- `defaults`, `json_fields`, `overrides`などの拡張機能対応
+- 全13のDAOがこのパターンを使用（`JobDAO`のみ複雑な日時処理のため例外）
 
 ---
 
-#### 3. エラーハンドリングの非一貫性
+#### 2. エラーハンドリングの非一貫性
 
-**現状**: 例外処理パターンが統一されていない
+**現状**: カスタム例外階層は定義済み（`errors.py`）だが、一貫して使用されていない
 
 ```python
-# パターン1: ValueError
-if not task:
-    raise ValueError(f"Task not found: {task_id}")
-
-# パターン2: None返却
-async def get(self, id: str) -> Run | None:
-    ...
-    return None
-
-# パターン3: ログのみ
-except Exception as e:
-    logger.warning(f"Failed: {e}")
+# errors.py - 定義済みの例外階層
+class ZlothError(Exception): ...
+class NotFoundError(ZlothError): ...     # 404
+class ValidationError(ZlothError): ...   # 400
+class ForbiddenError(ZlothError): ...    # 403
+class ExternalServiceError(ZlothError): ... # 502
 ```
+
+**問題箇所**:
+
+| ファイル | 行番号 | 問題 |
+|---------|--------|------|
+| `services/pr_service.py` | 304, 308, 313 | `ValueError`を使用（`NotFoundError`にすべき） |
+| `services/pr_service.py` | 1053-1082 | 同上 |
+| `services/pr_service.py` | 191 | `RuntimeError`を使用（`ExternalServiceError`にすべき） |
+| `services/repo_service.py` | 44 | 標準`PermissionError`を使用（`ForbiddenError`にすべき） |
+| `services/worktree_service.py` | 46 | 同上 |
+| `routes/models.py` | 52 | 手動で`HTTPException`変換（カスタム例外を伝播させるべき） |
+| `routes/repos.py` | 21 | `Exception`の広範なキャッチ |
 
 **問題点**:
 - API呼び出し元でのエラーハンドリングが困難
 - 一貫した HTTP ステータスコード返却が難しい
+- `error_handling.py`のグローバルハンドラーが活用されていない
 
 **改善案**:
-1. **カスタム例外階層**の定義
-```python
-class ZlothError(Exception): ...
-class NotFoundError(ZlothError): ...
-class ValidationError(ZlothError): ...
-class ExecutionError(ZlothError): ...
-```
-2. FastAPI の例外ハンドラーで統一処理
+1. 上記箇所を適切なカスタム例外に置き換え
+2. ルートハンドラーでの手動try-catchを削除し、グローバルハンドラーに委譲
 
 ---
 
-#### 4. 設定管理の二重化
+#### 3. 設定管理の二重化
 
-**現状**: 環境変数とDBの両方で設定を管理
+**現状**: 環境変数（`config.py`）とDB（`user_preferences`テーブル）の二重管理
 
-```python
-# config.py - 環境変数
-settings.worktrees_dir
+**環境変数で管理（`config.py`）**:
+- インフラ設定: `host`, `port`, `debug`, `database_url`
+- セキュリティ: `encryption_key`, GitHub App認証情報
+- Agentic設定: `agentic_enabled`, `agentic_max_*_iterations`
+- 通知設定: `notify_on_ready`, `notify_on_complete`, etc.
+- マージ設定: `merge_method`, `merge_delete_branch`
 
-# user_preferences テーブル - DB
-prefs.worktrees_dir
-```
+**DBで管理（`user_preferences`テーブル）**:
+- `default_repo_owner`, `default_repo_name`, `default_branch`
+- `default_pr_creation_mode`, `default_coding_mode`
+- `auto_generate_pr_description`, `enable_gating_status`
+
+**問題箇所**:
+
+| 設定 | 現在の場所 | あるべき場所 | 理由 |
+|------|-----------|-------------|------|
+| `notify_on_*` | 環境変数 | DB | ユーザーがUIから変更したい |
+| `merge_method` | 環境変数 | DB | プロジェクトごとに変更したい |
+| `review_min_score` | 環境変数 | DB | ワークフローに応じて変更したい |
 
 **問題点**:
-- どちらが優先されるか不明瞭
-- 設定変更のための再起動要否が不明
-- テスト時のモック化が複雑
+- どちらが優先されるか暗黙的（明文化されていない）
+- 通知・マージ設定など、ユーザー設定にすべきものが環境変数にある
+- 統一された設定アクセス層がない
+- フロントエンド（`SettingsModal.tsx`）ではDB設定の一部しか公開されていない
 
 **改善案**:
 1. **設定の優先順位を明文化**:
    - 環境変数 > DB設定 > デフォルト値
 2. 設定の種類を分類:
-   - システム設定 → 環境変数のみ
-   - ユーザー設定 → DBのみ
+   - システム設定（インフラ/セキュリティ） → 環境変数のみ
+   - ユーザー設定（ワークフロー/通知） → DBのみ
+3. 統一された設定アクセス層（`SettingsService`）の導入
 
 ---
 
 ### 🟢 低優先度（Nice to Have）
 
-#### 5. ドキュメントと実装の乖離
+#### 4. ドキュメントと実装の乖離
 
 **現状**: `CLAUDE.md` と `architecture.md` で内容が異なる
 
@@ -159,7 +175,7 @@ prefs.worktrees_dir
 
 ---
 
-#### 6. ロギングの標準化不足
+#### 5. ロギングの標準化不足
 
 **現状**:
 ```python
@@ -176,7 +192,7 @@ await self._log_output(run_id, "Starting execution...")
 
 ---
 
-#### 7. テストカバレッジの可視性
+#### 6. テストカバレッジの可視性
 
 **現状**: テストカバレッジが不明
 
@@ -194,30 +210,29 @@ gantt
     title アーキテクチャ改善ロードマップ
     dateFormat YYYY-MM
     section フェーズ1（保守性向上）
-    RunService 分割       :crit, p1-1, 2026-02, 3w
-    カスタム例外階層      :p1-2, after p1-1, 2w
+    RunService 分割           :crit, p1-1, 2026-02, 3w
+    エラーハンドリング統一    :p1-2, after p1-1, 1w
     section フェーズ2（信頼性向上）
-    DAO リファクタリング  :p2-1, after p1-2, 2w
-    設定管理整理          :p2-2, after p2-1, 1w
+    設定管理整理              :p2-1, after p1-2, 2w
     section フェーズ3（品質向上）
-    ドキュメント整備      :p3-1, after p2-2, 1w
-    ロギング標準化        :p3-2, after p3-1, 1w
-    テストカバレッジ向上  :p3-3, after p3-2, 2w
+    ドキュメント整備          :p3-1, after p2-1, 1w
+    ロギング標準化            :p3-2, after p3-1, 1w
+    テストカバレッジ向上      :p3-3, after p3-2, 2w
 ```
 
 ---
 
 ## 優先度サマリー
 
-| 優先度 | # | 問題 | 影響 | 工数見積 |
-|--------|---|------|------|----------|
-| 🔴 高 | 1 | RunService肥大化 | 保守性・テスト困難 | 中 |
-| 🟡 中 | 2 | DAO重複コード | 保守性 | 小 |
-| 🟡 中 | 3 | エラーハンドリング | 信頼性 | 小 |
-| 🟡 中 | 4 | 設定管理二重化 | 運用性 | 小 |
-| 🟢 低 | 5 | ドキュメント乖離 | 開発効率 | 小 |
-| 🟢 低 | 6 | ロギング標準化 | 運用性 | 小 |
-| 🟢 低 | 7 | テストカバレッジ | 品質 | 中 |
+| 優先度 | # | 問題 | 状態 | 影響 | 工数見積 |
+|--------|---|------|------|------|----------|
+| 🔴 高 | 1 | RunService肥大化 | 未解決 | 保守性・テスト困難 | 中 |
+| 🟡 中 | ~~2~~ | ~~DAO重複コード~~ | ✅解決済み | - | - |
+| 🟡 中 | 2 | エラーハンドリング非一貫性 | 未解決 | 信頼性 | 小 |
+| 🟡 中 | 3 | 設定管理二重化 | 未解決 | 運用性 | 小 |
+| 🟢 低 | 4 | ドキュメント乖離 | 未解決 | 開発効率 | 小 |
+| 🟢 低 | 5 | ロギング標準化 | 未解決 | 運用性 | 小 |
+| 🟢 低 | 6 | テストカバレッジ | 未解決 | 品質 | 中 |
 
 ---
 
