@@ -56,7 +56,7 @@ run_service.py: 1360+ lines
 
 #### 2. エラーハンドリングの非一貫性
 
-**現状**: カスタム例外階層は定義済み（`errors.py`）だが、一貫して使用されていない
+**現状**: カスタム例外階層は定義済み（`errors.py`）だが、一貫して使用されていない → 統一対応を実施
 
 ```python
 # errors.py - 定義済みの例外階層
@@ -84,9 +84,24 @@ class ExternalServiceError(ZlothError): ... # 502
 - 一貫した HTTP ステータスコード返却が難しい
 - `error_handling.py`のグローバルハンドラーが活用されていない
 
-**改善案**:
-1. 上記箇所を適切なカスタム例外に置き換え
-2. ルートハンドラーでの手動try-catchを削除し、グローバルハンドラーに委譲
+**実施内容（2026-01-24）**:
+1. カスタム例外へ置換（代表例）
+   - `services/pr_service.py`: `ValueError/RuntimeError` → `ValidationError/NotFoundError/ExternalServiceError/ConflictError`
+   - `services/ci_check_service.py`: `ValueError` → `NotFoundError/ValidationError`
+   - `services/repo_service.py`: `PermissionError` → `ForbiddenError`
+   - `utils/github_url.py`: `ValueError` → `ValidationError`
+2. ルート層のエラー伝播方針
+   - `routes/{repos,prs,models,reviews,kanban,github}.py`: `ValueError`捕捉を`ZlothError`に限定し、グローバルハンドラーに委譲
+3. グローバルハンドラー強化
+   - `error_handling.py`: `PermissionError`→403にマップ
+
+**効果**:
+- HTTPステータス/`error.code`の一貫性が向上
+- ルート層の重複コード削減、保守性向上
+
+**フォローアップ**:
+- `routes/runs.py` 等の残存する `HTTPException` 直書きを順次削減（404存在確認は許容）
+- `ReviewService`, `RunService` 内の一部 `ValueError/RuntimeError` 置換（範囲が広いため別PR）
 
 ---
 

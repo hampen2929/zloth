@@ -104,10 +104,12 @@ class ModelService:
             True if deleted, False if not found.
 
         Raises:
-            ValueError: If trying to delete an env model.
+            ValidationError: If trying to delete an env model.
         """
         if model_id.startswith(ENV_MODEL_ID_PREFIX):
-            raise ValueError("Cannot delete environment variable models")
+            from zloth_api.errors import ValidationError
+
+            raise ValidationError("Cannot delete environment variable models")
 
         return await self.dao.delete(model_id)
 

@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from zloth_api.errors import ZlothError
 
 from zloth_api.dependencies import get_output_manager, get_review_service
 from zloth_api.domain.models import (
@@ -32,8 +33,8 @@ async def create_review(
     try:
         review = await review_service.create_review(task_id, data)
         return ReviewCreated(review_id=review.id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise
 
 
 @router.get("/tasks/{task_id}/reviews", response_model=list[ReviewSummary])
@@ -124,8 +125,8 @@ async def generate_fix_instruction(
     data.review_id = review_id  # Set from URL path
     try:
         return await review_service.generate_fix_instruction(data)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise
 
 
 @router.post("/reviews/{review_id}/to-message", response_model=Message)
@@ -136,5 +137,5 @@ async def add_review_to_conversation(
     """Add completed review as a conversation message."""
     try:
         return await review_service.add_review_to_conversation(review_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from urllib.parse import urlparse
+from zloth_api.errors import ValidationError
 
 
 def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
@@ -25,7 +26,7 @@ def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
         ValueError: If the URL cannot be parsed.
     """
     if not repo_url:
-        raise ValueError("repo_url is empty")
+        raise ValidationError("repo_url is empty")
 
     url = repo_url.strip()
 
@@ -44,4 +45,4 @@ def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
         if len(parts) == 2 and parts[0] and parts[1]:
             return parts[0], parts[1]
 
-    raise ValueError(f"Could not parse GitHub URL: {repo_url}")
+    raise ValidationError("Could not parse GitHub URL", details={"repo_url": repo_url})

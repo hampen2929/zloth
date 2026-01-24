@@ -1,6 +1,7 @@
 """Repository routes."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from zloth_api.errors import ZlothError
 
 from zloth_api.dependencies import get_github_service, get_repo_service
 from zloth_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
@@ -16,8 +17,11 @@ async def clone_repo(
     repo_service: RepoService = Depends(get_repo_service),
 ) -> Repo:
     """Clone a repository."""
+    # Let domain errors bubble to global handler; keep unexpected ones mapped.
     try:
         return await repo_service.clone(data)
+    except ZlothError:
+        raise  # handled by global error handler
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to clone: {str(e)}")
 
@@ -31,8 +35,8 @@ async def select_repo(
     """Select and clone a repository by owner/repo name using GitHub App authentication."""
     try:
         return await repo_service.select(data, github_service)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise  # handled globally
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to select repository: {str(e)}")
 

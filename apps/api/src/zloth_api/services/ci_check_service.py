@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from zloth_api.domain.models import CICheck, CICheckResponse, CIJobResult
+from zloth_api.errors import NotFoundError, ValidationError
 from zloth_api.storage.dao import PRDAO, CICheckDAO, RepoDAO, TaskDAO
 
 if TYPE_CHECKING:
@@ -88,7 +89,8 @@ class CICheckService:
             CICheckResponse with current status and completion flag.
 
         Raises:
-            ValueError: If PR or task not found.
+            NotFoundError: If PR, task, or repo not found.
+            ValidationError: If associations are invalid or URL cannot be parsed.
         """
         logger.debug(f"Checking CI for task={task_id}, pr={pr_id}, force={force}")
 
@@ -96,16 +98,19 @@ class CICheckService:
         task = await self.task_dao.get(task_id)
         if not task:
             logger.warning(f"Task not found: {task_id}")
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         pr = await self.pr_dao.get(pr_id)
         if not pr:
             logger.warning(f"PR not found: {pr_id}")
-            raise ValueError(f"PR not found: {pr_id}")
+            raise NotFoundError("PR not found", details={"pr_id": pr_id})
 
         if pr.task_id != task_id:
             logger.warning(f"PR {pr_id} does not belong to task {task_id}")
-            raise ValueError(f"PR {pr_id} does not belong to task {task_id}")
+            raise ValidationError(
+                f"PR does not belong to task",
+                details={"pr_id": pr_id, "task_id": task_id},
+            )
 
         # Check for existing recent CI check (cooldown)
         # If we recently checked this PR's SHA, return the existing result
@@ -123,13 +128,16 @@ class CICheckService:
         repo = await self.repo_dao.get(task.repo_id)
         if not repo:
             logger.warning(f"Repo not found: {task.repo_id}")
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         # Extract owner/repo from repo_url
         repo_full_name = self._extract_repo_full_name(repo.repo_url)
         if not repo_full_name:
             logger.warning(f"Cannot parse repo URL: {repo.repo_url}")
-            raise ValueError(f"Cannot parse repo URL: {repo.repo_url}")
+            raise ValidationError(
+                "Cannot parse repo URL",
+                details={"repo_url": repo.repo_url},
+            )
 
         logger.debug(f"Fetching CI status for {repo_full_name} PR #{pr.number}")
 
@@ -167,7 +175,10 @@ class CICheckService:
                 failed_jobs=ci_data.get("failed_jobs"),
             )
             if not ci_check:
-                raise ValueError(f"Failed to update CI check: {existing.id}")
+                raise ValidationError(
+                    "Failed to update CI check",
+                    details={"ci_check_id": existing.id},
+                )
         else:
             # Create new check record
             ci_check = await self.ci_check_dao.create(
