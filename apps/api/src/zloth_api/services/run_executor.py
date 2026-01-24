@@ -14,15 +14,11 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from zloth_api.agents.llm_router import LLMRouter
 from zloth_api.domain.enums import ExecutorType, RunStatus
-from zloth_api.domain.models import (
-    SUMMARY_FILE_PATH,
-    FileDiff,
-    Run,
-)
+from zloth_api.domain.models import SUMMARY_FILE_PATH, FileDiff, Run
 from zloth_api.executors.claude_code_executor import ClaudeCodeExecutor
 from zloth_api.executors.codex_executor import CodexExecutor
 from zloth_api.executors.gemini_executor import GeminiExecutor
@@ -34,6 +30,11 @@ from zloth_api.storage.dao import RunDAO
 from zloth_api.utils.github_url import parse_github_owner_repo
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    # Imported for type checking only to avoid runtime cycles
+    from zloth_api.services.github_service import GitHubService
+    from zloth_api.services.output_manager import OutputManager
 
 
 @dataclass
@@ -56,8 +57,8 @@ class RunExecutor:
         workspace_adapter: WorkspaceAdapter,
         executors: dict[ExecutorType, ExecutorEntry],
         llm_router: LLMRouter | None = None,
-        output_manager: "OutputManager" | None = None,
-        github_service: "GitHubService" | None = None,
+        output_manager: OutputManager | None = None,
+        github_service: GitHubService | None = None,
     ) -> None:
         self._run_dao = run_dao
         self._git = git_service
@@ -114,9 +115,8 @@ class RunExecutor:
                             logs.append("Successfully pulled latest changes from remote")
                         elif sync_result.has_conflicts:
                             files_str = ", ".join(sync_result.conflict_files)
-                            logs.append(
-                                f"Merge conflicts detected in: {files_str}. AI will be asked to resolve them."
-                            )
+                            logs.append(f"Merge conflicts detected in: {files_str}.")
+                            logs.append("AI will be asked to resolve them.")
                             conflict_instruction = self._build_conflict_instruction(
                                 sync_result.conflict_files
                             )
@@ -136,10 +136,15 @@ class RunExecutor:
             constraints = AgentConstraints()
             if conflict_instruction:
                 instruction = (
-                    f"{constraints.to_prompt()}\n\n{conflict_instruction}\n\n## Task\n{run.instruction}"
+                    f"{constraints.to_prompt()}\n\n"
+                    f"{conflict_instruction}\n\n"
+                    f"## Task\n{run.instruction}"
                 )
             else:
-                instruction = f"{constraints.to_prompt()}\n\n## Task\n{run.instruction}"
+                instruction = (
+                    f"{constraints.to_prompt()}\n\n"
+                    f"## Task\n{run.instruction}"
+                )
 
             # 3. Execute CLI
             await self._log_output(run.id, f"Launching {executor_name} CLI...")
@@ -348,4 +353,3 @@ The following files have merge conflicts that MUST be resolved before proceeding
 
 After resolving ALL conflicts, proceed with the original task below.
 """
-
