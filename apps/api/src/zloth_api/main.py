@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from zloth_api.config import settings
-from zloth_api.error_handling import install_error_handling
 from zloth_api.dependencies import get_job_worker, get_pr_status_poller
+from zloth_api.error_handling import install_error_handling
 from zloth_api.routes import (
     backlog_router,
     breakdown_router,

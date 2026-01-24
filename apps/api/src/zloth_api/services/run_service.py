@@ -36,9 +36,9 @@ from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from zloth_api.roles.base_service import BaseRoleService
 from zloth_api.roles.registry import RoleRegistry
 from zloth_api.services.commit_message import ensure_english_commit_message
-from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.diff_parser import parse_unified_diff
 from zloth_api.services.git_service import GitService
+from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.workspace_adapters import (
