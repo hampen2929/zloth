@@ -529,8 +529,6 @@ export function DefaultsTab() {
   const [prCreationMode, setPrCreationMode] = useState<PRCreationMode>('link');
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
-  const [worktreesDir, setWorktreesDir] = useState<string>('');
-  const [dataDir, setDataDir] = useState<string>('');
   const [enableGatingStatus, setEnableGatingStatus] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -559,8 +557,6 @@ export function DefaultsTab() {
       setPrCreationMode(preferences.default_pr_creation_mode || 'link');
       setCodingMode(preferences.default_coding_mode || 'interactive');
       setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
-      setWorktreesDir(preferences.worktrees_dir || '');
-      setDataDir(preferences.data_dir || '');
       setEnableGatingStatus(preferences.enable_gating_status || false);
     }
   }, [preferences]);
@@ -632,8 +628,6 @@ export function DefaultsTab() {
         default_pr_creation_mode: prCreationMode,
         default_coding_mode: codingMode,
         auto_generate_pr_description: autoGeneratePrDescription,
-        worktrees_dir: worktreesDir.trim() ? worktreesDir.trim() : null,
-        data_dir: dataDir.trim() ? dataDir.trim() : null,
         enable_gating_status: enableGatingStatus,
       });
       mutate('preferences');
@@ -656,8 +650,6 @@ export function DefaultsTab() {
         default_pr_creation_mode: null,
         default_coding_mode: null,
         auto_generate_pr_description: false,
-        worktrees_dir: null,
-        data_dir: null,
         enable_gating_status: false,
       });
       setSelectedRepo('');
@@ -667,8 +659,6 @@ export function DefaultsTab() {
       setPrCreationMode('create');
       setCodingMode('interactive');
       setAutoGeneratePrDescription(false);
-      setWorktreesDir('');
-      setDataDir('');
       setEnableGatingStatus(false);
       mutate('preferences');
       success('Default settings cleared');
@@ -871,31 +861,6 @@ export function DefaultsTab() {
             If enabled, tasks with open PRs and pending CI will show in &ldquo;Gating&rdquo; column.
             When CI completes, they move to &ldquo;In Review&rdquo;.
           </p>
-        </div>
-
-        {/* Advanced Settings */}
-        <div className="border-t border-gray-700 pt-4 mt-4">
-          <h4 className="text-sm font-semibold text-gray-300 mb-3">Advanced Settings</h4>
-
-          {/* Worktrees Directory */}
-          <Input
-            label="Worktrees Directory"
-            value={worktreesDir}
-            onChange={(e) => setWorktreesDir(e.target.value)}
-            placeholder="~/.zloth/worktrees"
-            hint="Directory for git worktrees. Leave blank to use the default (~/.zloth/worktrees). This should be outside the zloth installation directory to avoid CLAUDE.md conflicts."
-          />
-
-          {/* Database Location */}
-          <div className="mt-4">
-            <Input
-              label="Database Location"
-              value={dataDir}
-              onChange={(e) => setDataDir(e.target.value)}
-              placeholder="~/.zloth/data"
-              hint="Directory for SQLite database. Leave blank to use the default (~/.zloth/data). Can also be set via ZLOTH_DATA_DIR environment variable. Changes require application restart."
-            />
-          </div>
         </div>
 
         {/* Action buttons */}
