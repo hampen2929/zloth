@@ -4,12 +4,12 @@
 
 ## 分離モード
 
-zlothは2つのワークスペース分離モードをサポートしています：
+zlothはワークスペース分離を **Clone方式に統一** しました（Worktree方式は廃止）。
 
 | モード | 設定値 | 特徴 |
 |--------|--------|------|
-| **Clone方式** (推奨/デフォルト) | `use_clone_isolation=true` | フルgit clone。リモート同期・コンフリクト解消が容易 |
-| **Worktree方式** (レガシー) | `use_clone_isolation=false` | git worktree。高速だがgit操作に制約あり |
+| **Clone方式** (デフォルト) | `use_clone_isolation=true` | フルgit clone。リモート同期・コンフリクト解消が容易 |
+| ~~Worktree方式~~ (廃止) | `use_clone_isolation=false` | 互換のため設定値は残るが、現在は無視され Clone方式が使われる |
 
 ## 全体アーキテクチャ
 
@@ -49,9 +49,11 @@ graph TB
     CC -->|File Edit Only| WORK
     CX -->|File Edit Only| WORK
     GM -->|File Edit Only| WORK
-    RS -->|4. Stage/Commit/Push| WS
-    WS -->|git add/commit/push| GIT
-    RS -->|5. Save Results| DB
+    RS -->|4. Stage/Commit| WS
+    WS -->|git add/commit| GIT
+    RS -->|5. Push (retry)| GS
+    GS -->|git push (+ retry)| GIT
+    RS -->|6. Save Results| DB
     UI -->|6. Create PR| PS
     PS -->|GitHub API| GIT
 ```
@@ -61,8 +63,8 @@ graph TB
 | サービス | 責務 | Git操作 |
 |---------|------|---------|
 | **RunService** | Run実行の全体制御 | WorkspaceService/GitServiceを呼び出し |
-| **WorkspaceService** | Clone方式のワークスペース管理 | clone, sync, merge, push |
-| **GitService** | Worktree方式（レガシー） | worktree, add, commit, push |
+| **WorkspaceService** | Clone方式のワークスペース管理 | clone, sync, merge, add/commit |
+| **GitService** | Git操作ユーティリティ | push(retry), status, ref判定など |
 | **Executor** | CLI実行 | なし（ファイル編集のみ） |
 | **PRService** | PR作成・更新 | GitHub API経由 |
 
@@ -341,12 +343,12 @@ use_clone_isolation: bool = Field(
 
 ```bash
 ZLOTH_USE_CLONE_ISOLATION=true  # Clone方式（推奨）
-ZLOTH_USE_CLONE_ISOLATION=false # Worktree方式（レガシー）
+ZLOTH_USE_CLONE_ISOLATION=false # 廃止（現在は無視される）
 ```
 
 ### 互換メモ（Clone優先ポリシー）
 
-- `use_clone_isolation=true` の場合、過去のRunで作成された「worktreeベースのワークスペース」は再利用しません。
+- 過去のRunで作成された「worktreeベースのワークスペース」は再利用しません。
 - 既存のワークツリーが見つかった場合でも、Clone方式の新しいワークスペースを作成して実行します（安全なリモート同期のため）。
 
 ## 関連ファイル
