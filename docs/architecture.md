@@ -105,6 +105,7 @@ class RunService(BaseRoleService[Run, RunCreate, RunResult]):
 | `PRService` | プルリクエスト作成/管理 |
 | `WorkspaceService` | クローンベースのワークスペース分離 |
 | `GitService` | 一元化されたgit操作 |
+| `JobWorker` | SQLiteバックドの永続ジョブキュー |
 | `AgenticOrchestrator` | 自律的開発サイクル |
 | `CIPollingService` | CIステータスポーリング |
 | `GithubService` | GitHub API連携 |
@@ -371,18 +372,22 @@ sequenceDiagram
     participant U as ユーザー
     participant A as API
     participant RS as RunService
-    participant Q as RoleQueueAdapter
+    participant JD as JobDAO
+    participant JW as JobWorker
     participant EX as Executor
     participant CLI as CLIツール
 
     U->>A: POST /tasks/{id}/runs
     A->>RS: create_runs()
     RS->>RS: Runレコード作成 (QUEUED)
-    RS->>Q: enqueue_execution(run_id)
+    RS->>JD: create_job(kind=run.execute)
+    JD-->>RS: Job作成完了
     RS-->>A: run_ids返却
     A-->>U: 201 Created
 
-    Q->>RS: _execute_run()
+    JW->>JD: claim_next() ポーリング
+    JD-->>JW: Jobを取得・ロック
+    JW->>RS: _execute_run()
     RS->>RS: ステータス更新 (RUNNING)
     RS->>RS: ワークスペース作成 (clone)
     RS->>EX: execute(workspace, instruction)
@@ -393,6 +398,7 @@ sequenceDiagram
     RS->>RS: Git commit & push branch
     RS->>RS: ステータス更新 (SUCCEEDED)
     RS->>RS: ワークスペース削除
+    JW->>JD: complete(job_id)
 ```
 
 ### 2. レビューフロー
@@ -402,12 +408,22 @@ sequenceDiagram
     participant U as ユーザー
     participant A as API
     participant RVS as ReviewService
+    participant JD as JobDAO
+    participant JW as JobWorker
     participant EX as CodexExecutor
     participant CLI as Codex CLI
 
     U->>A: POST /tasks/{id}/reviews
     A->>RVS: create_review()
     RVS->>RVS: Reviewレコード作成 (QUEUED)
+    RVS->>JD: create_job(kind=review.execute)
+    JD-->>RVS: Job作成完了
+    RVS-->>A: ReviewCreated
+    A-->>U: 201 Created
+
+    JW->>JD: claim_next() ポーリング
+    JD-->>JW: Jobを取得・ロック
+    JW->>RVS: _execute_review()
     RVS->>RVS: 対象Runのdiff取得
     RVS->>EX: execute(workspace, review_instruction)
     EX->>CLI: Codexレビュー実行
@@ -416,8 +432,7 @@ sequenceDiagram
     RVS->>RVS: レビューフィードバック解析
     RVS->>RVS: ReviewFeedbackItems保存
     RVS->>RVS: ステータス更新 (SUCCEEDED)
-    RVS-->>A: ReviewResult
-    A-->>U: フィードバック付きレビュー
+    JW->>JD: complete(job_id)
 ```
 
 ### 3. PR作成フロー
@@ -503,37 +518,59 @@ Worktree方式は実装の複雑性・分岐増加の要因となるため、現
 
 ## 並列実行モデル
 
-### キューベース実行
+### SQLiteバックドジョブキュー
 
 ```python
-class RoleQueueAdapter:
-    def __init__(self, max_concurrent: int = 5):
+class JobWorker:
+    """SQLiteに永続化されたジョブを処理するバックグラウンドワーカー"""
+
+    def __init__(
+        self,
+        *,
+        job_dao: JobDAO,
+        handlers: Mapping[JobKind, JobHandler],
+        max_concurrent: int | None = None,
+        poll_interval_seconds: float = 1.0,
+    ) -> None:
+        self._job_dao = job_dao
+        self._handlers = dict(handlers)
         self._semaphore = asyncio.Semaphore(max_concurrent)
-        self._tasks: dict[str, asyncio.Task] = {}
+        self._running: dict[str, asyncio.Task] = {}
 
-    async def enqueue(self, id: str, coro: Callable) -> None:
-        async with self._semaphore:
-            task = asyncio.create_task(coro())
-            self._tasks[id] = task
-
-    def cancel(self, id: str) -> bool:
-        if task := self._tasks.get(id):
-            return task.cancel()
-        return False
+    async def _run_loop(self) -> None:
+        """キューに入ったジョブをポーリングして実行"""
+        while not self._stop_event.is_set():
+            job = await self._job_dao.claim_next(locked_by=self._worker_id)
+            if job:
+                task = asyncio.create_task(self._execute_job(job))
+                self._running[job.id] = task
 ```
 
 **特徴**:
+- プロセス再起動後も生存（ジョブはSQLiteに永続化）
 - セマフォベースの同時実行制御
-- 設定可能なタイムアウト強制
+- claim_next()によるジョブロック（競合回避）
 - 完了タスクの自動クリーンアップ
-- v0.1はインメモリ (Celery/Redisに置換可能)
+- スタートアップリカバリー（前回クラッシュからの復旧）
+
+**ジョブステータス遷移**:
+```mermaid
+stateDiagram-v2
+    [*] --> queued: 作成
+    queued --> running: claim_next()
+    running --> succeeded: 完了
+    running --> failed: エラー
+    running --> canceled: キャンセル
+    queued --> canceled: キャンセル
+```
 
 ### スケーラビリティパス
 
 ```mermaid
 flowchart LR
     subgraph v0.1["v0.1 (現在)"]
-        API1[APIサーバー] --> IMQ[インメモリキュー]
+        API1[APIサーバー] --> SQLiteQ[(SQLiteキュー)]
+        SQLiteQ --> JW1[JobWorker]
     end
 
     subgraph v0.2["v0.2+ (計画)"]
@@ -651,6 +688,21 @@ erDiagram
         datetime created_at
     }
 
+    Job {
+        string id PK
+        string kind
+        string ref_id
+        string status
+        json payload
+        int attempts
+        int max_attempts
+        datetime available_at
+        datetime locked_at
+        string locked_by
+        string last_error
+        datetime created_at
+    }
+
     Review {
         string id PK
         string task_id FK
@@ -735,6 +787,8 @@ erDiagram
     Review ||--o{ ReviewFeedback : contains
     BacklogItem ||--o| Task : promotes_to
     PR ||--o{ CICheck : has
+    Run ||--o| Job : queued_via
+    Review ||--o| Job : queued_via
 ```
 
 ## ドメインEnum
@@ -759,6 +813,23 @@ class ExecutorType(str, Enum):
     CLAUDE_CODE = "claude_code"    # Claude Code CLI
     CODEX_CLI = "codex"            # Codex CLI
     GEMINI_CLI = "gemini"          # Gemini CLI
+```
+
+### ジョブ種別
+```python
+class JobKind(str, Enum):
+    RUN_EXECUTE = "run.execute"        # Run実行ジョブ
+    REVIEW_EXECUTE = "review.execute"  # レビュー実行ジョブ
+```
+
+### ジョブステータス
+```python
+class JobStatus(str, Enum):
+    QUEUED = "queued"       # キュー待ち
+    RUNNING = "running"     # 実行中
+    SUCCEEDED = "succeeded" # 成功
+    FAILED = "failed"       # 失敗
+    CANCELED = "canceled"   # キャンセル
 ```
 
 ### LLMプロバイダー
@@ -892,6 +963,7 @@ apps/web/src/
 - [x] Agenticオーケストレーター（自律的開発サイクル）
 - [x] コードレビュー統合
 - [x] クローンベースワークスペース分離
+- [x] SQLiteバックドの永続ジョブキュー
 - [ ] マルチユーザーサポート
 
 ### v0.3
