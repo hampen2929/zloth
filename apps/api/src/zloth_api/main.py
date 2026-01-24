@@ -22,8 +22,8 @@ from zloth_api.routes import (
     runs_router,
     tasks_router,
 )
-from zloth_api.storage.db import get_db
 from zloth_api.storage.dao import ReviewDAO, RunDAO
+from zloth_api.storage.db import get_db
 
 
 @asynccontextmanager
@@ -37,8 +37,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Conservative behavior: mark orphaned RUNNING jobs/runs/reviews as FAILED.
     run_dao = RunDAO(db)
     review_dao = ReviewDAO(db)
-    await run_dao.fail_all_running(error="Server restarted while run was running (startup recovery)")
-    await review_dao.fail_all_running(error="Server restarted while review was running (startup recovery)")
+    await run_dao.fail_all_running(
+        error="Server restarted while run was running (startup recovery)"
+    )
+    await review_dao.fail_all_running(
+        error="Server restarted while review was running (startup recovery)"
+    )
 
     # Start PR status poller
     pr_status_poller = await get_pr_status_poller()

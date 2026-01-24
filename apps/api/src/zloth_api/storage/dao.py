@@ -878,7 +878,7 @@ class JobDAO:
         job_id = generate_id()
         now = now_iso()
         payload_str = json.dumps(payload or {})
-        available_at_iso = (available_at.isoformat() if available_at else now)
+        available_at_iso = available_at.isoformat() if available_at else now
 
         await self.db.connection.execute(
             """

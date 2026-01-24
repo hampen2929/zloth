@@ -37,10 +37,10 @@ from zloth_api.roles.base_service import BaseRoleService
 from zloth_api.roles.registry import RoleRegistry
 from zloth_api.services.commit_message import ensure_english_commit_message
 from zloth_api.services.git_service import GitService, PullResult, WorktreeInfo
+from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.workspace_service import MergeResult, WorkspaceInfo, WorkspaceService
-from zloth_api.services.job_worker import JobWorker
 from zloth_api.storage.dao import JobDAO, RunDAO, TaskDAO, UserPreferencesDAO
 
 logger = logging.getLogger(__name__)
@@ -609,7 +609,9 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if self.job_worker:
             cancelled = await self.job_worker.cancel_ref(kind=JobKind.RUN_EXECUTE, ref_id=run_id)
         else:
-            cancelled = await self.job_dao.cancel_queued_by_ref(kind=JobKind.RUN_EXECUTE, ref_id=run_id)
+            cancelled = await self.job_dao.cancel_queued_by_ref(
+                kind=JobKind.RUN_EXECUTE, ref_id=run_id
+            )
 
         if cancelled:
             await self.run_dao.update_status(run_id, RunStatus.CANCELED)

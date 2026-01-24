@@ -86,7 +86,11 @@ class JobWorker:
         """Cancel a queued job, and best-effort cancel a running job."""
         cancelled = await self._job_dao.cancel_queued_by_ref(kind=kind, ref_id=ref_id)
         running_job = await self._job_dao.get_latest_by_ref(kind=kind, ref_id=ref_id)
-        if running_job and running_job.status == JobStatus.RUNNING and running_job.locked_by == self._worker_id:
+        if (
+            running_job
+            and running_job.status == JobStatus.RUNNING
+            and running_job.locked_by == self._worker_id
+        ):
             task = self._running.get(running_job.id)
             if task and not task.done():
                 await self._job_dao.cancel(job_id=running_job.id, reason="Canceled by user")
@@ -132,7 +136,9 @@ class JobWorker:
         async with self._semaphore:
             handler = self._handlers.get(job.kind)
             if not handler:
-                await self._job_dao.fail(job.id, error=f"No handler registered for job kind: {job.kind}")
+                await self._job_dao.fail(
+                    job.id, error=f"No handler registered for job kind: {job.kind}"
+                )
                 return
 
             try:

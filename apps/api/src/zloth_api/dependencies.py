@@ -1,6 +1,7 @@
 """FastAPI dependency injection."""
 
 from zloth_api.config import settings
+from zloth_api.domain.enums import JobKind
 from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
 from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
@@ -22,11 +23,11 @@ from zloth_api.services.review_service import ReviewService
 from zloth_api.services.run_service import RunService
 from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import (
-    JobDAO,
     PRDAO,
     AgenticRunDAO,
     BacklogDAO,
     CICheckDAO,
+    JobDAO,
     MessageDAO,
     MetricsDAO,
     ModelProfileDAO,
@@ -37,7 +38,6 @@ from zloth_api.storage.dao import (
     UserPreferencesDAO,
 )
 from zloth_api.storage.db import get_db
-from zloth_api.domain.enums import JobKind
 
 # Singletons
 _crypto_service: CryptoService | None = None
