@@ -34,10 +34,12 @@ async def save_preferences(
         default_pr_creation_mode=(
             data.default_pr_creation_mode.value if data.default_pr_creation_mode else None
         ),
-        default_coding_mode=(data.default_coding_mode.value if data.default_coding_mode else None),
+        default_coding_mode=(
+            data.default_coding_mode.value if data.default_coding_mode else None
+        ),
         auto_generate_pr_description=data.auto_generate_pr_description,
         enable_gating_status=data.enable_gating_status,
-        notify_on_ready=None,           # Reserved: UI not exposing yet
+        notify_on_ready=None,  # Reserved: UI not exposing yet
         notify_on_complete=None,
         notify_on_failure=None,
         notify_on_warning=None,

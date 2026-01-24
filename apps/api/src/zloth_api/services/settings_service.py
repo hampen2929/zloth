@@ -41,7 +41,9 @@ class SettingsService:
         prefs = await self._prefs.get()
 
         # If DB has explicit values (0/1), use them; otherwise fall back to env
-        ready = (prefs.notify_on_ready if prefs and prefs.notify_on_ready is not None else None)
+        ready = (
+            prefs.notify_on_ready if prefs and prefs.notify_on_ready is not None else None
+        )
         complete = (
             prefs.notify_on_complete if prefs and prefs.notify_on_complete is not None else None
         )
@@ -61,7 +63,9 @@ class SettingsService:
 
     async def get_merge_policy(self) -> MergePolicy:
         prefs = await self._prefs.get()
-        method = prefs.merge_method if prefs and prefs.merge_method else settings.merge_method
+        method = (
+            prefs.merge_method if prefs and prefs.merge_method else settings.merge_method
+        )
         delete_branch = (
             prefs.merge_delete_branch
             if prefs and prefs.merge_delete_branch is not None
@@ -74,4 +78,3 @@ class SettingsService:
         if prefs and prefs.review_min_score is not None:
             return float(prefs.review_min_score)
         return float(settings.review_min_score)
-

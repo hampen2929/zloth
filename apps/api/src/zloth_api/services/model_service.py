@@ -26,7 +26,10 @@ def _env_model_to_profile(index: int, env_model: EnvModelConfig) -> ModelProfile
         id=f"{ENV_MODEL_ID_PREFIX}{index}",
         provider=Provider(env_model.provider),
         model_name=env_model.model_name,
-        display_name=env_model.display_name or f"{env_model.provider}/{env_model.model_name}",
+        display_name=(
+            env_model.display_name
+            or f"{env_model.provider}/{env_model.model_name}"
+        ),
         created_at=datetime.now(UTC),
     )
 
@@ -54,7 +57,10 @@ class ModelService:
 
         # Check against env models
         for env_model in settings.env_models:
-            if env_model.provider == target_provider and env_model.model_name == target_model:
+            if (
+                env_model.provider == target_provider
+                and env_model.model_name == target_model
+            ):
                 raise ValueError(
                     "Model already configured via environment variables; "
                     "remove it from .env or choose a different model."
@@ -111,13 +117,17 @@ class ModelService:
         """
         # Get models from environment variables
         env_models = settings.env_models
-        env_profiles = [_env_model_to_profile(i + 1, model) for i, model in enumerate(env_models)]
+        env_profiles = [
+            _env_model_to_profile(i + 1, model) for i, model in enumerate(env_models)
+        ]
 
         # Get models from database and de-duplicate by (provider, model_name)
         db_profiles = await self.dao.list()
 
         env_keys = {(p.provider.value, p.model_name) for p in env_profiles}
-        filtered_db = [p for p in db_profiles if (p.provider.value, p.model_name) not in env_keys]
+        filtered_db = [
+            p for p in db_profiles if (p.provider.value, p.model_name) not in env_keys
+        ]
 
         return env_profiles + filtered_db
 
