@@ -7,7 +7,7 @@ exception handlers installed in `zloth_api.error_handling`.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class ZlothError(Exception):
@@ -24,7 +24,7 @@ class ZlothError(Exception):
         *,
         code: str = "UNKNOWN",
         status_code: int = 500,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -44,7 +44,7 @@ class NotFoundError(ZlothError):
         message: str,
         *,
         code: str = "NOT_FOUND",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(message=message, code=code, status_code=404, details=details)
 
@@ -57,7 +57,7 @@ class ValidationError(ZlothError):
         message: str,
         *,
         code: str = "VALIDATION_ERROR",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         status_code: int = 400,
     ):
         super().__init__(message=message, code=code, status_code=status_code, details=details)
@@ -71,7 +71,7 @@ class ForbiddenError(ZlothError):
         message: str,
         *,
         code: str = "FORBIDDEN",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(message=message, code=code, status_code=403, details=details)
 
@@ -84,7 +84,7 @@ class ConflictError(ZlothError):
         message: str,
         *,
         code: str = "CONFLICT",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(message=message, code=code, status_code=409, details=details)
 

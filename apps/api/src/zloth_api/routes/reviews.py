@@ -3,7 +3,6 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from zloth_api.errors import ZlothError
 
 from zloth_api.dependencies import get_output_manager, get_review_service
 from zloth_api.domain.models import (

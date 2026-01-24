@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-from zloth_api.errors import ValidationError
+# Note: keep raising ValueError for backward compatibility with callers/tests.
 
 
 def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
