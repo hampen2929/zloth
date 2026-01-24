@@ -28,6 +28,7 @@ from zloth_api.domain.models import (
     Run,
     RunCreate,
 )
+from zloth_api.errors import NotFoundError
 from zloth_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
@@ -235,12 +236,12 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         # Verify task exists
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         # Get repo for workspace
         repo = await self.repo_service.get(task.repo_id)
         if not repo:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         runs: list[Run] = []
         existing_runs = await self.run_dao.list(task_id)
