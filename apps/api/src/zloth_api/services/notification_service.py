@@ -8,6 +8,7 @@ import httpx
 from zloth_api.config import settings
 from zloth_api.domain.enums import NotificationType
 from zloth_api.domain.models import NotificationEvent
+from zloth_api.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -148,16 +149,22 @@ class LogNotifier(NotificationChannel):
 class NotificationService:
     """Manages multiple notification channels for agentic events."""
 
-    def __init__(self, channels: list[NotificationChannel] | None = None):
+    def __init__(
+        self,
+        channels: list[NotificationChannel] | None = None,
+        settings_service: SettingsService | None = None,
+    ):
         """Initialize notification service.
 
         Args:
             channels: List of notification channels. If None, creates default channels.
+            settings_service: Unified settings accessor for user overrides.
         """
         if channels is not None:
             self.channels = channels
         else:
             self.channels = self._create_default_channels()
+        self.settings_service = settings_service
 
     def _create_default_channels(self) -> list[NotificationChannel]:
         """Create default notification channels based on settings.
@@ -186,7 +193,7 @@ class NotificationService:
             Dictionary mapping channel names to success status.
         """
         # Check if notification should be sent based on settings
-        if not self._should_notify(event.type):
+        if not await self._should_notify(event.type):
             logger.debug(f"Notification type {event.type} disabled in settings")
             return {}
 
@@ -201,7 +208,7 @@ class NotificationService:
 
         return results
 
-    def _should_notify(self, notification_type: NotificationType) -> bool:
+    async def _should_notify(self, notification_type: NotificationType) -> bool:
         """Check if notification should be sent based on settings.
 
         Args:
@@ -210,6 +217,17 @@ class NotificationService:
         Returns:
             True if notification should be sent.
         """
+        if self.settings_service is not None:
+            flags = await self.settings_service.get_notify_flags()
+            mapping = {
+                NotificationType.READY_FOR_MERGE: flags.ready,
+                NotificationType.COMPLETED: flags.complete,
+                NotificationType.FAILED: flags.failure,
+                NotificationType.WARNING: flags.warning,
+            }
+            return mapping.get(notification_type, True)
+
+        # Fallback to env-only behavior
         type_to_setting = {
             NotificationType.READY_FOR_MERGE: settings.notify_on_ready,
             NotificationType.COMPLETED: settings.notify_on_complete,

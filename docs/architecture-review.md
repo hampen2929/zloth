@@ -105,6 +105,7 @@ class ExternalServiceError(ZlothError): ... # 502
 - `default_repo_owner`, `default_repo_name`, `default_branch`
 - `default_pr_creation_mode`, `default_coding_mode`
 - `auto_generate_pr_description`, `enable_gating_status`
+ - （新規）通知・マージ・レビュー閾値の任意上書き
 
 **問題箇所**:
 
@@ -120,13 +121,22 @@ class ExternalServiceError(ZlothError): ... # 502
 - 統一された設定アクセス層がない
 - フロントエンド（`SettingsModal.tsx`）ではDB設定の一部しか公開されていない
 
-**改善案**:
-1. **設定の優先順位を明文化**:
+**改善案（実装済）**:
+1. **設定の優先順位を明文化**（実装反映）
    - 環境変数 > DB設定 > デフォルト値
-2. 設定の種類を分類:
+2. **設定の種類を分類**（設計方針）
    - システム設定（インフラ/セキュリティ） → 環境変数のみ
-   - ユーザー設定（ワークフロー/通知） → DBのみ
-3. 統一された設定アクセス層（`SettingsService`）の導入
+   - ユーザー設定（ワークフロー/通知） → 原則DB（未設定時はENVを継承）
+3. **統一アクセス層の導入**（実装）
+   - `apps/api/src/zloth_api/services/settings_service.py` を追加
+   - `NotificationService` と `MergeGateService` が同サービスを参照し、DB上書きを反映
+4. **二重定義の排除**（実装）
+   - モデル設定：ENV由来モデルをDB一覧から除外、同一`provider+model_name`の重複登録を禁止
+   - `UserPreferences` に通知/マージ/レビュー閾値の任意上書きフィールドを追加（NULL時はENV）
+5. **DBマイグレーション**（実装）
+   - `user_preferences` に以下カラムを追加: `notify_on_ready|complete|failure|warning`, `merge_method`, `merge_delete_branch`, `review_min_score`
+
+これにより、運用者はENVで全体ポリシーを固定しつつ、UI/APIでユーザー/運用上の上書きを段階的に許容できます。
 
 ---
 

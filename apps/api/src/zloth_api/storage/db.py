@@ -118,6 +118,24 @@ class Database:
             )
             await conn.commit()
 
+        # Migration: Add notification and merge/review policy columns if missing
+        # Nullable columns default to "use env settings" when NULL
+        mig_cols: list[tuple[str, str]] = [
+            ("notify_on_ready", "INTEGER"),
+            ("notify_on_complete", "INTEGER"),
+            ("notify_on_failure", "INTEGER"),
+            ("notify_on_warning", "INTEGER"),
+            ("merge_method", "TEXT"),
+            ("merge_delete_branch", "INTEGER"),
+            ("review_min_score", "REAL"),
+        ]
+        for col_name, col_type in mig_cols:
+            if col_name not in pref_column_names:
+                await conn.execute(
+                    f"ALTER TABLE user_preferences ADD COLUMN {col_name} {col_type}"
+                )
+                await conn.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""

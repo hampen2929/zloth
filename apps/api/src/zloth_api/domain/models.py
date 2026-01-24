@@ -637,6 +637,15 @@ class UserPreferences(BaseModel):
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
     auto_generate_pr_description: bool = False
     enable_gating_status: bool = False  # Enable gating status for CI waiting
+    # Optional overrides for notifications; None => use env defaults
+    notify_on_ready: bool | None = None
+    notify_on_complete: bool | None = None
+    notify_on_failure: bool | None = None
+    notify_on_warning: bool | None = None
+    # Optional merge/review policies; None => use env defaults
+    merge_method: str | None = None
+    merge_delete_branch: bool | None = None
+    review_min_score: float | None = None
 
 
 class UserPreferencesSave(BaseModel):
