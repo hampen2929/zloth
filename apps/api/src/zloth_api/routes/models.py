@@ -1,9 +1,10 @@
 """Model profile routes."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from zloth_api.dependencies import get_model_service
 from zloth_api.domain.models import ModelProfile, ModelProfileCreate
+from zloth_api.errors import NotFoundError
 from zloth_api.services.model_service import ModelService
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -34,7 +35,7 @@ async def get_model(
     """Get a model profile by ID."""
     model = await model_service.get(model_id)
     if not model:
-        raise HTTPException(status_code=404, detail="Model not found")
+        raise NotFoundError("Model not found", details={"model_id": model_id})
     return model
 
 
@@ -44,9 +45,6 @@ async def delete_model(
     model_service: ModelService = Depends(get_model_service),
 ) -> None:
     """Delete a model profile."""
-    try:
-        deleted = await model_service.delete(model_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Model not found")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    deleted = await model_service.delete(model_id)
+    if not deleted:
+        raise NotFoundError("Model not found", details={"model_id": model_id})

@@ -32,7 +32,12 @@ from zloth_api.domain.models import (
     Run,
     Task,
 )
-from zloth_api.errors import ForbiddenError, NotFoundError
+from zloth_api.errors import (
+    ExternalServiceError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
 from zloth_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
@@ -188,7 +193,10 @@ class PRService:
                     "Please ensure the GitHub App has 'Contents' permission "
                     "set to 'Read and write' and is installed on this repository."
                 )
-            raise RuntimeError(f"Failed to push branch: {push_result.error}")
+            raise ExternalServiceError(
+                f"Failed to push branch: {push_result.error}",
+                details={"repository": f"{owner}/{repo}"},
+            )
 
     def _build_github_compare_url(
         self,
@@ -241,9 +249,15 @@ class PRService:
 
         # Verify run has a branch and commit
         if not run.working_branch:
-            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+            raise ValidationError(
+                f"Run has no working branch: {data.selected_run_id}",
+                details={"run_id": data.selected_run_id},
+            )
         if not run.commit_sha:
-            raise ValueError(f"Run has no commits: {data.selected_run_id}")
+            raise ValidationError(
+                f"Run has no commits: {data.selected_run_id}",
+                details={"run_id": data.selected_run_id},
+            )
 
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
@@ -301,22 +315,28 @@ class PRService:
         # Get task and repo
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         # Get run
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+            raise NotFoundError("Run not found", details={"run_id": data.selected_run_id})
 
         # Verify run has a branch and commit
         if not run.working_branch:
-            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+            raise ValidationError(
+                f"Run has no working branch: {data.selected_run_id}",
+                details={"run_id": data.selected_run_id},
+            )
         if not run.commit_sha:
-            raise ValueError(f"Run has no commits: {data.selected_run_id}")
+            raise ValidationError(
+                f"Run has no commits: {data.selected_run_id}",
+                details={"run_id": data.selected_run_id},
+            )
 
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
@@ -381,18 +401,21 @@ class PRService:
         """Generate a GitHub compare URL for manual PR creation."""
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+            raise NotFoundError("Run not found", details={"run_id": data.selected_run_id})
 
         if not run.working_branch:
-            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+            raise ValidationError(
+                f"Run has no working branch: {data.selected_run_id}",
+                details={"run_id": data.selected_run_id},
+            )
 
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
         await self._ensure_branch_pushed(owner=owner, repo=repo_name, repo_obj=repo_obj, run=run)
@@ -414,18 +437,21 @@ class PRService:
         """Generate a GitHub compare URL with AI-generated title and description."""
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+            raise NotFoundError("Run not found", details={"run_id": data.selected_run_id})
 
         if not run.working_branch:
-            raise ValueError(f"Run has no working branch: {data.selected_run_id}")
+            raise ValidationError(
+                f"Run has no working branch: {data.selected_run_id}",
+                details={"run_id": data.selected_run_id},
+            )
 
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
         await self._ensure_branch_pushed(owner=owner, repo=repo_name, repo_obj=repo_obj, run=run)
@@ -468,18 +494,21 @@ class PRService:
         """Sync a PR that may have been created manually via GitHub UI."""
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         run = await self.run_dao.get(selected_run_id)
         if not run:
-            raise ValueError(f"Run not found: {selected_run_id}")
+            raise NotFoundError("Run not found", details={"run_id": selected_run_id})
 
         if not run.working_branch:
-            raise ValueError(f"Run has no working branch: {selected_run_id}")
+            raise ValidationError(
+                f"Run has no working branch: {selected_run_id}",
+                details={"run_id": selected_run_id},
+            )
 
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
         # Use run.base_ref as the base branch (set when run was created)
@@ -1050,21 +1079,21 @@ IMPORTANT INSTRUCTIONS:
         # Get PR
         pr = await self.pr_dao.get(pr_id)
         if not pr or pr.task_id != task_id:
-            raise ValueError(f"PR not found: {pr_id}")
+            raise NotFoundError("PR not found", details={"pr_id": pr_id})
 
         # Get task and repo
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         # Get run
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+            raise NotFoundError("Run not found", details={"run_id": data.selected_run_id})
 
         # For CLI executor runs, the commit should already be on the branch
         # The branch should be the same as the PR branch
@@ -1073,13 +1102,16 @@ IMPORTANT INSTRUCTIONS:
             await self.pr_dao.update(pr_id, run.commit_sha)
             updated_pr = await self.pr_dao.get(pr_id)
             if not updated_pr:
-                raise ValueError(f"PR not found after update: {pr_id}")
+                raise NotFoundError("PR not found after update", details={"pr_id": pr_id})
             return updated_pr
 
         # For PatchAgent runs or different branches, we need to apply the patch
         # This is backward compatibility code
         if not run.patch:
-            raise ValueError("Run has no patch to apply")
+            raise ValidationError(
+                "Run has no patch to apply",
+                details={"run_id": data.selected_run_id},
+            )
 
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
@@ -1105,7 +1137,10 @@ IMPORTANT INSTRUCTIONS:
             if result.returncode != 0:
                 await self.git_service.checkout(workspace_path, repo_obj.default_branch)
                 error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-                raise ValueError(f"Failed to apply patch: {error_msg}")
+                raise ExternalServiceError(
+                    f"Failed to apply patch: {error_msg}",
+                    details={"pr_id": pr_id},
+                )
         finally:
             patch_file.unlink(missing_ok=True)
 
@@ -1139,7 +1174,7 @@ IMPORTANT INSTRUCTIONS:
 
         updated_pr = await self.pr_dao.get(pr_id)
         if not updated_pr:
-            raise ValueError(f"PR not found after update: {pr_id}")
+            raise NotFoundError("PR not found after update", details={"pr_id": pr_id})
         return updated_pr
 
     async def regenerate_description(
@@ -1164,16 +1199,16 @@ IMPORTANT INSTRUCTIONS:
         # Get PR
         pr = await self.pr_dao.get(pr_id)
         if not pr or pr.task_id != task_id:
-            raise ValueError(f"PR not found: {pr_id}")
+            raise NotFoundError("PR not found", details={"pr_id": pr_id})
 
         # Get task and repo
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         # Parse GitHub info
         owner, repo_name = self._parse_github_url(repo_obj.repo_url)
@@ -1200,7 +1235,10 @@ IMPORTANT INSTRUCTIONS:
             cumulative_diff = latest_run.patch
 
         if not cumulative_diff:
-            raise ValueError("Could not get diff for PR description generation")
+            raise ValidationError(
+                "Could not get diff for PR description generation",
+                details={"pr_id": pr_id},
+            )
 
         # Load pull_request_template
         template = await self._load_pr_template(repo_obj)
@@ -1265,7 +1303,7 @@ IMPORTANT INSTRUCTIONS:
 
         updated_pr = await self.pr_dao.get(pr_id)
         if not updated_pr:
-            raise ValueError(f"PR not found after update: {pr_id}")
+            raise NotFoundError("PR not found after update", details={"pr_id": pr_id})
         return updated_pr
 
     async def _load_pr_template(self, repo: Repo) -> str | None:

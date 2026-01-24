@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from zloth_api.config import EnvModelConfig, settings
 from zloth_api.domain.enums import Provider
 from zloth_api.domain.models import ModelProfile, ModelProfileCreate
+from zloth_api.errors import ValidationError
 from zloth_api.services.crypto_service import CryptoService
 from zloth_api.storage.dao import ModelProfileDAO
 
@@ -104,10 +105,10 @@ class ModelService:
             True if deleted, False if not found.
 
         Raises:
-            ValueError: If trying to delete an env model.
+            ValidationError: If trying to delete an env model.
         """
         if model_id.startswith(ENV_MODEL_ID_PREFIX):
-            raise ValueError("Cannot delete environment variable models")
+            raise ValidationError("Cannot delete environment variable models")
 
         return await self.dao.delete(model_id)
 
