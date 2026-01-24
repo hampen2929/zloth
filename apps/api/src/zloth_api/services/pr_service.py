@@ -32,6 +32,7 @@ from zloth_api.domain.models import (
     Run,
     Task,
 )
+from zloth_api.errors import ForbiddenError, NotFoundError
 from zloth_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
@@ -48,10 +49,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class GitHubPermissionError(Exception):
+class GitHubPermissionError(ForbiddenError):
     """Raised when GitHub App lacks required permissions."""
 
-    pass
+    def __init__(self, message: str):
+        super().__init__(message, code="GITHUB_PERMISSION")
 
 
 @dataclass
@@ -226,16 +228,16 @@ class PRService:
         # Get task and repo
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         repo_obj = await self.repo_service.get(task.repo_id)
         if not repo_obj:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         # Get run
         run = await self.run_dao.get(data.selected_run_id)
         if not run:
-            raise ValueError(f"Run not found: {data.selected_run_id}")
+            raise NotFoundError("Run not found", details={"run_id": data.selected_run_id})
 
         # Verify run has a branch and commit
         if not run.working_branch:
