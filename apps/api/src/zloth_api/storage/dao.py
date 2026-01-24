@@ -1238,9 +1238,7 @@ class UserPreferencesDAO:
         """Save user preferences (upsert)."""
         now = now_iso()
         auto_gen = (
-            None
-            if auto_generate_pr_description is None
-            else int(auto_generate_pr_description)
+            None if auto_generate_pr_description is None else int(auto_generate_pr_description)
         )
         gating_status = None if enable_gating_status is None else int(enable_gating_status)
         notify_ready = None if notify_on_ready is None else int(notify_on_ready)

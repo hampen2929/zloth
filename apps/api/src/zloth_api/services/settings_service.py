@@ -52,12 +52,12 @@ class SettingsService:
                 prefs.notify_on_warning if prefs else None,
                 settings.notify_on_warning,
             ),
-            merge_method=self._resolve_value(
+            merge_method=self._resolve_str(
                 "merge_method",
                 prefs.merge_method if prefs else None,
                 settings.merge_method,
             ),
-            review_min_score=self._resolve_value(
+            review_min_score=self._resolve_float(
                 "review_min_score",
                 prefs.review_min_score if prefs else None,
                 settings.review_min_score,
@@ -67,9 +67,15 @@ class SettingsService:
     def _resolve_bool(self, field_name: str, db_value: bool | None, default: bool) -> bool:
         return bool(self._resolve_value(field_name, db_value, default))
 
+    def _resolve_str(self, field_name: str, db_value: str | None, default: str) -> str:
+        return str(self._resolve_value(field_name, db_value, default))
+
+    def _resolve_float(self, field_name: str, db_value: float | None, default: float) -> float:
+        return float(self._resolve_value(field_name, db_value, default))
+
     def _resolve_value(
-        self, field_name: str, db_value: str | float | None, default: str | float
-    ) -> str | float:
+        self, field_name: str, db_value: str | float | bool | None, default: str | float | bool
+    ) -> str | float | bool:
         if self._env_override(field_name):
             return default
         if db_value is not None:
