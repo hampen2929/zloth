@@ -530,6 +530,12 @@ export function DefaultsTab() {
   const [codingMode, setCodingMode] = useState<CodingMode>('interactive');
   const [autoGeneratePrDescription, setAutoGeneratePrDescription] = useState<boolean>(false);
   const [enableGatingStatus, setEnableGatingStatus] = useState<boolean>(false);
+  const [notifyOnReady, setNotifyOnReady] = useState<boolean>(true);
+  const [notifyOnComplete, setNotifyOnComplete] = useState<boolean>(true);
+  const [notifyOnFailure, setNotifyOnFailure] = useState<boolean>(true);
+  const [notifyOnWarning, setNotifyOnWarning] = useState<boolean>(true);
+  const [mergeMethod, setMergeMethod] = useState<string>('squash');
+  const [reviewMinScore, setReviewMinScore] = useState<number>(0.75);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -558,6 +564,14 @@ export function DefaultsTab() {
       setCodingMode(preferences.default_coding_mode || 'interactive');
       setAutoGeneratePrDescription(preferences.auto_generate_pr_description || false);
       setEnableGatingStatus(preferences.enable_gating_status || false);
+      setNotifyOnReady(preferences.notify_on_ready ?? true);
+      setNotifyOnComplete(preferences.notify_on_complete ?? true);
+      setNotifyOnFailure(preferences.notify_on_failure ?? true);
+      setNotifyOnWarning(preferences.notify_on_warning ?? true);
+      setMergeMethod(preferences.merge_method || 'squash');
+      setReviewMinScore(
+        typeof preferences.review_min_score === 'number' ? preferences.review_min_score : 0.75
+      );
     }
   }, [preferences]);
 
@@ -629,6 +643,12 @@ export function DefaultsTab() {
         default_coding_mode: codingMode,
         auto_generate_pr_description: autoGeneratePrDescription,
         enable_gating_status: enableGatingStatus,
+        notify_on_ready: notifyOnReady,
+        notify_on_complete: notifyOnComplete,
+        notify_on_failure: notifyOnFailure,
+        notify_on_warning: notifyOnWarning,
+        merge_method: mergeMethod,
+        review_min_score: reviewMinScore,
       });
       mutate('preferences');
       success('Default settings saved successfully');
@@ -651,6 +671,12 @@ export function DefaultsTab() {
         default_coding_mode: null,
         auto_generate_pr_description: false,
         enable_gating_status: false,
+        notify_on_ready: null,
+        notify_on_complete: null,
+        notify_on_failure: null,
+        notify_on_warning: null,
+        merge_method: null,
+        review_min_score: null,
       });
       setSelectedRepo('');
       setSelectedBranch('');
@@ -660,6 +686,12 @@ export function DefaultsTab() {
       setCodingMode('interactive');
       setAutoGeneratePrDescription(false);
       setEnableGatingStatus(false);
+      setNotifyOnReady(true);
+      setNotifyOnComplete(true);
+      setNotifyOnFailure(true);
+      setNotifyOnWarning(true);
+      setMergeMethod('squash');
+      setReviewMinScore(0.75);
       mutate('preferences');
       success('Default settings cleared');
     } catch {
@@ -860,6 +892,107 @@ export function DefaultsTab() {
           <p className="text-xs text-gray-500 ml-7">
             If enabled, tasks with open PRs and pending CI will show in &ldquo;Gating&rdquo; column.
             When CI completes, they move to &ldquo;In Review&rdquo;.
+          </p>
+        </div>
+
+        {/* Merge method */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            Merge Method
+          </label>
+          <select
+            value={mergeMethod}
+            onChange={(e) => setMergeMethod(e.target.value)}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors'
+            )}
+          >
+            <option value="merge">Merge commit</option>
+            <option value="squash">Squash and merge</option>
+            <option value="rebase">Rebase and merge</option>
+          </select>
+          <p className="text-xs text-gray-500">
+            Choose the default merge strategy for full auto mode.
+          </p>
+        </div>
+
+        {/* Review minimum score */}
+        <Input
+          label="Review minimum score"
+          type="number"
+          min={0}
+          max={1}
+          step={0.05}
+          value={reviewMinScore}
+          onChange={(e) => setReviewMinScore(Number(e.target.value))}
+          hint="Minimum review score required before auto-merge (0.0 - 1.0)."
+        />
+
+        {/* Notification preferences */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-300">Notification preferences</p>
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyOnReady}
+                onChange={(e) => setNotifyOnReady(e.target.checked)}
+                className={cn(
+                  'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                  'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+                )}
+              />
+              <span className="text-sm font-medium text-gray-300">
+                Notify when PR is ready
+              </span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyOnComplete}
+                onChange={(e) => setNotifyOnComplete(e.target.checked)}
+                className={cn(
+                  'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                  'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+                )}
+              />
+              <span className="text-sm font-medium text-gray-300">
+                Notify when run completes
+              </span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyOnFailure}
+                onChange={(e) => setNotifyOnFailure(e.target.checked)}
+                className={cn(
+                  'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                  'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+                )}
+              />
+              <span className="text-sm font-medium text-gray-300">
+                Notify on failures
+              </span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyOnWarning}
+                onChange={(e) => setNotifyOnWarning(e.target.checked)}
+                className={cn(
+                  'w-4 h-4 rounded border-gray-600 bg-gray-800',
+                  'text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-gray-900'
+                )}
+              />
+              <span className="text-sm font-medium text-gray-300">
+                Notify on warnings
+              </span>
+            </label>
+          </div>
+          <p className="text-xs text-gray-500">
+            Notification toggles apply to Slack and log notifications.
           </p>
         </div>
 

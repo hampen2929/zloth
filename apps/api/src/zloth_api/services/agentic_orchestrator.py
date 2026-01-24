@@ -32,6 +32,7 @@ from zloth_api.domain.models import (
     IterationLimits,
     ReviewCreate,
 )
+from zloth_api.services.settings_service import SettingsService
 
 if TYPE_CHECKING:
     from zloth_api.services.ci_polling_service import CIPollingService
@@ -66,6 +67,7 @@ class AgenticOrchestrator:
         task_dao: "TaskDAO",
         pr_dao: "PRDAO",
         agentic_dao: "AgenticRunDAO",
+        settings_service: SettingsService | None = None,
     ):
         """Initialize agentic orchestrator.
 
@@ -91,6 +93,7 @@ class AgenticOrchestrator:
         self.task_dao = task_dao
         self.pr_dao = pr_dao
         self.agentic_dao = agentic_dao
+        self.settings_service = settings_service or SettingsService()
 
         # In-memory state management
         self._states: dict[str, AgenticState] = {}
@@ -226,6 +229,8 @@ class AgenticOrchestrator:
         """
         if mode == CodingMode.INTERACTIVE:
             raise ValueError("Interactive mode is not supported by AgenticOrchestrator")
+
+        await self._refresh_default_limits()
 
         # Verify task exists
         task = await self.task_dao.get(task_id)
@@ -781,10 +786,11 @@ class AgenticOrchestrator:
             repo_full_name = self._extract_repo_full_name(repo.repo_url)
 
             # Check conditions and merge
+            runtime_settings = await self.settings_service.get_user_runtime_settings()
             merge_result = await self.merger.merge(
                 pr_number=state.pr_number,
                 repo_full_name=repo_full_name,
-                method=settings.merge_method,
+                method=runtime_settings.merge_method,
                 delete_branch=settings.merge_delete_branch,
             )
 
@@ -806,6 +812,17 @@ class AgenticOrchestrator:
                 state.error = f"Merge phase error: {str(e)}"
                 await self.agentic_dao.update(state)
                 await self._notify_failure(state)
+
+    async def _refresh_default_limits(self) -> None:
+        """Refresh default iteration limits from user settings."""
+        runtime_settings = await self.settings_service.get_user_runtime_settings()
+        self._default_limits = IterationLimits(
+            max_ci_iterations=settings.agentic_max_ci_iterations,
+            max_review_iterations=settings.agentic_max_review_iterations,
+            max_total_iterations=settings.agentic_max_total_iterations,
+            min_review_score=runtime_settings.review_min_score,
+            timeout_minutes=settings.agentic_timeout_minutes,
+        )
 
     # =========================================
     # CI Polling Methods

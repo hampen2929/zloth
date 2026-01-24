@@ -5,9 +5,9 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from zloth_api.config import settings
 from zloth_api.domain.enums import NotificationType
 from zloth_api.domain.models import NotificationEvent
+from zloth_api.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -148,16 +148,22 @@ class LogNotifier(NotificationChannel):
 class NotificationService:
     """Manages multiple notification channels for agentic events."""
 
-    def __init__(self, channels: list[NotificationChannel] | None = None):
+    def __init__(
+        self,
+        channels: list[NotificationChannel] | None = None,
+        settings_service: SettingsService | None = None,
+    ):
         """Initialize notification service.
 
         Args:
             channels: List of notification channels. If None, creates default channels.
+            settings_service: Settings resolution service.
         """
         if channels is not None:
             self.channels = channels
         else:
             self.channels = self._create_default_channels()
+        self.settings_service = settings_service or SettingsService()
 
     def _create_default_channels(self) -> list[NotificationChannel]:
         """Create default notification channels based on settings.
@@ -171,6 +177,8 @@ class NotificationService:
         channels.append(LogNotifier())
 
         # Add Slack if configured
+        from zloth_api.config import settings
+
         if settings.slack_webhook_url:
             channels.append(SlackNotifier(settings.slack_webhook_url))
 
@@ -186,7 +194,7 @@ class NotificationService:
             Dictionary mapping channel names to success status.
         """
         # Check if notification should be sent based on settings
-        if not self._should_notify(event.type):
+        if not await self._should_notify(event.type):
             logger.debug(f"Notification type {event.type} disabled in settings")
             return {}
 
@@ -201,7 +209,7 @@ class NotificationService:
 
         return results
 
-    def _should_notify(self, notification_type: NotificationType) -> bool:
+    async def _should_notify(self, notification_type: NotificationType) -> bool:
         """Check if notification should be sent based on settings.
 
         Args:
@@ -210,11 +218,12 @@ class NotificationService:
         Returns:
             True if notification should be sent.
         """
+        runtime_settings = await self.settings_service.get_user_runtime_settings()
         type_to_setting = {
-            NotificationType.READY_FOR_MERGE: settings.notify_on_ready,
-            NotificationType.COMPLETED: settings.notify_on_complete,
-            NotificationType.FAILED: settings.notify_on_failure,
-            NotificationType.WARNING: settings.notify_on_warning,
+            NotificationType.READY_FOR_MERGE: runtime_settings.notify_on_ready,
+            NotificationType.COMPLETED: runtime_settings.notify_on_complete,
+            NotificationType.FAILED: runtime_settings.notify_on_failure,
+            NotificationType.WARNING: runtime_settings.notify_on_warning,
         }
         return type_to_setting.get(notification_type, True)
 
