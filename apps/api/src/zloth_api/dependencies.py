@@ -21,6 +21,7 @@ from zloth_api.services.pr_status_poller import PRStatusPoller
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.review_service import ReviewService
 from zloth_api.services.run_service import RunService
+from zloth_api.services.settings_service import SettingsService
 from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import (
     PRDAO,
@@ -48,6 +49,7 @@ _output_manager: OutputManager | None = None
 _breakdown_service: BreakdownService | None = None
 _review_service: ReviewService | None = None
 _notification_service: NotificationService | None = None
+_settings_service: SettingsService | None = None
 _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
@@ -287,11 +289,21 @@ async def get_agentic_run_dao() -> AgenticRunDAO:
     return AgenticRunDAO(db)
 
 
-def get_notification_service() -> NotificationService:
+async def get_settings_service() -> SettingsService:
+    """Get the settings service singleton."""
+    global _settings_service
+    if _settings_service is None:
+        user_preferences_dao = await get_user_preferences_dao()
+        _settings_service = SettingsService(user_preferences_dao)
+    return _settings_service
+
+
+async def get_notification_service() -> NotificationService:
     """Get the notification service singleton."""
     global _notification_service
     if _notification_service is None:
-        _notification_service = NotificationService()
+        settings_service = await get_settings_service()
+        _notification_service = NotificationService(settings_service=settings_service)
     return _notification_service
 
 
@@ -299,7 +311,8 @@ async def get_merge_gate_service() -> MergeGateService:
     """Get the merge gate service."""
     github_service = await get_github_service()
     review_dao = await get_review_dao()
-    return MergeGateService(github_service, review_dao)
+    settings_service = await get_settings_service()
+    return MergeGateService(github_service, review_dao, settings_service)
 
 
 async def get_ci_polling_service() -> CIPollingService:
@@ -320,11 +333,12 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
         merge_gate_service = await get_merge_gate_service()
         git_service = get_git_service()
         github_service = await get_github_service()
-        notification_service = get_notification_service()
+        notification_service = await get_notification_service()
         ci_polling_service = await get_ci_polling_service()
         task_dao = await get_task_dao()
         pr_dao = await get_pr_dao()
         agentic_dao = await get_agentic_run_dao()
+        settings_service = await get_settings_service()
         _agentic_orchestrator = AgenticOrchestrator(
             run_service=run_service,
             review_service=review_service,
@@ -336,6 +350,7 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
             task_dao=task_dao,
             pr_dao=pr_dao,
             agentic_dao=agentic_dao,
+            settings_service=settings_service,
         )
     return _agentic_orchestrator
 

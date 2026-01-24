@@ -1228,11 +1228,25 @@ class UserPreferencesDAO:
         default_coding_mode: str | None = None,
         auto_generate_pr_description: bool | None = None,
         enable_gating_status: bool | None = None,
+        notify_on_ready: bool | None = None,
+        notify_on_complete: bool | None = None,
+        notify_on_failure: bool | None = None,
+        notify_on_warning: bool | None = None,
+        merge_method: str | None = None,
+        review_min_score: float | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
-        auto_gen = 1 if auto_generate_pr_description else 0
-        gating_status = 1 if enable_gating_status else 0
+        auto_gen = (
+            None
+            if auto_generate_pr_description is None
+            else int(auto_generate_pr_description)
+        )
+        gating_status = None if enable_gating_status is None else int(enable_gating_status)
+        notify_ready = None if notify_on_ready is None else int(notify_on_ready)
+        notify_complete = None if notify_on_complete is None else int(notify_on_complete)
+        notify_failure = None if notify_on_failure is None else int(notify_on_failure)
+        notify_warning = None if notify_on_warning is None else int(notify_on_warning)
 
         # Try to update first
         cursor = await self.db.connection.execute("SELECT id FROM user_preferences WHERE id = 1")
@@ -1250,6 +1264,12 @@ class UserPreferencesDAO:
                     default_coding_mode = ?,
                     auto_generate_pr_description = ?,
                     enable_gating_status = ?,
+                    notify_on_ready = ?,
+                    notify_on_complete = ?,
+                    notify_on_failure = ?,
+                    notify_on_warning = ?,
+                    merge_method = ?,
+                    review_min_score = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
@@ -1262,6 +1282,12 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_gen,
                     gating_status,
+                    notify_ready,
+                    notify_complete,
+                    notify_failure,
+                    notify_warning,
+                    merge_method,
+                    review_min_score,
                     now,
                 ),
             )
@@ -1278,10 +1304,16 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_generate_pr_description,
                     enable_gating_status,
+                    notify_on_ready,
+                    notify_on_complete,
+                    notify_on_failure,
+                    notify_on_warning,
+                    merge_method,
+                    review_min_score,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1292,6 +1324,12 @@ class UserPreferencesDAO:
                     default_coding_mode,
                     auto_gen,
                     gating_status,
+                    notify_ready,
+                    notify_complete,
+                    notify_failure,
+                    notify_warning,
+                    merge_method,
+                    review_min_score,
                     now,
                     now,
                 ),
@@ -1308,6 +1346,12 @@ class UserPreferencesDAO:
             default_coding_mode=CodingMode(default_coding_mode or "interactive"),
             auto_generate_pr_description=auto_generate_pr_description or False,
             enable_gating_status=enable_gating_status or False,
+            notify_on_ready=True if notify_on_ready is None else notify_on_ready,
+            notify_on_complete=True if notify_on_complete is None else notify_on_complete,
+            notify_on_failure=True if notify_on_failure is None else notify_on_failure,
+            notify_on_warning=True if notify_on_warning is None else notify_on_warning,
+            merge_method=merge_method or "squash",
+            review_min_score=review_min_score if review_min_score is not None else 0.75,
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -1322,6 +1366,12 @@ class UserPreferencesDAO:
                 "default_coding_mode": CodingMode.INTERACTIVE.value,
                 "auto_generate_pr_description": 0,
                 "enable_gating_status": 0,
+                "notify_on_ready": 1,
+                "notify_on_complete": 1,
+                "notify_on_failure": 1,
+                "notify_on_warning": 1,
+                "merge_method": "squash",
+                "review_min_score": 0.75,
             },
         )
 

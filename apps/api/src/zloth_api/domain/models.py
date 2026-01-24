@@ -637,6 +637,12 @@ class UserPreferences(BaseModel):
     default_coding_mode: CodingMode = CodingMode.INTERACTIVE
     auto_generate_pr_description: bool = False
     enable_gating_status: bool = False  # Enable gating status for CI waiting
+    notify_on_ready: bool = True
+    notify_on_complete: bool = True
+    notify_on_failure: bool = True
+    notify_on_warning: bool = True
+    merge_method: str = "squash"
+    review_min_score: float = 0.75
 
 
 class UserPreferencesSave(BaseModel):
@@ -650,6 +656,12 @@ class UserPreferencesSave(BaseModel):
     default_coding_mode: CodingMode | None = None
     auto_generate_pr_description: bool | None = None
     enable_gating_status: bool | None = None  # Enable gating status for CI waiting
+    notify_on_ready: bool | None = None
+    notify_on_complete: bool | None = None
+    notify_on_failure: bool | None = None
+    notify_on_warning: bool | None = None
+    merge_method: str | None = None
+    review_min_score: float | None = None
 
 
 class PRCreateLink(BaseModel):

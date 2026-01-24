@@ -37,4 +37,10 @@ async def save_preferences(
         default_coding_mode=(data.default_coding_mode.value if data.default_coding_mode else None),
         auto_generate_pr_description=data.auto_generate_pr_description,
         enable_gating_status=data.enable_gating_status,
+        notify_on_ready=data.notify_on_ready,
+        notify_on_complete=data.notify_on_complete,
+        notify_on_failure=data.notify_on_failure,
+        notify_on_warning=data.notify_on_warning,
+        merge_method=data.merge_method,
+        review_min_score=data.review_min_score,
     )

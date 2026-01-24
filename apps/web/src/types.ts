@@ -297,6 +297,12 @@ export interface UserPreferences {
   default_coding_mode: CodingMode;
   auto_generate_pr_description: boolean;
   enable_gating_status: boolean;
+  notify_on_ready: boolean;
+  notify_on_complete: boolean;
+  notify_on_failure: boolean;
+  notify_on_warning: boolean;
+  merge_method: string;
+  review_min_score: number;
 }
 
 export interface UserPreferencesSave {
@@ -308,6 +314,12 @@ export interface UserPreferencesSave {
   default_coding_mode?: CodingMode | null;
   auto_generate_pr_description?: boolean | null;
   enable_gating_status?: boolean | null;
+  notify_on_ready?: boolean | null;
+  notify_on_complete?: boolean | null;
+  notify_on_failure?: boolean | null;
+  notify_on_warning?: boolean | null;
+  merge_method?: string | null;
+  review_min_score?: number | null;
 }
 
 // Task Breakdown
