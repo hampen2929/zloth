@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from zloth_api.errors import ZlothError
-
 from zloth_api.dependencies import get_github_service, get_repo_service
 from zloth_api.domain.models import Repo, RepoCloneRequest, RepoSelectRequest
 from zloth_api.services.github_service import GitHubService

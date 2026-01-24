@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from zloth_api.errors import ZlothError
-
 from zloth_api.dependencies import get_model_service
 from zloth_api.domain.models import ModelProfile, ModelProfileCreate
 from zloth_api.services.model_service import ModelService

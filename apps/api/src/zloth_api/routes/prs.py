@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from zloth_api.errors import ZlothError
-
 from zloth_api.dependencies import (
     get_ci_check_service,
     get_pr_service,
@@ -15,13 +14,13 @@ from zloth_api.dependencies import (
 )
 from zloth_api.domain.enums import PRUpdateMode, RunStatus
 from zloth_api.domain.models import (
-    PR,
     CICheck,
     CICheckResponse,
+    PR,
     PRCreate,
     PRCreateAuto,
-    PRCreated,
     PRCreateLink,
+    PRCreated,
     PRLinkJob,
     PRLinkJobResult,
     PRSyncRequest,

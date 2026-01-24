@@ -108,7 +108,7 @@ class CICheckService:
         if pr.task_id != task_id:
             logger.warning(f"PR {pr_id} does not belong to task {task_id}")
             raise ValidationError(
-                f"PR does not belong to task",
+                "PR does not belong to task",
                 details={"pr_id": pr_id, "task_id": task_id},
             )
 
