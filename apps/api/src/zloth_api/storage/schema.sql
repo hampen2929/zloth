@@ -279,3 +279,16 @@ CREATE TABLE IF NOT EXISTS ci_checks (
 
 CREATE INDEX IF NOT EXISTS idx_ci_checks_task_id ON ci_checks(task_id);
 CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
+
+-- Idempotency keys for duplicate request prevention
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key TEXT PRIMARY KEY,              -- SHA256 hash of request content
+    operation TEXT NOT NULL,           -- Operation type (e.g., 'run.create', 'task.create')
+    resource_id TEXT NOT NULL,         -- ID of the created resource
+    response_hash TEXT,                -- Hash of the response for validation
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL           -- TTL for automatic cleanup
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_expires ON idempotency_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_operation ON idempotency_keys(operation);

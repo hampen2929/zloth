@@ -60,9 +60,21 @@ class TestModelsRoutes:
         return AsyncMock(spec=ModelService)
 
     @pytest.fixture
-    def test_app(self, mock_model_service: AsyncMock) -> FastAPI:
+    def mock_idempotency_service(self) -> AsyncMock:
+        """Create a mock IdempotencyService."""
+        from zloth_api.services.idempotency import IdempotencyResult, IdempotencyService
+
+        mock = AsyncMock(spec=IdempotencyService)
+        mock.check.return_value = IdempotencyResult(is_duplicate=False)
+        mock.store.return_value = True
+        return mock
+
+    @pytest.fixture
+    def test_app(
+        self, mock_model_service: AsyncMock, mock_idempotency_service: AsyncMock
+    ) -> FastAPI:
         """Create test app with mocked dependencies."""
-        from zloth_api.dependencies import get_model_service
+        from zloth_api.dependencies import get_idempotency_service, get_model_service
         from zloth_api.routes.models import router
 
         app = FastAPI()
@@ -71,7 +83,11 @@ class TestModelsRoutes:
         async def override_get_model_service() -> AsyncMock:
             return mock_model_service
 
+        async def override_get_idempotency_service() -> AsyncMock:
+            return mock_idempotency_service
+
         app.dependency_overrides[get_model_service] = override_get_model_service
+        app.dependency_overrides[get_idempotency_service] = override_get_idempotency_service
         return app
 
     @pytest.fixture
@@ -226,7 +242,9 @@ class TestModelsRoutesIntegration:
 
     def test_create_and_list_models_integration(self, client: TestClient) -> None:
         """Test creating and listing models with real DB."""
-        # Create a model
+        import uuid
+
+        # Create a model with unique idempotency key to avoid duplicate detection
         create_response = client.post(
             "/v1/models",
             json={
@@ -234,6 +252,7 @@ class TestModelsRoutesIntegration:
                 "model_name": "gpt-4o",
                 "api_key": "sk-integration-test-key",
                 "display_name": "Integration Test Model",
+                "idempotency_key": str(uuid.uuid4()),
             },
         )
         assert create_response.status_code == 201

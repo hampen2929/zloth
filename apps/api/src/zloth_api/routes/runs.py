@@ -7,8 +7,13 @@ from collections.abc import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from zloth_api.dependencies import get_output_manager, get_run_service
+from zloth_api.dependencies import get_idempotency_service, get_output_manager, get_run_service
 from zloth_api.domain.models import Run, RunCreate, RunsCreated
+from zloth_api.services.idempotency import (
+    IdempotencyOperation,
+    IdempotencyService,
+    generate_idempotency_key,
+)
 from zloth_api.services.output_manager import OutputManager
 from zloth_api.services.run_service import RunService
 
@@ -22,9 +27,42 @@ async def create_runs(
     task_id: str,
     data: RunCreate,
     run_service: RunService = Depends(get_run_service),
+    idempotency_service: IdempotencyService = Depends(get_idempotency_service),
 ) -> RunsCreated:
-    """Create runs for multiple models (parallel execution)."""
+    """Create runs for multiple models (parallel execution).
+
+    Supports idempotency via `idempotency_key` in request body.
+    If the same key is used for the same task, returns 409 Conflict.
+    """
+    # Generate idempotency key from request content or use client-provided key
+    idempotency_key = generate_idempotency_key(
+        IdempotencyOperation.RUN_CREATE,
+        context_id=task_id,
+        content={
+            "instruction": data.instruction,
+            "model_ids": sorted(data.model_ids) if data.model_ids else None,
+            "executor_type": data.executor_type.value,
+            "executor_types": (
+                sorted(et.value for et in data.executor_types) if data.executor_types else None
+            ),
+        },
+        client_key=data.idempotency_key,
+    )
+
+    # Check for duplicate request
+    await idempotency_service.check_and_raise(idempotency_key, "run creation")
+
+    # Create runs
     runs = await run_service.create_runs(task_id, data)
+
+    # Store idempotency key with created resource IDs
+    resource_id = ",".join(r.id for r in runs)
+    await idempotency_service.store(
+        key=idempotency_key,
+        operation=IdempotencyOperation.RUN_CREATE,
+        resource_id=resource_id,
+    )
+
     return RunsCreated(run_ids=[r.id for r in runs])
 
 
