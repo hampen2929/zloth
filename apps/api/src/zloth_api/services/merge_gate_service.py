@@ -4,12 +4,12 @@ import logging
 from typing import TYPE_CHECKING
 
 from zloth_api.config import settings
-from zloth_api.services.settings_service import SettingsService
 from zloth_api.domain.models import (
     MergeCondition,
     MergeConditionsResult,
     MergeResult,
 )
+from zloth_api.services.settings_service import SettingsService
 
 if TYPE_CHECKING:
     from zloth_api.services.github_service import GitHubService
