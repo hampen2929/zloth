@@ -43,7 +43,6 @@ from zloth_api.services.workspace_adapters import (
     CloneWorkspaceAdapter,
     ExecutionWorkspaceInfo,
     WorkspaceAdapter,
-    WorktreeWorkspaceAdapter,
 )
 from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
@@ -182,7 +181,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
     """Service for managing and executing runs (Implementation Role).
 
     Following the orchestrator management pattern, this service:
-    - Creates worktrees for isolated execution
+    - Creates isolated execution workspaces (clone-based)
     - Runs AI Agent CLIs (file editing only)
     - Automatically stages, commits, and pushes changes
     - Tracks commit SHAs for PR creation
@@ -225,13 +224,14 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self.gemini_executor = GeminiExecutor(
             GeminiOptions(gemini_cli_path=settings.gemini_cli_path)
         )
-        # Determine isolation mode from settings
-        self.use_clone_isolation = settings.use_clone_isolation
-        self.workspace_adapter: WorkspaceAdapter
-        if self.use_clone_isolation:
-            self.workspace_adapter = CloneWorkspaceAdapter(self.workspace_service)
-        else:
-            self.workspace_adapter = WorktreeWorkspaceAdapter(self.git_service)
+        # Workspace isolation mode:
+        # Worktree-based isolation is deprecated. We always use clone-based workspaces.
+        if not settings.use_clone_isolation:
+            logger.warning(
+                "use_clone_isolation=false is deprecated and will be ignored; "
+                "zloth now uses clone-based workspaces only."
+            )
+        self.workspace_adapter: WorkspaceAdapter = CloneWorkspaceAdapter(self.workspace_service)
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
         """Create runs for multiple models or CLI executors.
@@ -357,13 +357,8 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
     ) -> Run:
         """Create and start a CLI-based run (Claude Code, Codex, or Gemini).
 
-        This method supports two isolation modes:
-        - Clone mode (use_clone_isolation=True): Uses git clone for workspace isolation.
-          Better for remote sync and conflict resolution.
-        - Worktree mode (use_clone_isolation=False): Uses git worktree for isolation.
-          Faster but with more git operation constraints.
-
-        In both modes, existing workspaces are reused for conversation continuation.
+        This method uses clone-based workspaces only (worktree isolation is deprecated).
+        Existing workspaces are reused for conversation continuation when valid.
 
         Args:
             task_id: Task ID.
@@ -394,20 +389,12 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if existing_run and existing_run.worktree_path:
             workspace_path: Path | None = Path(existing_run.worktree_path)
 
-            # If clone isolation is enabled but the previous workspace is a worktree,
-            # do not reuse it. We prefer clone-based isolation going forward.
-            if self.use_clone_isolation:
-                try:
-                    worktrees_root = getattr(self.git_service, "worktrees_dir", None)
-                except Exception:
-                    worktrees_root = None
-
-                if worktrees_root and str(workspace_path).startswith(str(worktrees_root)):
-                    logger.info(
-                        "Clone isolation enabled; skipping reuse of legacy worktree: %s",
-                        workspace_path,
-                    )
-                    workspace_path = None  # Force fresh clone-based workspace
+            # Never reuse legacy worktrees (paths under worktrees_dir).
+            # We store the workspace path in Run.worktree_path for backward compatibility.
+            worktrees_root = getattr(self.git_service, "worktrees_dir", None)
+            if worktrees_root and str(workspace_path).startswith(str(worktrees_root)):
+                logger.info("Skipping reuse of legacy worktree path: %s", workspace_path)
+                workspace_path = None
 
             if workspace_path is None:
                 is_valid = False

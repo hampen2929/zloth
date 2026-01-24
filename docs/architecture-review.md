@@ -81,25 +81,19 @@ run_service.py: 1360+ lines
 
 #### 3. ワークスペース分離モードの複雑性
 
-**現状**: Clone モードと Worktree モードの両方をサポート
+**現状**: （実装対応済み）Clone 方式に統一し、Worktree 方式は廃止
 
 ```python
-if self.use_clone_isolation:
-    workspace_info = await self.workspace_service.create_workspace(...)
-else:
-    workspace_info = await self.git_service.create_worktree(...)
+workspace_info = await self.workspace_service.create_workspace(...)
 ```
 
 **問題点**:
-- コード内に多数の条件分岐が散在
-- テストケースが倍増
-- バグが入りやすい
-- ドキュメントとの整合性維持が困難
+- （対応前）条件分岐が散在し、テストケース増加・バグ混入・整合性維持コストが高い
 
 **改善案**:
-- **Worktree モードを廃止し、Clone モードのみをサポート**
-- 条件分岐を削除してコードをシンプル化
-- `WorktreeService` 関連コードを削除
+- **Worktree モードを廃止し、Clone モードのみをサポート**（対応済み）
+- 条件分岐を削除してコードをシンプル化（対応済み）
+- 互換のため設定値（例: `use_clone_isolation`）は残るが、Worktree 選択は無視して Clone を使用する
 
 ---
 
