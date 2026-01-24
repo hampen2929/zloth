@@ -26,9 +26,11 @@ class NotifyFlags:
 
 
 @dataclass
+
 class MergePolicy:
     method: str  # merge | squash | rebase
     delete_branch: bool
+
 
 
 class SettingsService:
