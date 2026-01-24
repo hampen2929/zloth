@@ -165,3 +165,27 @@ class TestModelService:
 
         profile = await service.create(data)
         assert profile.display_name is None
+
+    @pytest.mark.asyncio
+    async def test_list_includes_env_models(self, service: ModelService, monkeypatch) -> None:
+        """Test listing models includes environment-configured models."""
+        monkeypatch.setenv("OPENAI_API_KEY", "env-openai-key")
+        monkeypatch.setenv("OPENAI_MODEL", "gpt-env")
+
+        models = await service.list()
+
+        assert models[0].id == "env-1"
+        assert models[0].provider == Provider.OPENAI
+        assert models[0].model_name == "gpt-env"
+
+    @pytest.mark.asyncio
+    async def test_get_decrypted_key_for_env_model(
+        self, service: ModelService, monkeypatch
+    ) -> None:
+        """Test retrieving decrypted key for an env model."""
+        monkeypatch.setenv("OPENAI_API_KEY", "env-openai-key")
+        monkeypatch.setenv("OPENAI_MODEL", "gpt-env")
+
+        decrypted = await service.get_decrypted_key("env-1")
+
+        assert decrypted == "env-openai-key"
