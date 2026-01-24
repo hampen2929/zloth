@@ -97,7 +97,7 @@ class ExternalServiceError(ZlothError):
         message: str = "Upstream service error",
         *,
         code: str = "EXTERNAL_SERVICE_ERROR",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         status_code: int = 502,
     ):
         super().__init__(message=message, code=code, status_code=status_code, details=details)
