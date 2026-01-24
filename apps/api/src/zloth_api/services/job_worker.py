@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
 from zloth_api.config import settings
 from zloth_api.domain.enums import JobKind, JobStatus
@@ -33,12 +33,12 @@ class JobWorker:
         self,
         *,
         job_dao: JobDAO,
-        handlers: dict[JobKind, JobHandler],
+        handlers: Mapping[JobKind, JobHandler],
         max_concurrent: int | None = None,
         poll_interval_seconds: float = 1.0,
     ) -> None:
         self._job_dao = job_dao
-        self._handlers = handlers
+        self._handlers = dict(handlers)
         self._max_concurrent = max_concurrent or settings.queue_max_concurrent_tasks
         self._poll_interval_seconds = poll_interval_seconds
         self._worker_id = f"worker-{uuid.uuid4().hex[:12]}"
