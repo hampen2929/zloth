@@ -1,10 +1,10 @@
 """Kanban board API routes."""
 
 from fastapi import APIRouter, Depends
-from zloth_api.errors import ZlothError
 
 from zloth_api.dependencies import get_kanban_service
 from zloth_api.domain.models import KanbanBoard, PR, RepoSummary, Task
+from zloth_api.errors import ZlothError
 from zloth_api.services.kanban_service import KanbanService
 
 router = APIRouter(prefix="/kanban", tags=["kanban"])

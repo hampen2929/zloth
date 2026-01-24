@@ -1,13 +1,14 @@
 """GitHub App routes."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from zloth_api.errors import ZlothError
+
 from zloth_api.dependencies import get_github_service
 from zloth_api.domain.models import (
     GitHubAppConfig,
     GitHubAppConfigSave,
     GitHubRepository,
 )
+from zloth_api.errors import ZlothError
 from zloth_api.services.github_service import GitHubService
 
 router = APIRouter(prefix="/github", tags=["github"])
