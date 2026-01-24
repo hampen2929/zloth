@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
+# Note: keep raising ValueError for backward compatibility with callers/tests.
+
 
 def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
     """Parse a GitHub repository URL into (owner, repo).
@@ -25,6 +27,7 @@ def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
         ValueError: If the URL cannot be parsed.
     """
     if not repo_url:
+        # Keep ValueError for backward compatibility with callers/tests.
         raise ValueError("repo_url is empty")
 
     url = repo_url.strip()
@@ -44,4 +47,5 @@ def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
         if len(parts) == 2 and parts[0] and parts[1]:
             return parts[0], parts[1]
 
+    # Backward compatibility: raise ValueError expected by tests.
     raise ValueError(f"Could not parse GitHub URL: {repo_url}")

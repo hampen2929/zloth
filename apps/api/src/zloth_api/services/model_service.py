@@ -107,6 +107,7 @@ class ModelService:
             ValueError: If trying to delete an env model.
         """
         if model_id.startswith(ENV_MODEL_ID_PREFIX):
+            # Keep ValueError for backward compatibility with callers/tests.
             raise ValueError("Cannot delete environment variable models")
 
         return await self.dao.delete(model_id)

@@ -8,6 +8,7 @@ from zloth_api.domain.models import (
     GitHubAppConfigSave,
     GitHubRepository,
 )
+from zloth_api.errors import ZlothError
 from zloth_api.services.github_service import GitHubService
 
 router = APIRouter(prefix="/github", tags=["github"])
@@ -29,6 +30,8 @@ async def save_config(
     """Save GitHub App configuration."""
     try:
         return await github_service.save_config(data)
+    except ZlothError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -40,8 +43,8 @@ async def list_repos(
     """List repositories accessible to the GitHub App."""
     try:
         return await github_service.list_repos()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list repos: {str(e)}")
 
@@ -55,7 +58,7 @@ async def list_branches(
     """List branches for a repository."""
     try:
         return await github_service.list_branches(owner, repo)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list branches: {str(e)}")

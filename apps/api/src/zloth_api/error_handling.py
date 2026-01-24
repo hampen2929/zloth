@@ -91,6 +91,20 @@ def install_error_handling(app: FastAPI) -> None:
             headers={"X-Request-ID": request_id},
         )
 
+    @app.exception_handler(PermissionError)
+    async def permission_error_handler(request: Request, exc: PermissionError) -> JSONResponse:
+        # Map OS-level permission issues to 403 consistently.
+        request_id = getattr(request.state, "request_id", _get_or_create_request_id(request))
+        return JSONResponse(
+            status_code=403,
+            content=_build_error_body(
+                detail=str(exc),
+                code="FORBIDDEN",
+                request_id=request_id,
+            ),
+            headers={"X-Request-ID": request_id},
+        )
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
         request_id = getattr(request.state, "request_id", _get_or_create_request_id(request))

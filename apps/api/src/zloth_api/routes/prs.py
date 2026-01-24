@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-
+from zloth_api.errors import ZlothError
 from zloth_api.dependencies import (
     get_ci_check_service,
     get_pr_service,
@@ -14,13 +14,13 @@ from zloth_api.dependencies import (
 )
 from zloth_api.domain.enums import PRUpdateMode, RunStatus
 from zloth_api.domain.models import (
-    PR,
     CICheck,
     CICheckResponse,
+    PR,
     PRCreate,
     PRCreateAuto,
-    PRCreated,
     PRCreateLink,
+    PRCreated,
     PRLinkJob,
     PRLinkJobResult,
     PRSyncRequest,
@@ -197,8 +197,8 @@ async def start_pr_link_auto_job(
     """
     try:
         return pr_service.start_link_auto_job(task_id, data)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise
 
 
 @router.get("/prs/jobs/{job_id}", response_model=PRLinkJobResult)
@@ -317,9 +317,8 @@ async def check_ci(
     """
     try:
         return await ci_check_service.check_ci(task_id, pr_id)
-    except ValueError as e:
-        logger.warning(f"CI check validation error for task={task_id}, pr={pr_id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except ZlothError:
+        raise
     except Exception as e:
         logger.exception(f"CI check failed for task={task_id}, pr={pr_id}: {e}")
         raise HTTPException(status_code=500, detail=f"CI check failed: {e}")

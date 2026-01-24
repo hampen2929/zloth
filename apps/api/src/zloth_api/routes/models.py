@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from zloth_api.dependencies import get_model_service
 from zloth_api.domain.models import ModelProfile, ModelProfileCreate
+from zloth_api.errors import ZlothError
 from zloth_api.services.model_service import ModelService
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -49,4 +50,5 @@ async def delete_model(
         if not deleted:
             raise HTTPException(status_code=404, detail="Model not found")
     except ValueError as e:
+        # Backward compatibility with callers expecting 400 on env-model delete
         raise HTTPException(status_code=400, detail=str(e))
