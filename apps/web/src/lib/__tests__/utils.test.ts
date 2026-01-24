@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { cn, truncate, formatRelativeTime } from '../utils';
+import { cn, truncate, formatRelativeTime, generateId } from '../utils';
 
 describe('cn (class name merger)', () => {
   it('should merge multiple class names', () => {
@@ -89,5 +89,12 @@ describe('formatRelativeTime', () => {
   it('should handle string dates', () => {
     const dateString = '2025-01-15T11:55:00Z';
     expect(formatRelativeTime(dateString)).toBe('5 minutes ago');
+  });
+});
+
+describe('generateId', () => {
+  it('should return a UUID string', () => {
+    const id = generateId();
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 });
