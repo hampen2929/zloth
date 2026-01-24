@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 from zloth_api.config import settings
 from zloth_api.domain.enums import ExecutorType, PRUpdateMode
@@ -41,6 +41,7 @@ from zloth_api.services.git_service import GitService
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.storage.dao import PRDAO, RunDAO, TaskDAO
+from zloth_api.utils.github_url import parse_github_owner_repo
 
 if TYPE_CHECKING:
     from zloth_api.services.github_service import GitHubService
@@ -157,26 +158,8 @@ class PRService:
         )
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
-        """Parse owner and repo from GitHub URL.
-
-        Args:
-            repo_url: GitHub repository URL.
-
-        Returns:
-            Tuple of (owner, repo_name).
-        """
-        # Handle different URL formats
-        if repo_url.startswith("git@github.com:"):
-            path = repo_url.replace("git@github.com:", "").replace(".git", "")
-        else:
-            parsed = urlparse(repo_url)
-            path = parsed.path.strip("/").replace(".git", "")
-
-        parts = path.split("/")
-        if len(parts) != 2:
-            raise ValueError(f"Invalid GitHub URL: {repo_url}")
-
-        return parts[0], parts[1]
+        """Backward-compatible wrapper (use parse_github_owner_repo)."""
+        return parse_github_owner_repo(repo_url)
 
     async def _ensure_branch_pushed(
         self, *, owner: str, repo: str, repo_obj: Repo, run: Run
