@@ -3,12 +3,12 @@
 import logging
 from typing import TYPE_CHECKING
 
-from zloth_api.config import settings
 from zloth_api.domain.models import (
     MergeCondition,
     MergeConditionsResult,
     MergeResult,
 )
+from zloth_api.services.settings_service import SettingsService
 
 if TYPE_CHECKING:
     from zloth_api.services.github_service import GitHubService
@@ -38,6 +38,7 @@ class MergeGateService:
         self,
         github_service: "GitHubService",
         review_dao: "ReviewDAO",
+        settings_service: SettingsService | None = None,
     ):
         """Initialize merge gate service.
 
@@ -47,6 +48,7 @@ class MergeGateService:
         """
         self.github = github_service
         self.review_dao = review_dao
+        self.settings_service = settings_service or SettingsService()
 
     async def check_all_conditions(
         self,
@@ -74,7 +76,7 @@ class MergeGateService:
             failed.append(ci_condition.name)
 
         # 2. Check review score
-        review_condition = self._check_review_score(last_review_score)
+        review_condition = await self._check_review_score(last_review_score)
         conditions.append(review_condition)
         if not review_condition.passed:
             failed.append(review_condition.name)
@@ -143,7 +145,7 @@ class MergeGateService:
                 message=f"Failed to check CI status: {str(e)}",
             )
 
-    def _check_review_score(
+    async def _check_review_score(
         self,
         last_review_score: float | None,
     ) -> MergeCondition:
@@ -155,7 +157,8 @@ class MergeGateService:
         Returns:
             Condition check result.
         """
-        min_score = settings.review_min_score
+        runtime_settings = await self.settings_service.get_user_runtime_settings()
+        min_score = runtime_settings.review_min_score
 
         if last_review_score is None:
             return MergeCondition(
