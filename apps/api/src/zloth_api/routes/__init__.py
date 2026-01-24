@@ -7,6 +7,7 @@ from zloth_api.routes.kanban import router as kanban_router
 from zloth_api.routes.metrics import router as metrics_router
 from zloth_api.routes.models import router as models_router
 from zloth_api.routes.preferences import router as preferences_router
+from zloth_api.routes.prometheus import router as prometheus_router
 from zloth_api.routes.prs import router as prs_router
 from zloth_api.routes.repos import router as repos_router
 from zloth_api.routes.reviews import router as reviews_router
@@ -23,6 +24,7 @@ __all__ = [
     "metrics_router",
     "models_router",
     "preferences_router",
+    "prometheus_router",
     "repos_router",
     "reviews_router",
     "tasks_router",

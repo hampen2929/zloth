@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
 
 from zloth_api.config import settings
 from zloth_api.domain.enums import JobKind, JobStatus
 from zloth_api.domain.models import Job
+from zloth_api.observability.metrics import JOB_DURATION, JOB_TOTAL, QUEUE_LATENCY, QUEUE_SIZE
 from zloth_api.storage.dao import JobDAO
 
 logger = logging.getLogger(__name__)
@@ -118,6 +121,9 @@ class JobWorker:
                 if task.done():
                     self._running.pop(job_id, None)
 
+            # Update queue size metrics periodically
+            await self._update_queue_size_metrics()
+
             # If we're at capacity, wait a bit
             if len(self._running) >= self._max_concurrent:
                 await asyncio.sleep(self._poll_interval_seconds)
@@ -131,14 +137,34 @@ class JobWorker:
             task = asyncio.create_task(self._execute_job(job))
             self._running[job.id] = task
 
+    async def _update_queue_size_metrics(self) -> None:
+        """Update queue size gauge metrics."""
+        try:
+            stats = await self._job_dao.get_queue_stats()
+            for kind, count in stats.items():
+                QUEUE_SIZE.labels(kind=kind).set(count)
+        except Exception:
+            # Don't fail the worker loop if metrics update fails
+            pass
+
     async def _execute_job(self, job: Job) -> None:
         """Execute a single job with concurrency control."""
+        # Record queue latency (time spent waiting in queue)
+        queue_latency = self._calculate_queue_latency(job)
+        if queue_latency is not None:
+            QUEUE_LATENCY.labels(kind=job.kind.value).observe(queue_latency)
+
+        start_time = time.monotonic()
+        status = "succeeded"
+
         async with self._semaphore:
             handler = self._handlers.get(job.kind)
             if not handler:
                 await self._job_dao.fail(
                     job.id, error=f"No handler registered for job kind: {job.kind}"
                 )
+                status = "failed"
+                self._record_job_metrics(job, start_time, status)
                 return
 
             try:
@@ -146,7 +172,28 @@ class JobWorker:
                 await self._job_dao.complete(job.id)
             except asyncio.CancelledError:
                 await self._job_dao.cancel(job_id=job.id, reason="Job was cancelled")
+                status = "cancelled"
+                self._record_job_metrics(job, start_time, status)
                 raise
             except Exception as e:
                 logger.exception("Job %s failed: %s", job.id, e)
                 await self._job_dao.fail(job.id, error=str(e))
+                status = "failed"
+
+        self._record_job_metrics(job, start_time, status)
+
+    def _calculate_queue_latency(self, job: Job) -> float | None:
+        """Calculate how long the job spent waiting in queue."""
+        if not job.created_at:
+            return None
+        try:
+            now = datetime.now(job.created_at.tzinfo)
+            return (now - job.created_at).total_seconds()
+        except (ValueError, TypeError):
+            return None
+
+    def _record_job_metrics(self, job: Job, start_time: float, status: str) -> None:
+        """Record job execution metrics."""
+        duration = time.monotonic() - start_time
+        JOB_DURATION.labels(kind=job.kind.value, status=status).observe(duration)
+        JOB_TOTAL.labels(kind=job.kind.value, status=status).inc()
