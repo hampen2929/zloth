@@ -1,5 +1,7 @@
 """FastAPI dependency injection."""
 
+import logging
+
 from zloth_api.config import settings
 from zloth_api.domain.enums import JobKind
 from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
@@ -18,6 +20,7 @@ from zloth_api.services.notification_service import NotificationService
 from zloth_api.services.output_manager import OutputManager
 from zloth_api.services.pr_service import PRService
 from zloth_api.services.pr_status_poller import PRStatusPoller
+from zloth_api.services.queue_backend import QueueBackend, QueueBackendType, parse_queue_url
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.review_service import ReviewService
 from zloth_api.services.run_service import RunService
@@ -40,6 +43,8 @@ from zloth_api.storage.dao import (
 )
 from zloth_api.storage.db import get_db
 
+logger = logging.getLogger(__name__)
+
 # Singletons
 _crypto_service: CryptoService | None = None
 _run_service: RunService | None = None
@@ -55,6 +60,7 @@ _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
 _job_worker: JobWorker | None = None
+_queue_backend: QueueBackend | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -266,18 +272,49 @@ async def get_review_service() -> ReviewService:
     return _review_service
 
 
+async def get_queue_backend() -> QueueBackend:
+    """Get the queue backend singleton.
+
+    Creates the appropriate queue backend based on ZLOTH_QUEUE_URL:
+    - sqlite:// (default) - Uses SQLite for queue storage
+    - redis://host:port/db - Uses Redis for queue storage
+    """
+    global _queue_backend
+    if _queue_backend is None:
+        backend_type, params = parse_queue_url(settings.queue_url)
+        logger.info("Initializing queue backend: %s", backend_type)
+
+        if backend_type == QueueBackendType.SQLITE:
+            from zloth_api.services.sqlite_queue import SQLiteQueueBackend
+
+            db = await get_db()
+            _queue_backend = SQLiteQueueBackend(db)
+        elif backend_type == QueueBackendType.REDIS:
+            from zloth_api.services.redis_queue import RedisQueueBackend
+
+            _queue_backend = RedisQueueBackend(
+                host=params.get("host", "localhost"),
+                port=int(params.get("port", "6379")),
+                db=int(params.get("db", "0")),
+            )
+        else:
+            raise ValueError(f"Unsupported queue backend: {backend_type}")
+
+    return _queue_backend
+
+
 async def get_job_worker() -> JobWorker:
     """Get the job worker singleton (persistent queue executor)."""
     global _job_worker
     if _job_worker is None:
-        job_dao = await get_job_dao()
+        queue_backend = await get_queue_backend()
         run_service = await get_run_service()
         review_service = await get_review_service()
         handlers = {
             JobKind.RUN_EXECUTE: run_service.execute_job,
             JobKind.REVIEW_EXECUTE: review_service.execute_job,
         }
-        _job_worker = JobWorker(job_dao=job_dao, handlers=handlers)
+        _job_worker = JobWorker(queue_backend=queue_backend, handlers=handlers)
         run_service.set_job_worker(_job_worker)
         review_service.set_job_worker(_job_worker)
     return _job_worker

@@ -1,12 +1,13 @@
-"""SQLite-backed job worker.
+"""Background job worker using pluggable queue backend.
 
-This module provides a lightweight persistent queue implementation that stores
-jobs in the existing SQLite database and processes them in the background.
+This module provides a lightweight queue worker that processes jobs using
+a pluggable queue backend (SQLite, Redis, etc.).
 
 Design goals:
-- Survive process restarts (queued jobs are not lost)
+- Survive process restarts (jobs are not lost)
 - Concurrency control via semaphore
 - Best-effort cancellation for running jobs
+- Pluggable queue backend for different storage options
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from zloth_api.config import settings
 from zloth_api.domain.enums import JobKind, JobStatus
 from zloth_api.domain.models import Job
-from zloth_api.storage.dao import JobDAO
+from zloth_api.services.queue_backend import QueueBackend
 
 logger = logging.getLogger(__name__)
 
@@ -27,20 +28,33 @@ JobHandler = Callable[[Job], Awaitable[None]]
 
 
 class JobWorker:
-    """Background worker that polls SQLite for jobs and executes handlers."""
+    """Background worker that polls queue backend for jobs and executes handlers."""
 
     def __init__(
         self,
         *,
-        job_dao: JobDAO,
+        queue_backend: QueueBackend,
         handlers: Mapping[JobKind, JobHandler],
         max_concurrent: int | None = None,
-        poll_interval_seconds: float = 1.0,
+        poll_interval_seconds: float | None = None,
+        visibility_timeout_seconds: float | None = None,
     ) -> None:
-        self._job_dao = job_dao
+        """Initialize the job worker.
+
+        Args:
+            queue_backend: Queue backend for job storage/retrieval
+            handlers: Mapping of job kinds to handler functions
+            max_concurrent: Maximum concurrent job executions
+            poll_interval_seconds: Interval between queue polling
+            visibility_timeout_seconds: Visibility timeout for claimed jobs
+        """
+        self._queue = queue_backend
         self._handlers = dict(handlers)
         self._max_concurrent = max_concurrent or settings.queue_max_concurrent_tasks
-        self._poll_interval_seconds = poll_interval_seconds
+        self._poll_interval_seconds = poll_interval_seconds or settings.queue_poll_interval_seconds
+        self._visibility_timeout_seconds = (
+            visibility_timeout_seconds or settings.queue_visibility_timeout_seconds
+        )
         self._worker_id = f"worker-{uuid.uuid4().hex[:12]}"
 
         self._semaphore = asyncio.Semaphore(self._max_concurrent)
@@ -52,7 +66,13 @@ class JobWorker:
 
     @property
     def worker_id(self) -> str:
+        """Get the unique worker ID."""
         return self._worker_id
+
+    @property
+    def queue_backend(self) -> QueueBackend:
+        """Get the queue backend."""
+        return self._queue
 
     def start(self) -> None:
         """Start the background polling loop."""
@@ -83,9 +103,17 @@ class JobWorker:
         logger.info("JobWorker stopped (%s)", self._worker_id)
 
     async def cancel_ref(self, *, kind: JobKind, ref_id: str) -> bool:
-        """Cancel a queued job, and best-effort cancel a running job."""
-        cancelled = await self._job_dao.cancel_queued_by_ref(kind=kind, ref_id=ref_id)
-        running_job = await self._job_dao.get_latest_by_ref(kind=kind, ref_id=ref_id)
+        """Cancel a queued job, and best-effort cancel a running job.
+
+        Args:
+            kind: Type of job to cancel
+            ref_id: Reference ID of the job
+
+        Returns:
+            True if a job was canceled.
+        """
+        cancelled = await self._queue.cancel_queued_by_ref(kind=kind, ref_id=ref_id)
+        running_job = await self._queue.get_latest_by_ref(kind=kind, ref_id=ref_id)
         if (
             running_job
             and running_job.status == JobStatus.RUNNING
@@ -93,7 +121,7 @@ class JobWorker:
         ):
             task = self._running.get(running_job.id)
             if task and not task.done():
-                await self._job_dao.cancel(job_id=running_job.id, reason="Canceled by user")
+                await self._queue.cancel(running_job.id, reason="Canceled by user")
                 task.cancel()
                 return True
         return cancelled
@@ -104,7 +132,7 @@ class JobWorker:
         For now we take a conservative approach:
         - Any job left in RUNNING is marked FAILED (unknown state).
         """
-        failed = await self._job_dao.fail_all_running(
+        failed = await self._queue.fail_all_running(
             error="Server restarted while job was running (startup recovery)"
         )
         if failed:
@@ -123,7 +151,10 @@ class JobWorker:
                 await asyncio.sleep(self._poll_interval_seconds)
                 continue
 
-            job = await self._job_dao.claim_next(locked_by=self._worker_id)
+            job = await self._queue.dequeue(
+                worker_id=self._worker_id,
+                visibility_timeout_seconds=self._visibility_timeout_seconds,
+            )
             if not job:
                 await asyncio.sleep(self._poll_interval_seconds)
                 continue
@@ -136,17 +167,41 @@ class JobWorker:
         async with self._semaphore:
             handler = self._handlers.get(job.kind)
             if not handler:
-                await self._job_dao.fail(
-                    job.id, error=f"No handler registered for job kind: {job.kind}"
+                await self._queue.fail(
+                    job.id, error=f"No handler registered for job kind: {job.kind}", retry=False
                 )
                 return
 
+            # Start heartbeat task to keep job alive during long executions
+            heartbeat_task = asyncio.create_task(self._heartbeat_loop(job.id))
+
             try:
                 await handler(job)
-                await self._job_dao.complete(job.id)
+                await self._queue.complete(job.id)
             except asyncio.CancelledError:
-                await self._job_dao.cancel(job_id=job.id, reason="Job was cancelled")
+                await self._queue.cancel(job.id, reason="Job was cancelled")
                 raise
             except Exception as e:
                 logger.exception("Job %s failed: %s", job.id, e)
-                await self._job_dao.fail(job.id, error=str(e))
+                await self._queue.fail(job.id, error=str(e))
+            finally:
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+    async def _heartbeat_loop(self, job_id: str) -> None:
+        """Send periodic heartbeats to keep a job alive."""
+        # Send heartbeat every 30 seconds (visibility timeout is 5 min by default)
+        interval = self._visibility_timeout_seconds / 10
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                success = await self._queue.heartbeat(job_id)
+                if not success:
+                    logger.warning("Heartbeat failed for job %s", job_id)
+                    break
+            except Exception as e:
+                logger.warning("Heartbeat error for job %s: %s", job_id, e)
+                break

@@ -227,11 +227,19 @@ class ReviewService(BaseRoleService[Review, ReviewCreate, ReviewExecutionResult]
         await self.review_dao.create(review)
 
         # 4. Enqueue for execution (persistent job)
-        await self.job_dao.create(
-            kind=JobKind.REVIEW_EXECUTE,
-            ref_id=review.id,
-            payload={},
-        )
+        if self.job_worker:
+            await self.job_worker.queue_backend.enqueue(
+                kind=JobKind.REVIEW_EXECUTE,
+                ref_id=review.id,
+                payload={},
+            )
+        else:
+            # Fallback to job_dao for backward compatibility
+            await self.job_dao.create(
+                kind=JobKind.REVIEW_EXECUTE,
+                ref_id=review.id,
+                payload={},
+            )
 
         return review
 

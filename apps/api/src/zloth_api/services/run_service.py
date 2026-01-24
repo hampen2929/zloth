@@ -350,11 +350,19 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 runs.append(run)
 
                 # Enqueue for execution (persistent job)
-                await self.job_dao.create(
-                    kind=JobKind.RUN_EXECUTE,
-                    ref_id=run.id,
-                    payload={},
-                )
+                if self.job_worker:
+                    await self.job_worker.queue_backend.enqueue(
+                        kind=JobKind.RUN_EXECUTE,
+                        ref_id=run.id,
+                        payload={},
+                    )
+                else:
+                    # Fallback to job_dao for backward compatibility
+                    await self.job_dao.create(
+                        kind=JobKind.RUN_EXECUTE,
+                        ref_id=run.id,
+                        payload={},
+                    )
 
         return runs
 
@@ -428,11 +436,20 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         # Enqueue for execution (persistent job).
         # We store resume_session_id in payload because it is derived at enqueue-time.
-        await self.job_dao.create(
-            kind=JobKind.RUN_EXECUTE,
-            ref_id=updated_run.id,
-            payload={"resume_session_id": previous_session_id} if previous_session_id else {},
-        )
+        payload = {"resume_session_id": previous_session_id} if previous_session_id else {}
+        if self.job_worker:
+            await self.job_worker.queue_backend.enqueue(
+                kind=JobKind.RUN_EXECUTE,
+                ref_id=updated_run.id,
+                payload=payload,
+            )
+        else:
+            # Fallback to job_dao for backward compatibility
+            await self.job_dao.create(
+                kind=JobKind.RUN_EXECUTE,
+                ref_id=updated_run.id,
+                payload=payload,
+            )
 
         return updated_run
 
