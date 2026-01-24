@@ -182,8 +182,16 @@ async def get_pr_service() -> PRService:
         github_service = await get_github_service()
         model_service = await get_model_service()
         git_service = get_git_service()
+        job_dao = await get_job_dao()
         _pr_service = PRService(
-            pr_dao, task_dao, run_dao, repo_service, github_service, model_service, git_service
+            pr_dao,
+            task_dao,
+            run_dao,
+            repo_service,
+            github_service,
+            model_service,
+            git_service,
+            job_dao,
         )
     return _pr_service
 
@@ -213,7 +221,8 @@ async def get_breakdown_service() -> BreakdownService:
         repo_dao = await get_repo_dao()
         output_manager = get_output_manager()
         backlog_dao = await get_backlog_dao()
-        _breakdown_service = BreakdownService(repo_dao, output_manager, backlog_dao)
+        job_dao = await get_job_dao()
+        _breakdown_service = BreakdownService(repo_dao, output_manager, backlog_dao, job_dao)
     return _breakdown_service
 
 
@@ -271,9 +280,13 @@ async def get_job_worker() -> JobWorker:
         job_dao = await get_job_dao()
         run_service = await get_run_service()
         review_service = await get_review_service()
+        breakdown_service = await get_breakdown_service()
+        pr_service = await get_pr_service()
         handlers = {
             JobKind.RUN_EXECUTE: run_service.execute_job,
             JobKind.REVIEW_EXECUTE: review_service.execute_job,
+            JobKind.BREAKDOWN_EXECUTE: breakdown_service.execute_breakdown_job,
+            JobKind.PR_LINK_AUTO: pr_service.execute_link_job,
         }
         _job_worker = JobWorker(job_dao=job_dao, handlers=handlers)
         run_service.set_job_worker(_job_worker)

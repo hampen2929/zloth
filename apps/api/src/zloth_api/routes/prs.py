@@ -196,7 +196,8 @@ async def start_pr_link_auto_job(
     Poll GET /prs/jobs/{job_id} to check status and get result.
     """
     try:
-        return pr_service.start_link_auto_job(task_id, data)
+        # start_link_auto_job now returns immediately with a durable job id
+        return await pr_service.start_link_auto_job(task_id, data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -210,7 +211,7 @@ async def get_pr_link_job(
 
     Poll this endpoint until status is 'completed' or 'failed'.
     """
-    result = pr_service.get_link_auto_job(job_id)
+    result = await pr_service.get_link_auto_job(job_id)
     if not result:
         raise HTTPException(status_code=404, detail="Job not found")
     return result

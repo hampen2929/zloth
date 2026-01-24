@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from zloth_api.config import settings
-from zloth_api.domain.enums import ExecutorType, PRUpdateMode
+from zloth_api.domain.enums import ExecutorType, PRUpdateMode, JobKind, JobStatus
 from zloth_api.domain.models import (
     PR,
     PRCreate,
@@ -40,7 +40,7 @@ from zloth_api.services.commit_message import ensure_english_commit_message
 from zloth_api.services.git_service import GitService
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
-from zloth_api.storage.dao import PRDAO, RunDAO, TaskDAO
+from zloth_api.storage.dao import PRDAO, RunDAO, TaskDAO, JobDAO
 from zloth_api.utils.github_url import parse_github_owner_repo
 
 if TYPE_CHECKING:
@@ -69,52 +69,43 @@ class PRLinkJobData:
 
 
 class PRLinkJobQueue:
-    """In-memory queue for PR link generation jobs."""
+    """(Deprecated) In-memory queue for PR link generation jobs.
 
-    def __init__(self) -> None:
+    Kept for backward compatibility but no longer used. PR link jobs are now
+    executed via the durable SQLite-backed queue (JobDAO).
+    """
+
+    def __init__(self) -> None:  # pragma: no cover - deprecated path
         self._jobs: dict[str, PRLinkJobData] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
-    def create_job(self, task_id: str, selected_run_id: str) -> PRLinkJobData:
-        """Create a new job."""
+    def create_job(self, task_id: str, selected_run_id: str) -> PRLinkJobData:  # pragma: no cover
         job_id = str(uuid.uuid4())
-        job = PRLinkJobData(
-            job_id=job_id,
-            task_id=task_id,
-            selected_run_id=selected_run_id,
-        )
+        job = PRLinkJobData(job_id=job_id, task_id=task_id, selected_run_id=selected_run_id)
         self._jobs[job_id] = job
         return job
 
-    def get_job(self, job_id: str) -> PRLinkJobData | None:
-        """Get job by ID."""
+    def get_job(self, job_id: str) -> PRLinkJobData | None:  # pragma: no cover
         return self._jobs.get(job_id)
 
-    def set_task(self, job_id: str, task: asyncio.Task[None]) -> None:
-        """Set asyncio task for job."""
+    def set_task(self, job_id: str, task: asyncio.Task[None]) -> None:  # pragma: no cover
         self._tasks[job_id] = task
 
-    def complete_job(self, job_id: str, result: PRCreateLink) -> None:
-        """Mark job as completed with result."""
+    def complete_job(self, job_id: str, result: PRCreateLink) -> None:  # pragma: no cover
         job = self._jobs.get(job_id)
         if job:
             job.status = "completed"
             job.result = result
 
-    def fail_job(self, job_id: str, error: str) -> None:
-        """Mark job as failed with error."""
+    def fail_job(self, job_id: str, error: str) -> None:  # pragma: no cover
         job = self._jobs.get(job_id)
         if job:
             job.status = "failed"
             job.error = error
 
-    def cleanup_old_jobs(self, max_jobs: int = 100) -> None:
-        """Remove oldest jobs if too many."""
+    def cleanup_old_jobs(self, max_jobs: int = 100) -> None:  # pragma: no cover
         if len(self._jobs) > max_jobs:
-            # Remove oldest completed/failed jobs
-            completed = [
-                (k, v) for k, v in self._jobs.items() if v.status in ("completed", "failed")
-            ]
+            completed = [(k, v) for k, v in self._jobs.items() if v.status in ("completed", "failed")]
             for job_id, _ in completed[: len(completed) - max_jobs // 2]:
                 del self._jobs[job_id]
                 self._tasks.pop(job_id, None)
@@ -138,6 +129,7 @@ class PRService:
         github_service: GitHubService,
         model_service: ModelService,
         git_service: GitService | None = None,
+        job_dao: JobDAO | None = None,
     ):
         self.pr_dao = pr_dao
         self.task_dao = task_dao
@@ -146,7 +138,9 @@ class PRService:
         self.github_service = github_service
         self.model_service = model_service
         self.git_service = git_service or GitService()
-        # Job queue for async PR link generation
+        # Durable job DAO for async PR link generation
+        self.job_dao = job_dao
+        # Deprecated in-memory queue retained for BC (no longer used)
         self.link_job_queue = PRLinkJobQueue()
         # Initialize executors for PR description generation
         self.claude_executor = ClaudeCodeExecutor(
@@ -529,58 +523,87 @@ class PRService:
             ),
         )
 
-    def start_link_auto_job(self, task_id: str, data: PRCreateAuto) -> PRLinkJob:
-        """Start async PR link generation job.
+    async def start_link_auto_job(self, task_id: str, data: PRCreateAuto) -> PRLinkJob:
+        """Start async PR link generation as a durable job.
 
-        This method returns immediately with a job ID that can be polled
-        to check the status of the PR link generation.
-
-        Args:
-            task_id: Task ID.
-            data: PR creation data.
-
-        Returns:
-            PRLinkJob with job ID and initial status.
+        Returns immediately with a job ID; status can be polled via DAO-backed route.
         """
-        # Create job
-        job = self.link_job_queue.create_job(task_id, data.selected_run_id)
+        if not self.job_dao:
+            # Fallback to deprecated in-memory path
+            job = self.link_job_queue.create_job(task_id, data.selected_run_id)
+            async def run_job() -> None:
+                try:
+                    result = await self.create_link_auto(task_id, data)
+                    self.link_job_queue.complete_job(job.job_id, result)
+                except Exception as e:
+                    logger.exception(f"PR link job {job.job_id} failed")
+                    self.link_job_queue.fail_job(job.job_id, str(e))
+            task = asyncio.create_task(run_job())
+            self.link_job_queue.set_task(job.job_id, task)
+            self.link_job_queue.cleanup_old_jobs()
+            return PRLinkJob(job_id=job.job_id, status=job.status)
 
-        # Start background task
-        async def run_job() -> None:
-            try:
-                result = await self.create_link_auto(task_id, data)
-                self.link_job_queue.complete_job(job.job_id, result)
-            except Exception as e:
-                logger.exception(f"PR link job {job.job_id} failed")
-                self.link_job_queue.fail_job(job.job_id, str(e))
+        # Durable job path
+        payload = {"task_id": task_id, "selected_run_id": data.selected_run_id}
+        # Using selected_run_id also as ref_id for easy indexing/cancel
+        # Result will be placed into job.payload by the worker handler
+        # and job.status updated to SUCCEEDED/FAILED accordingly.
+        # NOTE: create is async; caller expects immediate response
+        # The handler will call create_link_auto.
+        # We don't use max_attempts>1 here since PR link errors are often fatal.
+        # If needed, retry can be added later.
+        #
+        # Create QUEUED job
+        j = await self.job_dao.create(
+            kind=JobKind.PR_LINK_AUTO,
+            ref_id=data.selected_run_id,
+            payload=payload,
+        )
+        return PRLinkJob(job_id=j.id, status="pending")
 
-        task = asyncio.create_task(run_job())
-        self.link_job_queue.set_task(job.job_id, task)
+    async def get_link_auto_job(self, job_id: str) -> PRLinkJobResult | None:
+        """Get status of PR link generation job (DAO-backed)."""
+        if not self.job_dao:
+            job = self.link_job_queue.get_job(job_id)
+            if not job:
+                return None
+            return PRLinkJobResult(job_id=job.job_id, status=job.status, result=job.result, error=job.error)
 
-        # Cleanup old jobs
-        self.link_job_queue.cleanup_old_jobs()
-
-        return PRLinkJob(job_id=job.job_id, status=job.status)
-
-    def get_link_auto_job(self, job_id: str) -> PRLinkJobResult | None:
-        """Get status of PR link generation job.
-
-        Args:
-            job_id: Job ID.
-
-        Returns:
-            PRLinkJobResult or None if job not found.
-        """
-        job = self.link_job_queue.get_job(job_id)
-        if not job:
+        job = await self.job_dao.get(job_id)
+        if not job or job.kind != JobKind.PR_LINK_AUTO:
             return None
 
-        return PRLinkJobResult(
-            job_id=job.job_id,
-            status=job.status,
-            result=job.result,
-            error=job.error,
-        )
+        status_map = {
+            JobStatus.QUEUED: "pending",
+            JobStatus.RUNNING: "pending",
+            JobStatus.SUCCEEDED: "completed",
+            JobStatus.FAILED: "failed",
+            JobStatus.CANCELED: "failed",
+        }
+        status = status_map.get(job.status, "pending")
+        result = None
+        if job.payload and job.status == JobStatus.SUCCEEDED:
+            payload_result = job.payload.get("result")
+            if payload_result:
+                result = PRCreateLink(**payload_result)
+        return PRLinkJobResult(job_id=job.id, status=status, result=result, error=job.last_error)
+
+    async def execute_link_job(self, job: "Job") -> None:
+        """Execute a durable PR link generation job.
+
+        Stores result in job.payload for later retrieval.
+        """
+        if job.kind != JobKind.PR_LINK_AUTO:
+            raise ValueError(f"Unsupported job kind for PRService: {job.kind}")
+
+        task_id = job.payload.get("task_id") if job.payload else None
+        selected_run_id = job.payload.get("selected_run_id") if job.payload else None
+        if not task_id or not selected_run_id:
+            raise ValueError("Missing task_id or selected_run_id in job payload")
+
+        result = await self.create_link_auto(task_id, PRCreateAuto(selected_run_id=selected_run_id))
+        if self.job_dao:
+            await self.job_dao.update_payload(job.id, {"result": result.model_dump()})
 
     async def _generate_title_and_description(
         self,

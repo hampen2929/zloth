@@ -41,7 +41,8 @@ class JobKind(str, Enum):
 
     RUN_EXECUTE = "run.execute"
     REVIEW_EXECUTE = "review.execute"
-    # Note: Breakdown/PR-link jobs can be added later as needed.
+    PR_LINK_AUTO = "pr.link.auto"
+    BREAKDOWN_EXECUTE = "breakdown.execute"
 
 
 # Backward compatibility aliases

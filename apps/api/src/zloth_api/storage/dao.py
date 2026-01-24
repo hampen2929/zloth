@@ -925,6 +925,24 @@ class JobDAO:
         )
         await self.db.connection.commit()
 
+    async def update_payload(self, job_id: str, payload: dict[str, Any]) -> None:
+        """Update a job's payload JSON and updated_at timestamp.
+
+        This is used by background handlers to persist results for polling
+        (e.g., PR link URL or breakdown results) in a durable way.
+        """
+        now = now_iso()
+        payload_str = json.dumps(payload or {})
+        await self.db.connection.execute(
+            """
+            UPDATE jobs
+            SET payload = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (payload_str, now, job_id),
+        )
+        await self.db.connection.commit()
+
     async def cancel(self, *, job_id: str, reason: str | None = None) -> None:
         """Mark a job canceled and release the lock."""
         now = now_iso()

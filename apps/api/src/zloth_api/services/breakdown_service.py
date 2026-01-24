@@ -21,6 +21,8 @@ from zloth_api.domain.enums import (
     EstimatedSize,
     ExecutorType,
     RoleExecutionStatus,
+    JobKind,
+    JobStatus,
 )
 from zloth_api.domain.models import (
     BacklogItem,
@@ -38,7 +40,7 @@ from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from zloth_api.roles.base_service import BaseRoleService
 from zloth_api.roles.registry import RoleRegistry
 from zloth_api.services.output_manager import OutputManager
-from zloth_api.storage.dao import BacklogDAO, RepoDAO
+from zloth_api.storage.dao import BacklogDAO, RepoDAO, JobDAO
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,7 @@ class BreakdownService(
         repo_dao: RepoDAO,
         output_manager: OutputManager,
         backlog_dao: BacklogDAO | None = None,
+        job_dao: JobDAO | None = None,
     ):
         """Initialize BreakdownService.
 
@@ -206,6 +209,7 @@ class BreakdownService(
         self.repo_dao = repo_dao
         # Note: self.output_manager is set by base class
         self.backlog_dao = backlog_dao
+        self.job_dao = job_dao
 
         # In-memory storage for breakdown results
         self._results: dict[str, TaskBreakdownResponse] = {}
@@ -299,8 +303,22 @@ class BreakdownService(
         )
         self._results[breakdown_id] = initial_response
 
-        # Start background task
-        asyncio.create_task(self._run_breakdown(breakdown_id, repo, request))
+        # Enqueue durable job if JobDAO is available; otherwise fallback to in-memory task
+        if self.job_dao:
+            payload = {
+                "repo_id": repo.id,
+                "content": request.content,
+                "executor_type": request.executor_type.value,
+                "context": request.context or {},
+            }
+            await self.job_dao.create(
+                kind=JobKind.BREAKDOWN_EXECUTE,
+                ref_id=breakdown_id,
+                payload=payload,
+            )
+        else:
+            # Fallback: run in-process (non-durable)
+            asyncio.create_task(self._run_breakdown(breakdown_id, repo, request))
 
         return initial_response
 
@@ -340,7 +358,76 @@ class BreakdownService(
         Returns:
             TaskBreakdownResponse or None if not found.
         """
-        return self._results.get(breakdown_id)
+        # Fast path: in-memory
+        mem = self._results.get(breakdown_id)
+        if mem is not None:
+            return mem
+
+        # If not in memory and we have a job_dao, reconstruct from durable job
+        if not self.job_dao:
+            return None
+
+        job = await self.job_dao.get_latest_by_ref(kind=JobKind.BREAKDOWN_EXECUTE, ref_id=breakdown_id)
+        if not job:
+            return None
+
+        status_map = {
+            JobStatus.QUEUED: BreakdownStatus.RUNNING,
+            JobStatus.RUNNING: BreakdownStatus.RUNNING,
+            JobStatus.SUCCEEDED: BreakdownStatus.SUCCEEDED,
+            JobStatus.FAILED: BreakdownStatus.FAILED,
+            JobStatus.CANCELED: BreakdownStatus.FAILED,
+        }
+        status = status_map.get(job.status, BreakdownStatus.RUNNING)
+
+        # If result persisted in payload, return it; otherwise a minimal response
+        if job.payload and job.payload.get("result"):
+            try:
+                data = job.payload["result"]
+                # Minimal validation via pydantic construct
+                return TaskBreakdownResponse(**data)
+            except Exception:
+                pass
+
+        return TaskBreakdownResponse(
+            breakdown_id=breakdown_id,
+            status=status,
+            tasks=[],
+            summary=None,
+            original_content="",
+            error=job.last_error,
+        )
+
+    async def execute_breakdown_job(self, job: "Job") -> None:
+        """Execute durable breakdown job and persist result into job payload."""
+        if job.kind != JobKind.BREAKDOWN_EXECUTE:
+            raise ValueError(f"Unsupported job kind for BreakdownService: {job.kind}")
+
+        repo_id = job.payload.get("repo_id") if job.payload else None
+        content = job.payload.get("content") if job.payload else None
+        executor_type = job.payload.get("executor_type") if job.payload else None
+        context = job.payload.get("context") if job.payload else {}
+
+        if not repo_id or not content or not executor_type:
+            raise ValueError("Missing fields in breakdown job payload")
+
+        repo = await self.repo_dao.get(repo_id)
+        if not repo:
+            raise ValueError(f"Repository not found: {repo_id}")
+
+        request = TaskBreakdownRequest(
+            content=content,
+            executor_type=ExecutorType(executor_type),
+            repo_id=repo.id,
+            context=context or None,
+        )
+
+        # Execute and persist result
+        result = await self._execute_breakdown(breakdown_id=job.ref_id, repo=repo, request=request)
+        # Update in-memory cache for immediate reads
+        self._results[job.ref_id] = result
+        if self.job_dao:
+            await self.job_dao.update_payload(job.id, {"result": result.model_dump()})
 
     async def _execute_breakdown(
         self,
