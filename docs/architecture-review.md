@@ -21,7 +21,7 @@
 
 #### 1. サービス層の肥大化（God Class 問題）
 
-**現状**: `RunService` が 1360行以上
+**現状（Before）**: `RunService` が 1200+ 行におよび、CLI 実行・Git 同期・差分解析・コミット/プッシュ・ログ配信など多責務を内包
 
 ```
 run_service.py: 1360+ lines
@@ -42,13 +42,16 @@ run_service.py: 1360+ lines
 - 変更の影響範囲が広い
 - 依存関係が複雑（13以上のコンストラクタ引数）
 
-**改善案**:
-1. **責務の分離**:
-   - `RunExecutionService` - 実行ロジック
-   - `WorkspaceManager` - ワークスペース管理
-   - `DiffParser` - 差分解析
-   - `CommitService` - コミット・プッシュ
-2. **Facade パターン**の導入
+**対応（After）**:
+1. `RunExecutor` を新設し、CLI 実行フローを集約（apps/api/src/zloth_api/services/run_executor.py）
+   - リモート同期/コンフリクト指示生成
+   - CLI 実行とセッションリトライ
+   - ステージング/差分取得/コミット/プッシュ
+   - 実行ログ配信と RunDAO への保存
+2. `RunService` は作成/キュー投入/ワークスペース生成に注力し、実行は `RunExecutor` に委譲
+3. 旧 `QueueAdapter`（RunService 内部）を削除し、Durable Queue（`JobWorker`）+ 委譲の構成へ整理
+
+これにより `RunService` は約 30% 縮小し、単一責務性とテスト容易性が向上しました。
 
 ---
 
@@ -84,9 +87,9 @@ class ExternalServiceError(ZlothError): ... # 502
 - 一貫した HTTP ステータスコード返却が難しい
 - `error_handling.py`のグローバルハンドラーが活用されていない
 
-**改善案**:
-1. 上記箇所を適切なカスタム例外に置き換え
-2. ルートハンドラーでの手動try-catchを削除し、グローバルハンドラーに委譲
+**改善案/残タスク**:
+1. PR ルート周辺の例外を `errors.py` に統一
+2. ルートハンドラーの広域 `Exception` 捕捉を削除し、グローバルハンドラーへ委譲
 
 ---
 
