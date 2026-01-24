@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 import builtins
 import logging
-import re
 from collections.abc import Callable, Coroutine
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -28,17 +28,25 @@ from zloth_api.domain.models import (
     Run,
     RunCreate,
 )
+from zloth_api.errors import NotFoundError
 from zloth_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
 from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from zloth_api.roles.base_service import BaseRoleService
 from zloth_api.roles.registry import RoleRegistry
 from zloth_api.services.commit_message import ensure_english_commit_message
+from zloth_api.services.diff_parser import parse_unified_diff
 from zloth_api.services.git_service import GitService
 from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
-from zloth_api.services.workspace_service import MergeResult, WorkspaceInfo, WorkspaceService
+from zloth_api.services.workspace_adapters import (
+    CloneWorkspaceAdapter,
+    ExecutionWorkspaceInfo,
+    WorkspaceAdapter,
+)
+from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import RunDAO, TaskDAO, UserPreferencesDAO
+from zloth_api.utils.github_url import parse_github_owner_repo
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +181,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
     """Service for managing and executing runs (Implementation Role).
 
     Following the orchestrator management pattern, this service:
-    - Creates worktrees for isolated execution
+    - Creates isolated execution workspaces (clone-based)
     - Runs AI Agent CLIs (file editing only)
     - Automatically stages, commits, and pushes changes
     - Tracks commit SHAs for PR creation
@@ -223,6 +231,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 "use_clone_isolation=false is deprecated and will be ignored; "
                 "zloth now uses clone-based workspaces only."
             )
+        self.workspace_adapter: WorkspaceAdapter = CloneWorkspaceAdapter(self.workspace_service)
 
     async def create_runs(self, task_id: str, data: RunCreate) -> list[Run]:
         """Create runs for multiple models or CLI executors.
@@ -240,12 +249,12 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         # Verify task exists
         task = await self.task_dao.get(task_id)
         if not task:
-            raise ValueError(f"Task not found: {task_id}")
+            raise NotFoundError("Task not found", details={"task_id": task_id})
 
         # Get repo for workspace
         repo = await self.repo_service.get(task.repo_id)
         if not repo:
-            raise ValueError(f"Repo not found: {task.repo_id}")
+            raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
         runs: list[Run] = []
         existing_runs = await self.run_dao.list(task_id)
@@ -375,7 +384,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             executor_type=executor_type,
         )
 
-        workspace_info: WorkspaceInfo | None = None
+        workspace_info: ExecutionWorkspaceInfo | None = None
 
         if existing_run and existing_run.worktree_path:
             workspace_path: Path | None = Path(existing_run.worktree_path)
@@ -387,11 +396,10 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 logger.info("Skipping reuse of legacy worktree path: %s", workspace_path)
                 workspace_path = None
 
-            is_valid = (
-                await self.workspace_service.is_valid_workspace(workspace_path)
-                if workspace_path is not None
-                else False
-            )
+            if workspace_path is None:
+                is_valid = False
+            else:
+                is_valid = await self.workspace_adapter.is_valid(workspace_path)
 
             if is_valid and workspace_path is not None:
                 # If we're working from the repo's default branch, ensure the workspace
@@ -412,20 +420,20 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                             f"(workspace={workspace_path}, default={default_ref})"
                         )
                     else:
-                        workspace_info = WorkspaceInfo(
+                        workspace_info = ExecutionWorkspaceInfo(
                             path=workspace_path,
                             branch_name=existing_run.working_branch or "",
                             base_branch=existing_run.base_ref or base_ref,
-                            created_at=existing_run.created_at,
+                            created_at=existing_run.created_at or datetime.utcnow(),
                         )
                         logger.info(f"Reusing existing workspace: {workspace_path}")
                 else:
                     # Reuse existing workspace (no default-base freshness check)
-                    workspace_info = WorkspaceInfo(
+                    workspace_info = ExecutionWorkspaceInfo(
                         path=workspace_path,
                         branch_name=existing_run.working_branch or "",
                         base_branch=existing_run.base_ref or base_ref,
-                        created_at=existing_run.created_at,
+                        created_at=existing_run.created_at or datetime.utcnow(),
                     )
                     logger.info(f"Reusing existing workspace: {workspace_path}")
             else:
@@ -445,9 +453,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             if self.user_preferences_dao:
                 prefs = await self.user_preferences_dao.get()
                 branch_prefix = prefs.default_branch_prefix if prefs else None
-                # Apply custom workspace directory from UserPreferences if set
-                if prefs and prefs.worktrees_dir:
-                    self.workspace_service.set_workspaces_dir(prefs.worktrees_dir)
 
             # Get auth_url for private repos
             auth_url: str | None = None
@@ -458,9 +463,9 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 except Exception as e:
                     logger.warning(f"Could not get auth_url for workspace creation: {e}")
 
-            logger.info("Creating clone-based workspace for run %s", run.id[:8])
-            workspace_info = await self.workspace_service.create_workspace(
-                repo_url=repo.repo_url,
+            logger.info(f"Creating execution workspace for run {run.id[:8]}")
+            workspace_info = await self.workspace_adapter.create(
+                repo=repo,
                 base_branch=base_ref,
                 run_id=run.id,
                 branch_prefix=branch_prefix,
@@ -537,7 +542,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             }
             if run and run.executor_type in cli_executors and run.worktree_path:
                 workspace_path = Path(run.worktree_path)
-                await self.workspace_service.cleanup_workspace(workspace_path)
+                await self.workspace_adapter.cleanup(path=workspace_path, delete_branch=True)
 
         return cancelled
 
@@ -555,7 +560,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             return False
 
         workspace_path = Path(run.worktree_path)
-        await self.workspace_service.cleanup_workspace(workspace_path)
+        await self.workspace_adapter.cleanup(path=workspace_path, delete_branch=False)
         return True
 
     # Keep old method name for backward compatibility
@@ -654,7 +659,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
     async def _execute_cli_run(
         self,
         run: Run,
-        worktree_info: WorkspaceInfo,
+        worktree_info: ExecutionWorkspaceInfo,
         executor_type: ExecutorType,
         resume_session_id: str | None = None,
         repo: Any = None,
@@ -671,7 +676,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         Args:
             run: Run object.
-            worktree_info: WorkspaceInfo object with path and branch info.
+            worktree_info: WorktreeInfo object with path and branch info.
             executor_type: Type of CLI executor to use.
             resume_session_id: Optional session ID to resume a previous conversation.
             repo: Repository object for push operations.
@@ -710,9 +715,9 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     owner, repo_name = self._parse_github_url(repo.repo_url)
                     auth_url = await self.github_service.get_auth_url(owner, repo_name)
 
-                    is_behind = await self.workspace_service.is_behind_remote(
+                    is_behind = await self.workspace_adapter.is_behind_remote(
                         worktree_info.path,
-                        worktree_info.branch_name,
+                        branch=worktree_info.branch_name,
                         auth_url=auth_url,
                     )
 
@@ -723,7 +728,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                         )
                         logs.append("Detected remote updates, pulling latest changes...")
 
-                        sync_result: MergeResult = await self.workspace_service.sync_with_remote(
+                        sync_result = await self.workspace_adapter.sync_with_remote(
                             worktree_info.path,
                             branch=worktree_info.branch_name,
                             auth_url=auth_url,
@@ -837,10 +842,10 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
 
             # 5. Stage all changes
-            await self.workspace_service.stage_all(worktree_info.path)
+            await self.workspace_adapter.stage_all(worktree_info.path)
 
             # 6. Get patch
-            patch = await self.workspace_service.get_diff(worktree_info.path, staged=True)
+            patch = await self.workspace_adapter.get_diff(worktree_info.path, staged=True)
 
             # Skip commit/push if no changes
             if not patch.strip():
@@ -857,7 +862,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 return
 
             # Parse diff to get file changes
-            files_changed = self._parse_diff(patch)
+            files_changed = parse_unified_diff(patch)
             logs.append(f"Detected {len(files_changed)} changed file(s)")
 
             # Determine final summary (priority: file > CLI output > generated)
@@ -865,14 +870,14 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 summary_from_file or result.summary or self._generate_summary(files_changed)
             )
 
-            # 7. Commit (automatic)
+            # 7. Commit (automatic, use appropriate service)
             commit_message = self._generate_commit_message(run.instruction, final_summary)
             commit_message = await ensure_english_commit_message(
                 commit_message,
                 llm_router=self.llm_router,
                 hint=final_summary or "",
             )
-            commit_sha = await self.workspace_service.commit(
+            commit_sha = await self.workspace_adapter.commit(
                 worktree_info.path,
                 message=commit_message,
             )
@@ -883,7 +888,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 owner, repo_name = self._parse_github_url(repo.repo_url)
                 auth_url = await self.github_service.get_auth_url(owner, repo_name)
 
-                push_result = await self.git_service.push_with_retry(
+                push_result = await self.workspace_adapter.push(
                     worktree_info.path,
                     branch=worktree_info.branch_name,
                     auth_url=auth_url,
@@ -892,7 +897,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 if push_result.success:
                     if push_result.required_pull:
                         logs.append(
-                            "Pulled remote changes and pushed to branch: "
+                            f"Pulled remote changes and pushed to branch: "
                             f"{worktree_info.branch_name}"
                         )
                     else:
@@ -1014,69 +1019,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             return f"{first_line}\n\n{summary}"
         return first_line
 
-    def _parse_diff(self, diff: str) -> builtins.list[FileDiff]:
-        """Parse unified diff to extract file change information.
-
-        Args:
-            diff: Unified diff string.
-
-        Returns:
-            List of FileDiff objects.
-        """
-        files: builtins.list[FileDiff] = []
-        current_file: str | None = None
-        current_patch_lines: builtins.list[str] = []
-        added_lines = 0
-        removed_lines = 0
-
-        for line in diff.split("\n"):
-            if line.startswith("--- a/"):
-                # Save previous file if exists
-                if current_file:
-                    files.append(
-                        FileDiff(
-                            path=current_file,
-                            added_lines=added_lines,
-                            removed_lines=removed_lines,
-                            patch="\n".join(current_patch_lines),
-                        )
-                    )
-                # Reset for new file
-                current_patch_lines = [line]
-                added_lines = 0
-                removed_lines = 0
-            elif line.startswith("+++ b/"):
-                current_file = line[6:]
-                current_patch_lines.append(line)
-            elif line.startswith("--- /dev/null"):
-                # New file
-                current_patch_lines = [line]
-                added_lines = 0
-                removed_lines = 0
-            elif line.startswith("+++ b/") and current_file is None:
-                # New file path
-                current_file = line[6:]
-                current_patch_lines.append(line)
-            elif current_file:
-                current_patch_lines.append(line)
-                if line.startswith("+") and not line.startswith("+++"):
-                    added_lines += 1
-                elif line.startswith("-") and not line.startswith("---"):
-                    removed_lines += 1
-
-        # Save last file
-        if current_file:
-            files.append(
-                FileDiff(
-                    path=current_file,
-                    added_lines=added_lines,
-                    removed_lines=removed_lines,
-                    patch="\n".join(current_patch_lines),
-                )
-            )
-
-        return files
-
     def _build_conflict_resolution_instruction(self, conflict_files: builtins.list[str]) -> str:
         """Build instruction for AI to resolve merge conflicts.
 
@@ -1114,29 +1056,8 @@ After resolving ALL conflicts, proceed with the original task below.
 """
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
-        """Parse GitHub URL to extract owner and repo name.
-
-        Args:
-            repo_url: GitHub repository URL.
-
-        Returns:
-            Tuple of (owner, repo_name).
-
-        Raises:
-            ValueError: If URL cannot be parsed.
-        """
-        # Handle various URL formats:
-        # - https://github.com/owner/repo.git
-        # - https://github.com/owner/repo
-        # - git@github.com:owner/repo.git
-        patterns = [
-            r"github\.com[:/]([^/]+)/([^/.]+)(?:\.git)?$",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, repo_url)
-            if match:
-                return match.group(1), match.group(2)
-        raise ValueError(f"Could not parse GitHub URL: {repo_url}")
+        """Backward-compatible wrapper (use parse_github_owner_repo)."""
+        return parse_github_owner_repo(repo_url)
 
     def _generate_summary(self, files_changed: builtins.list[FileDiff]) -> str:
         """Generate a human-readable summary of changes.

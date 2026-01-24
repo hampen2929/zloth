@@ -11,9 +11,13 @@ from zloth_api.domain.enums import (
     RunStatus,
 )
 from zloth_api.storage.dao import (
+    AgenticRunDAO,
+    BacklogDAO,
+    CICheckDAO,
     MessageDAO,
     ModelProfileDAO,
     RepoDAO,
+    ReviewDAO,
     RunDAO,
     TaskDAO,
 )
@@ -441,3 +445,220 @@ class TestRunDAO:
 
         runs = await dao.list(task_id=task.id)
         assert len(runs) == 2
+
+
+class TestBacklogDAO:
+    """Test suite for BacklogDAO (JSON field decoding)."""
+
+    @pytest.fixture
+    def repo_dao(self, test_db: Database) -> RepoDAO:
+        return RepoDAO(test_db)
+
+    @pytest.fixture
+    def dao(self, test_db: Database) -> BacklogDAO:
+        return BacklogDAO(test_db)
+
+    @pytest.mark.asyncio
+    async def test_create_and_get_decodes_json_fields(
+        self, dao: BacklogDAO, repo_dao: RepoDAO
+    ) -> None:
+        repo = await repo_dao.create(
+            repo_url="https://github.com/test/backlog-repo",
+            default_branch="main",
+            latest_commit="aaa111",
+            workspace_path="/workspaces/backlog",
+        )
+
+        item = await dao.create(
+            repo_id=repo.id,
+            title="Backlog Item",
+            target_files=["a.py", "b.py"],
+            tags=["refactor", "dao"],
+            subtasks=[{"title": "step 1"}, {"title": "step 2"}],
+        )
+
+        retrieved = await dao.get(item.id)
+        assert retrieved is not None
+        assert retrieved.id == item.id
+        assert retrieved.target_files == ["a.py", "b.py"]
+        assert retrieved.tags == ["refactor", "dao"]
+        assert len(retrieved.subtasks) == 2
+        assert retrieved.subtasks[0].title == "step 1"
+
+
+class TestCICheckDAO:
+    """Test suite for CICheckDAO (JSON field decoding)."""
+
+    @pytest.fixture
+    def repo_dao(self, test_db: Database) -> RepoDAO:
+        return RepoDAO(test_db)
+
+    @pytest.fixture
+    def task_dao(self, test_db: Database) -> TaskDAO:
+        return TaskDAO(test_db)
+
+    @pytest.fixture
+    def pr_dao(self, test_db: Database):
+        from zloth_api.storage.dao import PRDAO
+
+        return PRDAO(test_db)
+
+    @pytest.fixture
+    def dao(self, test_db: Database) -> CICheckDAO:
+        return CICheckDAO(test_db)
+
+    @pytest.mark.asyncio
+    async def test_create_and_get_decodes_json_fields(
+        self, dao: CICheckDAO, repo_dao: RepoDAO, task_dao: TaskDAO, pr_dao
+    ) -> None:
+        repo = await repo_dao.create(
+            repo_url="https://github.com/test/ci-repo",
+            default_branch="main",
+            latest_commit="bbb222",
+            workspace_path="/workspaces/ci",
+        )
+        task = await task_dao.create(repo_id=repo.id, title="CI Task")
+        pr = await pr_dao.create(
+            task_id=task.id,
+            number=1,
+            url="https://github.com/test/ci-repo/pull/1",
+            branch="test-branch",
+            title="PR",
+            body=None,
+            latest_commit="sha123",
+        )
+
+        created = await dao.create(
+            task_id=task.id,
+            pr_id=pr.id,
+            status="pending",
+            jobs={"lint": "success"},
+            failed_jobs=[],
+        )
+
+        retrieved = await dao.get(created.id)
+        assert retrieved is not None
+        assert retrieved.jobs == {"lint": "success"}
+        assert retrieved.failed_jobs == []
+
+
+class TestReviewDAO:
+    """Test suite for ReviewDAO (JSON field decoding + join)."""
+
+    @pytest.fixture
+    def repo_dao(self, test_db: Database) -> RepoDAO:
+        return RepoDAO(test_db)
+
+    @pytest.fixture
+    def task_dao(self, test_db: Database) -> TaskDAO:
+        return TaskDAO(test_db)
+
+    @pytest.fixture
+    def run_dao(self, test_db: Database) -> RunDAO:
+        return RunDAO(test_db)
+
+    @pytest.fixture
+    def dao(self, test_db: Database) -> ReviewDAO:
+        return ReviewDAO(test_db)
+
+    @pytest.mark.asyncio
+    async def test_create_and_get_decodes_json_fields(
+        self, dao: ReviewDAO, repo_dao: RepoDAO, task_dao: TaskDAO, run_dao: RunDAO
+    ) -> None:
+        from datetime import datetime
+
+        from zloth_api.domain.enums import ReviewStatus
+        from zloth_api.domain.models import Review
+        from zloth_api.storage.dao import generate_id
+
+        repo = await repo_dao.create(
+            repo_url="https://github.com/test/review-repo",
+            default_branch="main",
+            latest_commit="ccc333",
+            workspace_path="/workspaces/review",
+        )
+        task = await task_dao.create(repo_id=repo.id, title="Review Task")
+        run = await run_dao.create(task_id=task.id, instruction="Do thing", executor_type=ExecutorType.PATCH_AGENT)
+
+        review = Review(
+            id=generate_id(),
+            task_id=task.id,
+            target_run_ids=[run.id],
+            executor_type=ExecutorType.CLAUDE_CODE,
+            model_id=None,
+            model_name=None,
+            status=ReviewStatus.QUEUED,
+            created_at=datetime.utcnow(),
+        )
+        await dao.create(review)
+
+        retrieved = await dao.get(review.id)
+        assert retrieved is not None
+        assert retrieved.target_run_ids == [run.id]
+        assert retrieved.logs == []
+        assert retrieved.feedbacks == []
+
+
+class TestAgenticRunDAO:
+    """Test suite for AgenticRunDAO (JSON field decoding)."""
+
+    @pytest.fixture
+    def repo_dao(self, test_db: Database) -> RepoDAO:
+        return RepoDAO(test_db)
+
+    @pytest.fixture
+    def task_dao(self, test_db: Database) -> TaskDAO:
+        return TaskDAO(test_db)
+
+    @pytest.fixture
+    def dao(self, test_db: Database) -> AgenticRunDAO:
+        return AgenticRunDAO(test_db)
+
+    @pytest.mark.asyncio
+    async def test_create_and_get_decodes_last_ci_result(
+        self, dao: AgenticRunDAO, repo_dao: RepoDAO, task_dao: TaskDAO
+    ) -> None:
+        from datetime import datetime
+
+        from zloth_api.domain.enums import AgenticPhase, CodingMode
+        from zloth_api.domain.models import AgenticState, CIJobResult, CIResult
+        from zloth_api.storage.dao import generate_id
+
+        repo = await repo_dao.create(
+            repo_url="https://github.com/test/agentic-repo",
+            default_branch="main",
+            latest_commit="ddd444",
+            workspace_path="/workspaces/agentic",
+        )
+        task = await task_dao.create(repo_id=repo.id, title="Agentic Task")
+
+        ci_result = CIResult(
+            success=True,
+            workflow_run_id=123,
+            sha="sha-ci",
+            jobs={"test": "success"},
+            failed_jobs=[CIJobResult(job_name="x", result="skipped")],
+        )
+        state = AgenticState(
+            id=generate_id(),
+            task_id=task.id,
+            mode=CodingMode.INTERACTIVE,
+            phase=AgenticPhase.CODING,
+            iteration=1,
+            ci_iterations=0,
+            review_iterations=0,
+            started_at=datetime.utcnow(),
+            last_activity=datetime.utcnow(),
+            pr_number=None,
+            current_sha=None,
+            last_ci_result=ci_result,
+            last_review_score=None,
+            error=None,
+            human_approved=False,
+        )
+        await dao.create(state)
+
+        retrieved = await dao.get(state.id)
+        assert retrieved is not None
+        assert retrieved.last_ci_result is not None
+        assert retrieved.last_ci_result.workflow_run_id == 123
