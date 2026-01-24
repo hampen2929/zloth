@@ -496,30 +496,10 @@ flowchart LR
 - worktreeロック問題なし
 - Shallow clone (depth=1) で効率的
 
-### Worktreeベースワークスペース (代替)
+### Worktreeベースワークスペース (廃止)
 
-```mermaid
-flowchart LR
-    subgraph Parent["親リポジトリ"]
-        REPO["repos/repo_id/"]
-    end
-
-    subgraph Worktrees["worktrees/"]
-        WT1["run_xxx/"]
-        WT2["run_yyy/"]
-    end
-
-    REPO -->|git worktree add| WT1
-    REPO -->|git worktree add| WT2
-```
-
-**設定**:
-```python
-# settings.py
-use_clone_based_workspaces: bool = True  # デフォルト: クローンベース
-workspaces_dir: Path   # クローン用
-worktrees_dir: Path    # worktree用 (CLAUDE.md継承を避けるため分離)
-```
+Worktree方式は実装の複雑性・分岐増加の要因となるため、現在は **Clone方式に統一** されています。
+互換のため設定値が残っている場合がありますが、Worktree方式の選択は無視されます。
 
 ## 並列実行モデル
 

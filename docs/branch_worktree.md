@@ -1,10 +1,13 @@
-# ブランチ選択とWorktree管理
+# ブランチ選択とワークスペース管理
 
-このドキュメントでは、zlothにおけるブランチ選択からWorktree作成、PR作成までのフローを説明します。
+このドキュメントでは、zlothにおけるブランチ選択からワークスペース作成、PR作成までのフローを説明します。
+
+> 注: 旧仕様では「git worktree」による分離をサポートしていましたが、現在は **Clone方式に統一** されています。
+> DBフィールド名などに `worktree_*` が残っている場合がありますが、互換のための名称であり、実体は clone ワークスペースです。
 
 ## 概要
 
-zlothでは、ユーザーが選択したブランチを基点として作業を行います。各Runは独立したGit worktreeで実行され、ブランチ情報は`Run.base_ref`に保存されます。
+zlothでは、ユーザーが選択したブランチを基点として作業を行います。各Runは独立したCloneワークスペースで実行され、ブランチ情報は`Run.base_ref`に保存されます。
 
 ```mermaid
 flowchart TB
@@ -18,8 +21,8 @@ flowchart TB
         E --> F[selected_branch保存]
 
         G[RunService.create_runs] --> H[base_ref決定]
-        H --> I[GitService.create_worktree]
-        I --> J[Worktree作成]
+        H --> I[WorkspaceService.create_workspace]
+        I --> J[Workspace作成]
 
         K[PRService.create] --> L[PR作成]
     end
@@ -56,7 +59,7 @@ erDiagram
         string task_id FK
         string base_ref "作業の基点ブランチ"
         string working_branch "作業ブランチ名"
-        string worktree_path "Worktreeパス"
+        string worktree_path "Workspaceパス（互換名）"
         string commit_sha
     }
 
@@ -77,16 +80,9 @@ workspaces/
 │   ├── src/
 │   └── ...
 │
-└── worktrees/
-    ├── run_{run_id_1}/              # Run 1 のWorktree
-    │   ├── .git                     # 親リポジトリへの参照
-    │   └── [作業ファイル]
-    │
-    ├── run_{run_id_2}/              # Run 2 のWorktree
-    │   ├── .git
-    │   └── [作業ファイル]
-    │
-    └── ...
+└── run_{run_id}/                    # Run のCloneワークスペース（shallow clone）
+    ├── .git/
+    └── [作業ファイル]
 ```
 
 ## データフロー
@@ -140,13 +136,13 @@ sequenceDiagram
 - `apps/api/src/zloth_api/services/repo_service.py` (select メソッド)
 - `apps/api/src/zloth_api/routes/repos.py`
 
-### 3. Run作成とWorktree
+### 3. Run作成とWorkspace
 
 ```mermaid
 sequenceDiagram
     participant FE as Frontend
     participant RuS as RunService
-    participant GS as GitService
+    participant WS as WorkspaceService
     participant Exec as Executor
 
     FE->>RuS: create_runs({instruction, ...})
@@ -154,17 +150,17 @@ sequenceDiagram
     Note over RuS: base_ref決定
     RuS->>RuS: base_ref = data.base_ref<br/>or repo.selected_branch<br/>or repo.default_branch
 
-    RuS->>GS: create_worktree(repo, base_branch, run_id)
+    RuS->>WS: create_workspace(repo_url, base_branch, run_id)
 
-    Note over GS: Worktree作成
-    GS->>GS: git fetch origin --prune
-    GS->>GS: git worktree add -b {branch} {path} origin/{base}
-    GS-->>RuS: WorktreeInfo {path, branch_name}
+    Note over WS: Workspace作成（shallow clone）
+    WS->>WS: git clone --depth 1 --single-branch -b {base} {url}
+    WS->>WS: git checkout -b {branch}
+    WS-->>RuS: WorkspaceInfo {path, branch_name}
 
-    RuS->>Exec: execute(worktree_path, instruction)
+    RuS->>Exec: execute(workspace_path, instruction)
     Exec-->>RuS: 実行結果
 
-    RuS->>GS: commit & push
+    RuS->>WS: commit & push
     RuS-->>FE: Run {base_ref, working_branch, ...}
 ```
 
@@ -175,7 +171,7 @@ sequenceDiagram
 
 **関連ファイル:**
 - `apps/api/src/zloth_api/services/run_service.py` (create_runs メソッド)
-- `apps/api/src/zloth_api/services/git_service.py` (create_worktree メソッド)
+- `apps/api/src/zloth_api/services/workspace_service.py` (create_workspace メソッド)
 
 ### 4. PR作成
 
@@ -204,7 +200,7 @@ sequenceDiagram
 
 ## ブランチ命名規則
 
-Worktree用の作業ブランチは以下の形式で生成されます：
+作業ブランチは以下の形式で生成されます：
 
 ```
 {prefix}/{short_run_id}
@@ -222,14 +218,14 @@ flowchart TB
     subgraph "Task 1 (develop選択)"
         R1[Repo] --> |selected_branch=develop| T1[Task 1]
         T1 --> Run1[Run 1]
-        Run1 --> |base_ref=develop| W1[Worktree 1]
+        Run1 --> |base_ref=develop| W1[Workspace 1]
         W1 --> PR1[PR → develop]
     end
 
     subgraph "Task 2 (main選択)"
         R1 --> |selected_branch=main| T2[Task 2]
         T2 --> Run2[Run 2]
-        Run2 --> |base_ref=main| W2[Worktree 2]
+        Run2 --> |base_ref=main| W2[Workspace 2]
         W2 --> PR2[PR → main]
     end
 
@@ -249,18 +245,18 @@ flowchart TB
 
 **原因:** 古いバージョンでは`repo.default_branch`を使用していたため、後から作成したタスクのブランチ選択が影響していた。
 
-**解決:** `run.base_ref`を使用するように修正済み（commit d4bc736）
+**解決:** `run.base_ref`を使用するように修正済み
 
-### Worktreeの作成に失敗する
+### Workspaceの作成に失敗する
 
 **確認事項:**
 1. ベースブランチがリモートに存在するか
-2. `workspaces/worktrees/`ディレクトリの書き込み権限
-3. 既存のWorktreeと競合していないか
+2. `workspaces/`ディレクトリの書き込み権限
+3. 既存の `run_{run_id}` ディレクトリが壊れていないか（必要ならクリーンアップ）
 
 **関連ログ:**
 ```python
-logger.info(f"Creating worktree at {worktree_path} from {base_ref}")
+logger.info(f"Creating clone-based workspace for run {run_id[:8]}")
 ```
 
 ## 関連ファイル一覧
@@ -271,6 +267,6 @@ logger.info(f"Creating worktree at {worktree_path} from {base_ref}")
 | Frontend | `apps/web/src/components/BranchSelector.tsx` | ブランチ選択コンポーネント |
 | Backend | `apps/api/src/zloth_api/services/repo_service.py` | リポジトリ管理 |
 | Backend | `apps/api/src/zloth_api/services/run_service.py` | Run実行管理 |
-| Backend | `apps/api/src/zloth_api/services/git_service.py` | Git操作（Worktree含む） |
+| Backend | `apps/api/src/zloth_api/services/git_service.py` | Git操作（push/retry 等） |
 | Backend | `apps/api/src/zloth_api/services/pr_service.py` | PR作成・更新 |
 | Domain | `apps/api/src/zloth_api/domain/models.py` | Repo, Run, PR モデル定義 |
