@@ -26,7 +26,10 @@ def _env_model_to_profile(index: int, env_model: EnvModelConfig) -> ModelProfile
         id=f"{ENV_MODEL_ID_PREFIX}{index}",
         provider=Provider(env_model.provider),
         model_name=env_model.model_name,
-        display_name=env_model.display_name or f"{env_model.provider}/{env_model.model_name}",
+        display_name=(
+            env_model.display_name
+            or f"{env_model.provider}/{env_model.model_name}"
+        ),
         created_at=datetime.now(UTC),
     )
 
@@ -47,6 +50,33 @@ class ModelService:
         Returns:
             Created model profile.
         """
+        # Prevent duplicates with environment-defined models
+        # Compare by (provider, model_name)
+        target_provider = data.provider.value
+        target_model = data.model_name
+
+        # Check against env models
+        for env_model in settings.env_models:
+            if (
+                env_model.provider == target_provider
+                and env_model.model_name == target_model
+            ):
+                raise ValueError(
+                    "Model already configured via environment variables; "
+                    "remove it from .env or choose a different model."
+                )
+
+        # Check against DB models
+        existing = await self.dao.list()
+        if any(
+            (
+                m.provider.value == target_provider
+                and m.model_name == target_model
+            )
+            for m in existing
+        ):
+            raise ValueError("Model with the same provider and model_name already exists")
+
         # Encrypt the API key
         encrypted_key = self.crypto.encrypt(data.api_key)
 
@@ -87,12 +117,19 @@ class ModelService:
         """
         # Get models from environment variables
         env_models = settings.env_models
-        env_profiles = [_env_model_to_profile(i + 1, model) for i, model in enumerate(env_models)]
+        env_profiles = [
+            _env_model_to_profile(i + 1, model) for i, model in enumerate(env_models)
+        ]
 
-        # Get models from database
+        # Get models from database and de-duplicate by (provider, model_name)
         db_profiles = await self.dao.list()
 
-        return env_profiles + db_profiles
+        env_keys = {(p.provider.value, p.model_name) for p in env_profiles}
+        filtered_db = [
+            p for p in db_profiles if (p.provider.value, p.model_name) not in env_keys
+        ]
+
+        return env_profiles + filtered_db
 
     async def delete(self, model_id: str) -> bool:
         """Delete a model profile.

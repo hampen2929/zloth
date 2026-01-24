@@ -73,13 +73,16 @@ class Database:
             )
             await conn.commit()
 
-        # Migration: Add default_branch_prefix column to user_preferences table if it doesn't exist
+        # Migration: Add default_branch_prefix column to user_preferences
+        # table if it doesn't exist
         cursor = await conn.execute("PRAGMA table_info(user_preferences)")
         pref_columns = await cursor.fetchall()
         pref_column_names = [col["name"] for col in pref_columns]
 
         if "default_branch_prefix" not in pref_column_names:
-            await conn.execute("ALTER TABLE user_preferences ADD COLUMN default_branch_prefix TEXT")
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN default_branch_prefix TEXT"
+            )
             await conn.commit()
 
         # Migration: Add default_pr_creation_mode column if it doesn't exist
@@ -91,7 +94,9 @@ class Database:
 
         # Migration: Add default_coding_mode column if it doesn't exist
         if "default_coding_mode" not in pref_column_names:
-            await conn.execute("ALTER TABLE user_preferences ADD COLUMN default_coding_mode TEXT")
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN default_coding_mode TEXT"
+            )
             await conn.commit()
 
         # Migration: Add auto_generate_pr_description column if it doesn't exist
@@ -117,6 +122,24 @@ class Database:
                 "ALTER TABLE user_preferences ADD COLUMN enable_gating_status INTEGER DEFAULT 0"
             )
             await conn.commit()
+
+        # Migration: Add notification and merge/review policy columns if missing
+        # Nullable columns default to "use env settings" when NULL
+        mig_cols: list[tuple[str, str]] = [
+            ("notify_on_ready", "INTEGER"),
+            ("notify_on_complete", "INTEGER"),
+            ("notify_on_failure", "INTEGER"),
+            ("notify_on_warning", "INTEGER"),
+            ("merge_method", "TEXT"),
+            ("merge_delete_branch", "INTEGER"),
+            ("review_min_score", "REAL"),
+        ]
+        for col_name, col_type in mig_cols:
+            if col_name not in pref_column_names:
+                await conn.execute(
+                    f"ALTER TABLE user_preferences ADD COLUMN {col_name} {col_type}"
+                )
+                await conn.commit()
 
     @property
     def connection(self) -> aiosqlite.Connection:

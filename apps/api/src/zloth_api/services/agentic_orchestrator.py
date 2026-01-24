@@ -98,7 +98,7 @@ class AgenticOrchestrator:
         # Background task tracking to prevent orphaned tasks
         self._background_tasks: dict[str, asyncio.Task[None]] = {}
 
-        # Default limits from settings
+        # Default limits from settings (min_review_score may be overridden dynamically at usage)
         self._default_limits = IterationLimits(
             max_ci_iterations=settings.agentic_max_ci_iterations,
             max_review_iterations=settings.agentic_max_review_iterations,

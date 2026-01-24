@@ -141,6 +141,15 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     auto_generate_pr_description INTEGER DEFAULT 0,  -- Auto-generate PR description: 0=no, 1=yes
     update_pr_title_on_regenerate INTEGER DEFAULT 1, -- Update PR title when regenerating: 0=no, 1=yes
     enable_gating_status INTEGER DEFAULT 0, -- Enable gating status for CI waiting: 0=disabled, 1=enabled
+    -- Notification preferences (nullable => fall back to env)
+    notify_on_ready INTEGER,                -- 1 = true, 0 = false, NULL = use env
+    notify_on_complete INTEGER,
+    notify_on_failure INTEGER,
+    notify_on_warning INTEGER,
+    -- Merge and review policy (nullable => fall back to env)
+    merge_method TEXT,                      -- merge | squash | rebase
+    merge_delete_branch INTEGER,            -- 1 = true, 0 = false, NULL = use env
+    review_min_score REAL,                  -- 0.0 - 1.0
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

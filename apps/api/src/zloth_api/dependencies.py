@@ -21,6 +21,7 @@ from zloth_api.services.pr_status_poller import PRStatusPoller
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.review_service import ReviewService
 from zloth_api.services.run_service import RunService
+from zloth_api.services.settings_service import SettingsService
 from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import (
     PRDAO,
@@ -299,7 +300,9 @@ async def get_merge_gate_service() -> MergeGateService:
     """Get the merge gate service."""
     github_service = await get_github_service()
     review_dao = await get_review_dao()
-    return MergeGateService(github_service, review_dao)
+    user_prefs_dao = await get_user_preferences_dao()
+    settings_service = SettingsService(user_prefs_dao)
+    return MergeGateService(github_service, review_dao, settings_service)
 
 
 async def get_ci_polling_service() -> CIPollingService:
@@ -320,7 +323,10 @@ async def get_agentic_orchestrator() -> AgenticOrchestrator:
         merge_gate_service = await get_merge_gate_service()
         git_service = get_git_service()
         github_service = await get_github_service()
-        notification_service = get_notification_service()
+        # Construct NotificationService with DB-aware SettingsService
+        user_prefs_dao = await get_user_preferences_dao()
+        settings_service = SettingsService(user_prefs_dao)
+        notification_service = NotificationService(settings_service=settings_service)
         ci_polling_service = await get_ci_polling_service()
         task_dao = await get_task_dao()
         pr_dao = await get_pr_dao()
