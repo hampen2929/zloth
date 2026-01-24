@@ -54,33 +54,6 @@ run_service.py: 1360+ lines
 
 ### 🟡 中優先度（Important）
 
-#### ~~2. DAO層の重複コード~~ ✅ 解決済み
-
-**現状**: `storage/row_mapping.py`に集中化された`row_to_model()`関数が導入済み
-
-```python
-# row_mapping.py - 全DAOが使用する共通関数
-def row_to_model[ModelT: BaseModel](
-    model_cls: type[ModelT],
-    row: Any,
-    *,
-    defaults: Mapping[str, Any] | None = None,
-    json_fields: set[str] | None = None,
-    overrides: Mapping[str, Any] | None = None,
-) -> ModelT:
-    data = row_to_dict(row)
-    # ... 前処理 ...
-    return model_cls.model_validate(data)
-```
-
-**解決内容**:
-- Pydanticの`model_validate()`を活用
-- ジェネリクス`[ModelT: BaseModel]`で型安全
-- `defaults`, `json_fields`, `overrides`などの拡張機能対応
-- 全13のDAOがこのパターンを使用（`JobDAO`のみ複雑な日時処理のため例外）
-
----
-
 #### 2. エラーハンドリングの非一貫性
 
 **現状**: カスタム例外階層は定義済み（`errors.py`）だが、一貫して使用されていない
@@ -224,15 +197,14 @@ gantt
 
 ## 優先度サマリー
 
-| 優先度 | # | 問題 | 状態 | 影響 | 工数見積 |
-|--------|---|------|------|------|----------|
-| 🔴 高 | 1 | RunService肥大化 | 未解決 | 保守性・テスト困難 | 中 |
-| 🟡 中 | ~~2~~ | ~~DAO重複コード~~ | ✅解決済み | - | - |
-| 🟡 中 | 2 | エラーハンドリング非一貫性 | 未解決 | 信頼性 | 小 |
-| 🟡 中 | 3 | 設定管理二重化 | 未解決 | 運用性 | 小 |
-| 🟢 低 | 4 | ドキュメント乖離 | 未解決 | 開発効率 | 小 |
-| 🟢 低 | 5 | ロギング標準化 | 未解決 | 運用性 | 小 |
-| 🟢 低 | 6 | テストカバレッジ | 未解決 | 品質 | 中 |
+| 優先度 | # | 問題 | 影響 | 工数見積 |
+|--------|---|------|------|----------|
+| 🔴 高 | 1 | RunService肥大化 | 保守性・テスト困難 | 中 |
+| 🟡 中 | 2 | エラーハンドリング非一貫性 | 信頼性 | 小 |
+| 🟡 中 | 3 | 設定管理二重化 | 運用性 | 小 |
+| 🟢 低 | 4 | ドキュメント乖離 | 開発効率 | 小 |
+| 🟢 低 | 5 | ロギング標準化 | 運用性 | 小 |
+| 🟢 低 | 6 | テストカバレッジ | 品質 | 中 |
 
 ---
 
