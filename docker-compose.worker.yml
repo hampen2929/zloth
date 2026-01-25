@@ -1,0 +1,91 @@
+# Architecture v2: API-Worker separated deployment
+#
+# This configuration separates API and Worker into different containers,
+# enabling horizontal scaling of workers independently from the API.
+#
+# Usage:
+#   # Start all services (API + Worker + Web)
+#   docker compose -f docker-compose.worker.yml up -d --build
+#
+#   # Scale workers to 3 instances
+#   docker compose -f docker-compose.worker.yml up -d --scale worker=3
+#
+#   # View logs
+#   docker compose -f docker-compose.worker.yml logs -f api worker
+#
+# Reference: docs/architecture-v2.md
+
+version: '3.8'
+
+services:
+  # API Server (stateless, handles HTTP requests)
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspaces:/app/workspaces
+      - ./data:/app/data
+    environment:
+      - ZLOTH_HOST=0.0.0.0
+      - ZLOTH_PORT=8000
+      - ZLOTH_DEBUG=${ZLOTH_DEBUG:-false}
+      - ZLOTH_LOG_LEVEL=${ZLOTH_LOG_LEVEL:-INFO}
+      - ZLOTH_ENCRYPTION_KEY=${ZLOTH_ENCRYPTION_KEY}
+      - ZLOTH_GITHUB_APP_ID=${ZLOTH_GITHUB_APP_ID:-}
+      - ZLOTH_GITHUB_APP_PRIVATE_KEY=${ZLOTH_GITHUB_APP_PRIVATE_KEY:-}
+      - ZLOTH_GITHUB_APP_INSTALLATION_ID=${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
+      # Disable embedded worker (workers run as separate containers)
+      - ZLOTH_WORKER_ENABLED=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Worker (processes jobs from queue)
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    command: ["python", "-m", "zloth_api.worker"]
+    volumes:
+      - ./workspaces:/app/workspaces
+      - ./data:/app/data
+    environment:
+      - ZLOTH_DEBUG=${ZLOTH_DEBUG:-false}
+      - ZLOTH_LOG_LEVEL=${ZLOTH_LOG_LEVEL:-INFO}
+      - ZLOTH_ENCRYPTION_KEY=${ZLOTH_ENCRYPTION_KEY}
+      - ZLOTH_GITHUB_APP_ID=${ZLOTH_GITHUB_APP_ID:-}
+      - ZLOTH_GITHUB_APP_PRIVATE_KEY=${ZLOTH_GITHUB_APP_PRIVATE_KEY:-}
+      - ZLOTH_GITHUB_APP_INSTALLATION_ID=${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
+      # Worker configuration
+      - ZLOTH_WORKER_CONCURRENCY=${ZLOTH_WORKER_CONCURRENCY:-4}
+      - ZLOTH_WORKER_POLL_INTERVAL_SECONDS=${ZLOTH_WORKER_POLL_INTERVAL_SECONDS:-1.0}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    # Deploy multiple replicas for horizontal scaling
+    deploy:
+      replicas: ${ZLOTH_WORKER_REPLICAS:-1}
+
+  # Web UI
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        - API_URL=http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  workspaces:
+  data:
