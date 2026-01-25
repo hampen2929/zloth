@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from zloth_api.config import settings
 from zloth_api.dependencies import get_job_worker, get_pr_status_poller
 from zloth_api.error_handling import install_error_handling
+from zloth_api.observability.logging import configure_logging
+from zloth_api.observability.middleware import MetricsMiddleware
 from zloth_api.routes import (
     backlog_router,
     breakdown_router,
@@ -17,6 +19,7 @@ from zloth_api.routes import (
     metrics_router,
     models_router,
     preferences_router,
+    prometheus_router,
     prs_router,
     repos_router,
     reviews_router,
@@ -30,6 +33,9 @@ from zloth_api.storage.db import get_db
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan manager."""
+    # Configure structured logging
+    configure_logging(settings)
+
     # Startup: initialize database
     db = await get_db()
     await db.initialize()
@@ -76,6 +82,9 @@ app = FastAPI(
 # Global error handling + request correlation
 install_error_handling(app)
 
+# Metrics middleware (must be before CORS to capture all requests)
+app.add_middleware(MetricsMiddleware)
+
 # CORS middleware for frontend
 # Allow all origins for SSE streaming support from various deployment scenarios
 app.add_middleware(
@@ -99,6 +108,7 @@ app.include_router(reviews_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")
 app.include_router(prs_router, prefix="/v1")
+app.include_router(prometheus_router)  # /metrics - no prefix for Prometheus scraping
 # Note: webhooks_router removed - using CI polling instead (see ci_polling_service.py)
 
 

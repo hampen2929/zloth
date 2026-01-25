@@ -1034,6 +1034,24 @@ class JobDAO:
         await self.db.connection.commit()
         return cursor.rowcount
 
+    async def get_queue_stats(self) -> dict[str, int]:
+        """Get count of queued jobs by kind.
+
+        Returns:
+            Dictionary mapping job kind to count of queued jobs.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            SELECT kind, COUNT(*) as count
+            FROM jobs
+            WHERE status = ?
+            GROUP BY kind
+            """,
+            (JobStatus.QUEUED.value,),
+        )
+        rows = await cursor.fetchall()
+        return {row["kind"]: int(row["count"]) for row in rows}
+
     def _row_to_model(self, row: Any) -> Job:
         payload: dict[str, Any] = {}
         if row["payload"]:
