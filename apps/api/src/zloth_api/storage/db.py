@@ -159,6 +159,21 @@ class Database:
             )
             await conn.commit()
 
+        # Migration: Add priority column to jobs table if it doesn't exist
+        cursor = await conn.execute("PRAGMA table_info(jobs)")
+        jobs_columns = await cursor.fetchall()
+        jobs_column_names = [col["name"] for col in jobs_columns]
+
+        if "priority" not in jobs_column_names:
+            await conn.execute("ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            await conn.commit()
+            # Create index for priority-based ordering
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jobs_priority "
+                "ON jobs(priority DESC, created_at ASC)"
+            )
+            await conn.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""

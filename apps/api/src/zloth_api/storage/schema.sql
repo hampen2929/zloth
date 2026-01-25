@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     payload TEXT NOT NULL DEFAULT '{}',    -- JSON object
     attempts INTEGER NOT NULL DEFAULT 0,
     max_attempts INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 0,   -- Higher priority = processed first
     available_at TEXT NOT NULL DEFAULT (datetime('now')),
     locked_at TEXT,
     locked_by TEXT,
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_status_available ON jobs(status, available_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_kind_ref ON jobs(kind, ref_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_locked ON jobs(locked_by, locked_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_priority ON jobs(priority DESC, created_at ASC);
 
 -- Pull Requests
 CREATE TABLE IF NOT EXISTS prs (

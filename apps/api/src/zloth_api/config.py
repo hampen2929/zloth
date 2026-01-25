@@ -151,6 +151,10 @@ class Settings(BaseSettings):
     )
 
     # Queue Configuration (prevents resource exhaustion from unlimited concurrent tasks)
+    queue_url: str = Field(
+        default="sqlite://",
+        description="Queue backend URL. Supports: sqlite:// (default), redis://host:port/db",
+    )
     queue_max_concurrent_tasks: int = Field(
         default=5, description="Maximum concurrent task executions (prevents overload)"
     )
@@ -159,6 +163,14 @@ class Settings(BaseSettings):
     )
     queue_cleanup_completed_tasks: bool = Field(
         default=True, description="Automatically clean up completed tasks from memory"
+    )
+    queue_visibility_timeout_seconds: int = Field(
+        default=300,
+        description="Visibility timeout for queue jobs (default: 5 minutes). "
+        "Jobs not completed within this time become available again.",
+    )
+    queue_poll_interval_seconds: float = Field(
+        default=1.0, description="Interval between queue polling (seconds)"
     )
 
     # Quality Thresholds
