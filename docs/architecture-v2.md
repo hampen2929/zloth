@@ -780,6 +780,104 @@ flowchart TB
 
 ---
 
+## 技術比較
+
+### キュー: SQLite Queue vs Redis Queue
+
+#### 概要
+
+| 項目 | SQLite Queue | Redis Queue |
+|------|-------------|-------------|
+| **推奨環境** | ローカル開発 | 小規模本番 |
+| **依存関係** | なし（セットアップ不要） | Redis サーバーが必要 |
+| **レイテンシ** | 中程度 | 低い |
+| **マルチプロセス** | 制限あり（ファイルロック） | 対応 |
+| **水平スケール** | 不可 | 可能 |
+
+#### 詳細比較
+
+| 特性 | SQLite Queue | Redis Queue |
+|------|-------------|-------------|
+| **セットアップ** | 不要（ファイル作成のみ） | Redis サーバーのインストールが必要 |
+| **並列 Worker** | 単一 Worker のみ推奨 | 複数 Worker 対応 |
+| **Pub/Sub** | 非対応 | ネイティブ対応 |
+| **リアルタイムログ** | ポーリングのみ | Pub/Sub で即時配信 |
+| **永続化** | ファイルベース（自動） | RDB/AOF（設定必要） |
+| **メモリ使用** | ディスクベース | インメモリ |
+
+#### ユースケース別推奨
+
+| ユースケース | 推奨 | 理由 |
+|-------------|------|------|
+| 個人開発・検証 | SQLite Queue | 依存なし、即座に利用可能 |
+| チーム開発 | Redis Queue | 複数 Worker の並列実行 |
+| ステージング | Redis Queue | 本番に近い構成 |
+| 本番（Azure） | Service Bus | マネージド、高信頼性 |
+
+### データベース: SQLite vs PostgreSQL
+
+#### 概要
+
+| 項目 | SQLite | PostgreSQL |
+|------|--------|------------|
+| **推奨環境** | ローカル開発・単一インスタンス | 本番・マルチインスタンス |
+| **依存関係** | なし（ファイルベース） | サーバープロセスが必要 |
+| **同時接続** | 制限あり（書き込みロック） | 高い同時接続に対応 |
+| **水平スケール** | 不可 | リードレプリカ・シャーディング対応 |
+| **運用コスト** | ゼロ | サーバー維持が必要 |
+
+#### 詳細比較
+
+| 特性 | SQLite | PostgreSQL |
+|------|--------|------------|
+| **セットアップ** | 不要（ファイル作成のみ） | サーバーインストール・設定が必要 |
+| **接続方式** | ファイルアクセス | TCP/IP ネットワーク接続 |
+| **書き込み並列性** | 単一ライター（ロック競合） | MVCC による高並列性 |
+| **トランザクション分離** | SERIALIZABLE のみ | 複数レベル対応 |
+| **JSON サポート** | 基本的 | JSONB（インデックス可能） |
+| **全文検索** | FTS5 拡張 | ネイティブサポート |
+| **バックアップ** | ファイルコピー | pg_dump / ストリーミングレプリケーション |
+| **障害復旧** | 手動復旧 | WAL による自動復旧 |
+
+#### パフォーマンス特性
+
+| シナリオ | SQLite | PostgreSQL |
+|---------|--------|------------|
+| 読み取り（単一接続） | ◎ 非常に高速 | ○ 高速 |
+| 読み取り（多数接続） | △ ロック競合 | ◎ 高いスループット |
+| 書き込み（単一接続） | ◎ 高速 | ○ 高速 |
+| 書き込み（並列） | × ボトルネック | ◎ 高並列対応 |
+| 大規模データ（10GB+） | △ 性能劣化 | ◎ 安定 |
+
+#### ユースケース別推奨
+
+| ユースケース | 推奨 | 理由 |
+|-------------|------|------|
+| 個人開発・検証 | SQLite | ゼロ依存、即座に利用可能 |
+| チーム開発 | PostgreSQL | 複数接続、並列書き込み対応 |
+| ステージング | PostgreSQL | 本番に近い構成 |
+| 本番（Azure） | Azure PostgreSQL | マネージド、高可用性 |
+
+### 環境別構成まとめ
+
+| 環境 | データベース | キュー | 備考 |
+|------|------------|--------|------|
+| ローカル開発 | SQLite | SQLite Queue | 依存ゼロ、即座に開始 |
+| チーム開発 | SQLite or PostgreSQL | Redis Queue | Worker 並列実行 |
+| ステージング | PostgreSQL | Redis Queue | 本番に近い構成 |
+| 本番（小規模） | PostgreSQL | Redis Queue | シンプル、低コスト |
+| 本番（Azure） | Azure PostgreSQL | Azure Service Bus | マネージド、高信頼性 |
+
+### コスト比較
+
+| 構成 | 月額コスト（概算） | 備考 |
+|------|------------------|------|
+| SQLite + SQLite Queue | ¥0 | ローカル開発向け |
+| PostgreSQL + Redis（セルフホスト） | サーバー費用のみ | 小規模本番向け |
+| Azure PostgreSQL + Service Bus | ¥11,000〜 | マネージド本番向け |
+
+---
+
 ## 移行パス
 
 ### Phase 1: 現状 → キュー抽象化
@@ -813,6 +911,7 @@ flowchart LR
         API1[API]
         Worker1[Worker]
         SQLiteQ[(SQLite Queue)]
+        SQLite2[(SQLite DB)]
     end
 
     subgraph Phase2["Phase 2"]
@@ -820,35 +919,60 @@ flowchart LR
         W1[Worker 1]
         W2[Worker 2]
         RedisQ[(Redis Queue)]
-        PostgreSQL[(PostgreSQL)]
+        SQLite3[(SQLite DB)]
     end
 
-    Phase1 -->|スケール準備| Phase2
+    Phase1 -->|キュースケール| Phase2
 ```
 
 - Redis Queue 実装
-- PostgreSQL 移行
 - Worker 複数起動対応
+- Pub/Sub によるリアルタイムログ配信
 
-### Phase 3: オンプレ → Azure
+### Phase 3: SQLite → PostgreSQL
 
 ```mermaid
 flowchart LR
     subgraph Phase2["Phase 2"]
         API1[API]
         Workers1[Workers]
+        RedisQ[(Redis Queue)]
+        SQLite1[(SQLite DB)]
+    end
+
+    subgraph Phase3["Phase 3"]
+        API2[API]
+        Workers2[Workers]
+        RedisQ2[(Redis Queue)]
+        PostgreSQL[(PostgreSQL)]
+    end
+
+    Phase2 -->|DB スケール| Phase3
+```
+
+- PostgreSQL 移行
+- 高い同時接続対応
+- リードレプリカ・バックアップ対応
+
+### Phase 4: オンプレ → Azure
+
+```mermaid
+flowchart LR
+    subgraph Phase3["Phase 3"]
+        API1[API]
+        Workers1[Workers]
         Redis1[(Redis)]
         PG1[(PostgreSQL)]
     end
 
-    subgraph Phase3["Phase 3 (Azure)"]
+    subgraph Phase4["Phase 4 (Azure)"]
         ContainerApps[Container Apps]
         ServiceBus[(Service Bus)]
         AzurePG[(Azure PostgreSQL)]
         Blob[(Blob Storage)]
     end
 
-    Phase2 -->|クラウド移行| Phase3
+    Phase3 -->|クラウド移行| Phase4
 ```
 
 - Azure Service Bus Queue 実装
