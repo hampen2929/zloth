@@ -2,6 +2,7 @@
 
 from zloth_api.config import settings
 from zloth_api.domain.enums import JobKind
+from zloth_api.queue.sqlite import SQLiteQueue
 from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
 from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
@@ -55,6 +56,7 @@ _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
 _job_worker: JobWorker | None = None
+_sqlite_queue: SQLiteQueue | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -99,6 +101,16 @@ async def get_job_dao() -> JobDAO:
     """Get Job DAO."""
     db = await get_db()
     return JobDAO(db)
+
+
+async def get_sqlite_queue() -> SQLiteQueue:
+    """Get SQLiteQueue singleton (architecture v2 queue backend)."""
+    global _sqlite_queue
+    if _sqlite_queue is None:
+        db = await get_db()
+        job_dao = JobDAO(db)
+        _sqlite_queue = SQLiteQueue(db, job_dao)
+    return _sqlite_queue
 
 
 async def get_pr_dao() -> PRDAO:
@@ -267,17 +279,21 @@ async def get_review_service() -> ReviewService:
 
 
 async def get_job_worker() -> JobWorker:
-    """Get the job worker singleton (persistent queue executor)."""
+    """Get the job worker singleton (architecture v2 queue-based executor).
+
+    Uses SQLiteQueue as the queue backend for job persistence.
+    The worker polls the queue and executes jobs using registered handlers.
+    """
     global _job_worker
     if _job_worker is None:
-        job_dao = await get_job_dao()
+        queue = await get_sqlite_queue()
         run_service = await get_run_service()
         review_service = await get_review_service()
         handlers = {
             JobKind.RUN_EXECUTE: run_service.execute_job,
             JobKind.REVIEW_EXECUTE: review_service.execute_job,
         }
-        _job_worker = JobWorker(job_dao=job_dao, handlers=handlers)
+        _job_worker = JobWorker(queue=queue, handlers=handlers)
         run_service.set_job_worker(_job_worker)
         review_service.set_job_worker(_job_worker)
     return _job_worker

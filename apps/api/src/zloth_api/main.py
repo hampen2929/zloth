@@ -49,18 +49,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     pr_status_poller = await get_pr_status_poller()
     pr_status_poller.start()
 
-    # Start persistent job worker
-    job_worker = await get_job_worker()
-    await job_worker.recover_startup()
-    job_worker.start()
+    # Start persistent job worker (only if worker is enabled)
+    # Set ZLOTH_WORKER_ENABLED=false to run API-only mode (workers run separately)
+    job_worker = None
+    if settings.worker_enabled:
+        job_worker = await get_job_worker()
+        await job_worker.recover_startup()
+        job_worker.start()
 
     yield
 
     # Shutdown: stop PR status poller
     await pr_status_poller.stop()
 
-    # Shutdown: stop job worker
-    await job_worker.stop()
+    # Shutdown: stop job worker (if running)
+    if job_worker is not None:
+        await job_worker.stop()
 
     # Shutdown: close database
     await db.disconnect()

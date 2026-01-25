@@ -150,7 +150,13 @@ class Settings(BaseSettings):
         default=True, description="Enable CI polling (alternative to webhooks)"
     )
 
-    # Queue Configuration (prevents resource exhaustion from unlimited concurrent tasks)
+    # Queue Configuration (architecture v2: UI-API-Queue-Worker pattern)
+    queue_url: str | None = Field(
+        default=None,
+        description="Queue backend URL. Defaults to SQLite in data_dir. "
+        "Examples: 'sqlite:///path/to/queue.db', 'redis://localhost:6379', "
+        "'servicebus://...' (Azure Service Bus)",
+    )
     queue_max_concurrent_tasks: int = Field(
         default=5, description="Maximum concurrent task executions (prevents overload)"
     )
@@ -159,6 +165,28 @@ class Settings(BaseSettings):
     )
     queue_cleanup_completed_tasks: bool = Field(
         default=True, description="Automatically clean up completed tasks from memory"
+    )
+    queue_cleanup_older_than_hours: int = Field(
+        default=24, description="Remove completed jobs older than this many hours"
+    )
+
+    # Worker Configuration (architecture v2)
+    worker_enabled: bool = Field(
+        default=True,
+        description="Enable background job worker. Set to false for API-only mode "
+        "(workers run as separate processes)",
+    )
+    worker_concurrency: int = Field(
+        default=4, description="Number of concurrent jobs per worker process"
+    )
+    worker_poll_interval_seconds: float = Field(
+        default=1.0, description="Interval between queue polls in seconds"
+    )
+    worker_id_prefix: str = Field(
+        default="worker", description="Prefix for auto-generated worker IDs"
+    )
+    job_timeout_seconds: int = Field(
+        default=600, description="Maximum time for a single job execution (10 minutes)"
     )
 
     # Quality Thresholds
