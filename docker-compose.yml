@@ -19,6 +19,10 @@ services:
       - ZLOTH_GITHUB_APP_ID=${ZLOTH_GITHUB_APP_ID:-}
       - ZLOTH_GITHUB_APP_PRIVATE_KEY=${ZLOTH_GITHUB_APP_PRIVATE_KEY:-}
       - ZLOTH_GITHUB_APP_INSTALLATION_ID=${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
+      # CLI Executor Paths (optional, defaults to executable name in PATH)
+      - ZLOTH_CLAUDE_CLI_PATH=${ZLOTH_CLAUDE_CLI_PATH:-claude}
+      - ZLOTH_CODEX_CLI_PATH=${ZLOTH_CODEX_CLI_PATH:-codex}
+      - ZLOTH_GEMINI_CLI_PATH=${ZLOTH_GEMINI_CLI_PATH:-gemini}
     restart: unless-stopped
 
   web:

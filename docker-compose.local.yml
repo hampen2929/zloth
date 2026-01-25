@@ -1,0 +1,86 @@
+# Local Worker Mode: API + Web in Docker, Worker runs locally
+#
+# Use this configuration when you want to run the worker on your local machine
+# to use locally installed CLI tools (Claude, Codex, Gemini) that require
+# browser authentication or local filesystem access.
+#
+# IMPORTANT: Path Consistency
+# ---------------------------
+# The Docker container and local worker MUST use the same absolute paths for
+# workspaces and data directories. This is achieved by:
+# 1. Setting HOST_PROJECT_DIR to your project's absolute path
+# 2. Mounting directories to the SAME path inside Docker
+#
+# Usage:
+#   # 1. Set your project directory (required)
+#   export HOST_PROJECT_DIR=$(pwd)
+#
+#   # 2. Start API and Web in Docker
+#   docker compose -f docker-compose.local.yml up -d --build
+#
+#   # 3. Run worker locally (requires uv and CLI tools installed)
+#   cd apps/api
+#   uv run python -m zloth_api.worker
+#
+#   # Or with specific CLI paths:
+#   ZLOTH_CLAUDE_CLI_PATH=/path/to/claude \
+#   ZLOTH_CODEX_CLI_PATH=/path/to/codex \
+#   uv run python -m zloth_api.worker
+#
+# Benefits:
+#   - Use locally authenticated CLI tools (claude, codex, gemini)
+#   - No need to authenticate CLI tools inside Docker
+#   - Direct filesystem access to workspaces
+#
+# Note: Workspaces and data directories are shared via volumes
+# to ensure consistency between Docker API and local worker.
+
+version: '3.8'
+
+services:
+  # API Server (worker disabled - runs locally)
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount to the SAME absolute path as host for path consistency
+      - ${HOST_PROJECT_DIR:-.}/workspaces:${HOST_PROJECT_DIR:-.}/workspaces
+      - ${HOST_PROJECT_DIR:-.}/data:${HOST_PROJECT_DIR:-.}/data
+    environment:
+      - ZLOTH_HOST=0.0.0.0
+      - ZLOTH_PORT=8000
+      - ZLOTH_DEBUG=${ZLOTH_DEBUG:-false}
+      - ZLOTH_LOG_LEVEL=${ZLOTH_LOG_LEVEL:-INFO}
+      - ZLOTH_ENCRYPTION_KEY=${ZLOTH_ENCRYPTION_KEY}
+      - ZLOTH_GITHUB_APP_ID=${ZLOTH_GITHUB_APP_ID:-}
+      - ZLOTH_GITHUB_APP_PRIVATE_KEY=${ZLOTH_GITHUB_APP_PRIVATE_KEY:-}
+      - ZLOTH_GITHUB_APP_INSTALLATION_ID=${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
+      # Disable embedded worker (worker runs locally on host machine)
+      - ZLOTH_WORKER_ENABLED=false
+      # Use absolute paths matching host for local worker compatibility
+      - ZLOTH_WORKSPACES_DIR=${HOST_PROJECT_DIR:-.}/workspaces
+      - ZLOTH_DATA_DIR=${HOST_PROJECT_DIR:-.}/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Web UI
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        - API_URL=http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+# Note: No named volumes needed - using bind mounts with absolute paths

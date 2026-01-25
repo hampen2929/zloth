@@ -65,6 +65,10 @@ services:
       # Worker configuration
       - ZLOTH_WORKER_CONCURRENCY=${ZLOTH_WORKER_CONCURRENCY:-4}
       - ZLOTH_WORKER_POLL_INTERVAL_SECONDS=${ZLOTH_WORKER_POLL_INTERVAL_SECONDS:-1.0}
+      # CLI Executor Paths
+      - ZLOTH_CLAUDE_CLI_PATH=${ZLOTH_CLAUDE_CLI_PATH:-claude}
+      - ZLOTH_CODEX_CLI_PATH=${ZLOTH_CODEX_CLI_PATH:-codex}
+      - ZLOTH_GEMINI_CLI_PATH=${ZLOTH_GEMINI_CLI_PATH:-gemini}
     depends_on:
       api:
         condition: service_healthy

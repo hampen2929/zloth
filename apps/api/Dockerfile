@@ -8,6 +8,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # Install git for repository operations and curl for healthcheck
 RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
 
+# Install Node.js 22.x for Claude CLI
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Claude CLI globally
+RUN npm install -g @anthropic-ai/claude-code
+
 # Install dependencies
 COPY pyproject.toml .
 RUN uv pip install --system --no-cache .
