@@ -61,6 +61,16 @@ class WorkspaceAdapter(Protocol):
         auth_url: str | None = None,
     ) -> ExecutionWorkspaceInfo: ...
 
+    async def restore_from_branch(
+        self,
+        *,
+        repo: Repo,
+        branch_name: str,
+        base_branch: str,
+        run_id: str,
+        auth_url: str | None = None,
+    ) -> ExecutionWorkspaceInfo: ...
+
     async def cleanup(self, *, path: Path, delete_branch: bool) -> None: ...
 
     async def stage_all(self, path: Path) -> None: ...
@@ -111,6 +121,35 @@ class CloneWorkspaceAdapter:
             base_branch=base_branch,
             run_id=run_id,
             branch_prefix=branch_prefix,
+            auth_url=auth_url,
+        )
+        return ExecutionWorkspaceInfo(
+            path=info.path,
+            branch_name=info.branch_name,
+            base_branch=info.base_branch,
+            created_at=info.created_at,
+        )
+
+    async def restore_from_branch(
+        self,
+        *,
+        repo: Repo,
+        branch_name: str,
+        base_branch: str,
+        run_id: str,
+        auth_url: str | None = None,
+    ) -> ExecutionWorkspaceInfo:
+        """Restore workspace from an existing remote branch.
+
+        This is used when a workspace is invalid but the branch exists on remote.
+        """
+        if not repo.repo_url:
+            raise ValueError("repo.repo_url is required for workspace restoration")
+        info = await self._ws.restore_workspace(
+            repo_url=repo.repo_url,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            run_id=run_id,
             auth_url=auth_url,
         )
         return ExecutionWorkspaceInfo(
@@ -193,6 +232,29 @@ class WorktreeWorkspaceAdapter:
             branch_name=info.branch_name,
             base_branch=info.base_branch,
             created_at=info.created_at,
+        )
+
+    async def restore_from_branch(
+        self,
+        *,
+        repo: Repo,
+        branch_name: str,
+        base_branch: str,
+        run_id: str,
+        auth_url: str | None = None,
+    ) -> ExecutionWorkspaceInfo:
+        """Restore workspace from an existing branch.
+
+        For worktree adapter, we fall back to creating a new workspace
+        since worktree restoration from remote branch is not straightforward.
+        """
+        # Worktree mode is deprecated; fallback to creating new workspace
+        return await self.create(
+            repo=repo,
+            base_branch=base_branch,
+            run_id=run_id,
+            branch_prefix=None,
+            auth_url=auth_url,
         )
 
     async def cleanup(self, *, path: Path, delete_branch: bool) -> None:

@@ -272,6 +272,19 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if not repo:
             raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
+        # Determine effective base_ref:
+        # 1. Explicit base_ref from request takes precedence
+        # 2. Otherwise use Task's locked base_ref (set on first run)
+        # 3. Fallback to repo's selected_branch or default_branch
+        effective_base_ref = (
+            data.base_ref or task.base_ref or repo.selected_branch or repo.default_branch
+        )
+
+        # Lock base_ref to Task if not already set (first run for this task)
+        if not task.base_ref:
+            await self.task_dao.update_base_ref(task_id, effective_base_ref)
+            logger.info(f"Locked base_ref '{effective_base_ref}' for task {task_id[:8]}")
+
         runs: list[Run] = []
         existing_runs = await self.run_dao.list(task_id)
 
@@ -301,7 +314,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 task_id=task_id,
                 repo=repo,
                 instruction=data.instruction,
-                base_ref=data.base_ref or repo.selected_branch or repo.default_branch,
+                base_ref=effective_base_ref,
                 executor_type=executor_type,
                 message_id=data.message_id,
             )
@@ -345,7 +358,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     model_id=model_id,
                     model_name=model.model_name,
                     provider=model.provider,
-                    base_ref=data.base_ref or repo.selected_branch or repo.default_branch,
+                    base_ref=effective_base_ref,
                 )
                 runs.append(run)
 
@@ -371,6 +384,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         This method uses clone-based workspaces only (worktree isolation is deprecated).
         Existing workspaces are reused for conversation continuation when valid.
+        If the workspace is invalid but the branch exists on remote, it will be restored.
 
         Args:
             task_id: Task ID.
@@ -391,18 +405,22 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         )
 
         # Check for existing workspace/worktree to reuse
+        # If share_workspace_across_executors is enabled, we look for any workspace
+        # in this task regardless of executor type, allowing work to continue
+        # across different AI tools.
+        share_across = settings.share_workspace_across_executors
         existing_run = await self.run_dao.get_latest_worktree_run(
             task_id=task_id,
             executor_type=executor_type,
+            ignore_executor_type=share_across,
         )
+        if share_across and existing_run:
+            logger.info(
+                f"Workspace sharing enabled: found existing run with "
+                f"executor={existing_run.executor_type}, branch={existing_run.working_branch}"
+            )
 
-        workspace_info = await self.workspace_manager.get_reusable_workspace(
-            existing_run=existing_run,
-            repo=repo,
-            base_ref=base_ref,
-        )
-
-        # Create the run record
+        # Create the run record first to get the run_id for workspace creation
         run = await self.run_dao.create(
             task_id=task_id,
             instruction=instruction,
@@ -411,12 +429,16 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             base_ref=base_ref,
         )
 
-        if not workspace_info:
-            workspace_info = await self.workspace_manager.create_workspace(
-                run_id=run.id,
-                repo=repo,
-                base_ref=base_ref,
-            )
+        # Get or restore workspace using the new method that handles:
+        # 1. Reusing valid existing workspace
+        # 2. Restoring from remote branch if workspace invalid but branch exists
+        # 3. Creating new workspace as fallback
+        workspace_info = await self.workspace_manager.get_or_restore_workspace(
+            existing_run=existing_run,
+            repo=repo,
+            base_ref=base_ref,
+            run_id=run.id,
+        )
 
         # Update run with workspace info
         await self.workspace_manager.update_run_workspace(run.id, workspace_info)

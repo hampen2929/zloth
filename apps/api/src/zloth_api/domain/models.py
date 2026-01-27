@@ -144,6 +144,7 @@ class TaskCreate(BaseModel):
     repo_id: str
     title: str | None = None
     coding_mode: CodingMode = CodingMode.INTERACTIVE
+    base_ref: str | None = Field(None, description="Base branch to lock for this task")
 
 
 class Task(BaseModel):
@@ -154,6 +155,7 @@ class Task(BaseModel):
     title: str | None
     coding_mode: CodingMode = CodingMode.INTERACTIVE
     kanban_status: str = "backlog"  # Base status stored in DB (backlog/todo/archived)
+    base_ref: str | None = None  # Locked base branch for this task
     created_at: datetime
     updated_at: datetime
 

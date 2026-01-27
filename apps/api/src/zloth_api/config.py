@@ -207,6 +207,14 @@ class Settings(BaseSettings):
         "Clone mode provides better support for remote sync and conflict resolution.",
     )
 
+    # Workspace Branch Sharing
+    share_workspace_across_executors: bool = Field(
+        default=False,
+        description="Share workspace/branch across different executor types within the same task. "
+        "When enabled, all executor types (claude_code, codex_cli, gemini_cli) will use the "
+        "same branch, allowing work to be continued by a different AI tool.",
+    )
+
     # Notification
     slack_webhook_url: str = Field(default="", description="Slack webhook URL")
     notify_email: str = Field(default="", description="Notification email address")

@@ -740,3 +740,89 @@ class WorkspaceService:
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _get_changed)
+
+    async def restore_workspace(
+        self,
+        repo_url: str,
+        branch_name: str,
+        base_branch: str,
+        run_id: str,
+        auth_url: str | None = None,
+    ) -> WorkspaceInfo:
+        """Restore workspace from an existing remote branch.
+
+        This is used when a workspace is invalid/deleted but the branch still
+        exists on the remote. We fetch the branch and check it out to restore
+        the previous work.
+
+        Args:
+            repo_url: Repository URL to clone.
+            branch_name: Existing branch name to restore from remote.
+            base_branch: Base branch for reference.
+            run_id: Run ID for naming the workspace.
+            auth_url: Authenticated URL for private repos.
+
+        Returns:
+            WorkspaceInfo with path and branch information.
+
+        Raises:
+            git.GitCommandError: If clone or checkout fails.
+            ValueError: If the branch does not exist on remote.
+        """
+        workspace_path = self.workspaces_dir / f"run_{run_id}"
+
+        # Use auth_url for clone if provided (required for private repos)
+        clone_url = auth_url or repo_url
+
+        def _restore_workspace() -> WorkspaceInfo:
+            # Remove existing workspace if it exists
+            if workspace_path.exists():
+                shutil.rmtree(workspace_path)
+
+            # Clone the repository with base branch first
+            logger.info(f"Cloning repository to {workspace_path} for restoration")
+            repo = git.Repo.clone_from(
+                clone_url,
+                workspace_path,
+                depth=1,
+                single_branch=False,  # Need to fetch the working branch
+                branch=base_branch,
+            )
+
+            # If we used auth_url for clone, set origin to the non-auth URL
+            # to avoid storing credentials in git config
+            if auth_url and repo_url != auth_url:
+                repo.remotes.origin.set_url(repo_url)
+
+            # Temporarily set auth URL for fetch if needed
+            original_url: str | None = None
+            if auth_url:
+                original_url = repo.remotes.origin.url
+                repo.remotes.origin.set_url(auth_url)
+
+            try:
+                # Fetch the specific branch from remote
+                logger.info(f"Fetching branch {branch_name} from remote")
+                try:
+                    repo.git.fetch("origin", branch_name)
+                except git.GitCommandError as e:
+                    raise ValueError(f"Branch '{branch_name}' does not exist on remote: {e}")
+
+                # Checkout the existing remote branch
+                logger.info(f"Checking out branch {branch_name}")
+                repo.git.checkout("-b", branch_name, f"origin/{branch_name}")
+
+            finally:
+                # Restore original URL
+                if original_url:
+                    repo.remotes.origin.set_url(original_url)
+
+            return WorkspaceInfo(
+                path=workspace_path,
+                branch_name=branch_name,
+                base_branch=base_branch,
+                created_at=datetime.utcnow(),
+            )
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _restore_workspace)
