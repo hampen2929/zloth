@@ -159,6 +159,16 @@ class Database:
             )
             await conn.commit()
 
+        # Migration: Add base_ref column to tasks table if it doesn't exist
+        # This is for workspace/branch consistency (Phase 1.1 from docs/workspace_branch.md)
+        cursor = await conn.execute("PRAGMA table_info(tasks)")
+        task_columns = await cursor.fetchall()
+        task_column_names = [col["name"] for col in task_columns]
+
+        if "base_ref" not in task_column_names:
+            await conn.execute("ALTER TABLE tasks ADD COLUMN base_ref TEXT")
+            await conn.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""
