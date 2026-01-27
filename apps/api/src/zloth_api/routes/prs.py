@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from zloth_api.dependencies import (
     get_ci_check_service,
+    get_idempotency_service,
     get_pr_service,
     get_run_dao,
     get_user_preferences_dao,
@@ -29,6 +30,11 @@ from zloth_api.domain.models import (
     PRUpdated,
 )
 from zloth_api.services.ci_check_service import CICheckService
+from zloth_api.services.idempotency import (
+    IdempotencyOperation,
+    IdempotencyService,
+    generate_idempotency_key,
+)
 from zloth_api.services.pr_service import PRService
 from zloth_api.storage.dao import RunDAO, UserPreferencesDAO
 
@@ -118,9 +124,35 @@ async def create_pr(
     ci_check_service: CICheckService = Depends(get_ci_check_service),
     user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
     run_dao: RunDAO = Depends(get_run_dao),
+    idempotency_service: IdempotencyService = Depends(get_idempotency_service),
 ) -> PRCreated:
-    """Create a Pull Request from a run."""
+    """Create a Pull Request from a run.
+
+    Supports idempotency via `idempotency_key` in request body.
+    If the same key is used for the same task, returns 409 Conflict.
+    """
+    # Generate idempotency key
+    idempotency_key = generate_idempotency_key(
+        IdempotencyOperation.PR_CREATE,
+        context_id=task_id,
+        content={
+            "selected_run_id": data.selected_run_id,
+            "title": data.title,
+        },
+        client_key=data.idempotency_key,
+    )
+
+    # Check for duplicate request
+    await idempotency_service.check_and_raise(idempotency_key, "PR creation")
+
     pr = await pr_service.create(task_id, data)
+
+    # Store idempotency key
+    await idempotency_service.store(
+        key=idempotency_key,
+        operation=IdempotencyOperation.PR_CREATE,
+        resource_id=pr.id,
+    )
 
     # Trigger CI check in background if gating is enabled
     await _trigger_ci_check_if_enabled(
@@ -143,13 +175,37 @@ async def create_pr_auto(
     ci_check_service: CICheckService = Depends(get_ci_check_service),
     user_preferences_dao: UserPreferencesDAO = Depends(get_user_preferences_dao),
     run_dao: RunDAO = Depends(get_run_dao),
+    idempotency_service: IdempotencyService = Depends(get_idempotency_service),
 ) -> PRCreated:
     """Create a Pull Request with AI-generated title and description.
 
     This endpoint automatically generates the PR title and description
     using AI based on the diff and task context.
+
+    Supports idempotency via `idempotency_key` in request body.
+    If the same key is used for the same task, returns 409 Conflict.
     """
+    # Generate idempotency key
+    idempotency_key = generate_idempotency_key(
+        IdempotencyOperation.PR_CREATE_AUTO,
+        context_id=task_id,
+        content={
+            "selected_run_id": data.selected_run_id,
+        },
+        client_key=data.idempotency_key,
+    )
+
+    # Check for duplicate request
+    await idempotency_service.check_and_raise(idempotency_key, "auto PR creation")
+
     pr = await pr_service.create_auto(task_id, data)
+
+    # Store idempotency key
+    await idempotency_service.store(
+        key=idempotency_key,
+        operation=IdempotencyOperation.PR_CREATE_AUTO,
+        resource_id=pr.id,
+    )
 
     # Trigger CI check in background if gating is enabled
     await _trigger_ci_check_if_enabled(

@@ -10,6 +10,7 @@ from zloth_api.services.ci_polling_service import CIPollingService
 from zloth_api.services.crypto_service import CryptoService
 from zloth_api.services.git_service import GitService
 from zloth_api.services.github_service import GitHubService
+from zloth_api.services.idempotency import IdempotencyService
 from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.kanban_service import KanbanService
 from zloth_api.services.merge_gate_service import MergeGateService
@@ -29,6 +30,7 @@ from zloth_api.storage.dao import (
     AgenticRunDAO,
     BacklogDAO,
     CICheckDAO,
+    IdempotencyKeyDAO,
     JobDAO,
     MessageDAO,
     MetricsDAO,
@@ -407,3 +409,15 @@ async def get_metrics_service() -> MetricsService:
     """Get the metrics service."""
     metrics_dao = await get_metrics_dao()
     return MetricsService(metrics_dao)
+
+
+async def get_idempotency_key_dao() -> IdempotencyKeyDAO:
+    """Get IdempotencyKey DAO."""
+    db = await get_db()
+    return IdempotencyKeyDAO(db)
+
+
+async def get_idempotency_service() -> IdempotencyService:
+    """Get the idempotency service."""
+    dao = await get_idempotency_key_dao()
+    return IdempotencyService(dao)

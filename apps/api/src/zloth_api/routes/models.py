@@ -2,8 +2,13 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from zloth_api.dependencies import get_model_service
+from zloth_api.dependencies import get_idempotency_service, get_model_service
 from zloth_api.domain.models import ModelProfile, ModelProfileCreate
+from zloth_api.services.idempotency import (
+    IdempotencyOperation,
+    IdempotencyService,
+    generate_idempotency_key,
+)
 from zloth_api.services.model_service import ModelService
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -21,9 +26,36 @@ async def list_models(
 async def create_model(
     data: ModelProfileCreate,
     model_service: ModelService = Depends(get_model_service),
+    idempotency_service: IdempotencyService = Depends(get_idempotency_service),
 ) -> ModelProfile:
-    """Create a new model profile."""
-    return await model_service.create(data)
+    """Create a new model profile.
+
+    Supports idempotency via `idempotency_key` in request body.
+    If the same key is used, returns 409 Conflict.
+    """
+    # Generate idempotency key
+    idempotency_key = generate_idempotency_key(
+        IdempotencyOperation.MODEL_CREATE,
+        content={
+            "provider": data.provider.value,
+            "model_name": data.model_name,
+        },
+        client_key=data.idempotency_key,
+    )
+
+    # Check for duplicate request
+    await idempotency_service.check_and_raise(idempotency_key, "model creation")
+
+    model = await model_service.create(data)
+
+    # Store idempotency key
+    await idempotency_service.store(
+        key=idempotency_key,
+        operation=IdempotencyOperation.MODEL_CREATE,
+        resource_id=model.id,
+    )
+
+    return model
 
 
 @router.get("/{model_id}", response_model=ModelProfile)

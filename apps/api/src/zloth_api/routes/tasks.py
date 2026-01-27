@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from zloth_api.dependencies import (
     get_ci_check_dao,
+    get_idempotency_service,
     get_message_dao,
     get_pr_dao,
     get_run_dao,
@@ -28,6 +29,11 @@ from zloth_api.domain.models import (
     TaskBulkCreated,
     TaskCreate,
     TaskDetail,
+)
+from zloth_api.services.idempotency import (
+    IdempotencyOperation,
+    IdempotencyService,
+    generate_idempotency_key,
 )
 from zloth_api.storage.dao import (
     PRDAO,
@@ -88,13 +94,41 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 async def create_task(
     data: TaskCreate,
     task_dao: TaskDAO = Depends(get_task_dao),
+    idempotency_service: IdempotencyService = Depends(get_idempotency_service),
 ) -> Task:
-    """Create a new task."""
-    return await task_dao.create(
+    """Create a new task.
+
+    Supports idempotency via `idempotency_key` in request body.
+    If the same key is used, returns 409 Conflict.
+    """
+    # Generate idempotency key
+    idempotency_key = generate_idempotency_key(
+        IdempotencyOperation.TASK_CREATE,
+        context_id=data.repo_id,
+        content={
+            "title": data.title,
+            "coding_mode": data.coding_mode.value,
+        },
+        client_key=data.idempotency_key,
+    )
+
+    # Check for duplicate request
+    await idempotency_service.check_and_raise(idempotency_key, "task creation")
+
+    task = await task_dao.create(
         repo_id=data.repo_id,
         title=data.title,
         coding_mode=data.coding_mode,
     )
+
+    # Store idempotency key
+    await idempotency_service.store(
+        key=idempotency_key,
+        operation=IdempotencyOperation.TASK_CREATE,
+        resource_id=task.id,
+    )
+
+    return task
 
 
 @router.get("", response_model=list[Task])

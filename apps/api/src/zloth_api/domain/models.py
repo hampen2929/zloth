@@ -42,6 +42,11 @@ class ModelProfileCreate(ModelProfileBase):
     """Request model for creating a ModelProfile."""
 
     api_key: str = Field(..., description="API key for the provider")
+    idempotency_key: str | None = Field(
+        None,
+        description="Client-provided idempotency key for duplicate prevention",
+        max_length=64,
+    )
 
 
 # ============================================================
@@ -91,6 +96,11 @@ class RepoCloneRequest(BaseModel):
 
     repo_url: str = Field(..., description="Git repository URL")
     ref: str | None = Field(None, description="Branch or commit to checkout")
+    idempotency_key: str | None = Field(
+        None,
+        description="Client-provided idempotency key for duplicate prevention",
+        max_length=64,
+    )
 
 
 class Repo(BaseModel):
@@ -144,6 +154,11 @@ class TaskCreate(BaseModel):
     repo_id: str
     title: str | None = None
     coding_mode: CodingMode = CodingMode.INTERACTIVE
+    idempotency_key: str | None = Field(
+        None,
+        description="Client-provided idempotency key for duplicate prevention",
+        max_length=64,
+    )
 
 
 class Task(BaseModel):
@@ -267,6 +282,11 @@ class RunCreate(BaseModel):
         description="List of executor types to run in parallel (overrides executor_type)",
     )
     message_id: str | None = Field(None, description="ID of the triggering message")
+    idempotency_key: str | None = Field(
+        None,
+        description="Client-provided idempotency key for duplicate prevention",
+        max_length=64,
+    )
 
 
 class RunSummary(BaseModel):
@@ -335,12 +355,22 @@ class PRCreate(BaseModel):
     selected_run_id: str = Field(..., description="ID of the run to use for PR")
     title: str
     body: str | None = None
+    idempotency_key: str | None = Field(
+        None,
+        description="Client-provided idempotency key for duplicate prevention",
+        max_length=64,
+    )
 
 
 class PRCreateAuto(BaseModel):
     """Request for auto-generating PR title and body using AI."""
 
     selected_run_id: str = Field(..., description="ID of the run to use for PR")
+    idempotency_key: str | None = Field(
+        None,
+        description="Client-provided idempotency key for duplicate prevention",
+        max_length=64,
+    )
 
 
 class PRUpdate(BaseModel):

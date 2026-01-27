@@ -2656,3 +2656,120 @@ class MetricsDAO:
         cursor = await self.db.connection.execute(query, params)
         rows = await cursor.fetchall()
         return [{"timestamp": row["period"], "value": row["value"] or 0.0} for row in rows]
+
+
+class IdempotencyKeyDAO:
+    """DAO for idempotency key management.
+
+    Provides duplicate request prevention by storing idempotency keys
+    with TTL support for automatic cleanup.
+    """
+
+    # Default TTL: 24 hours
+    DEFAULT_TTL_SECONDS = 86400
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def get(self, key: str) -> dict[str, Any] | None:
+        """Get an idempotency record by key.
+
+        Args:
+            key: The idempotency key (SHA256 hash).
+
+        Returns:
+            Dict with operation, resource_id, response_hash, created_at, expires_at
+            or None if not found or expired.
+        """
+        now = now_iso()
+        cursor = await self.db.connection.execute(
+            """
+            SELECT key, operation, resource_id, response_hash, created_at, expires_at
+            FROM idempotency_keys
+            WHERE key = ? AND expires_at > ?
+            """,
+            (key, now),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "key": row["key"],
+            "operation": row["operation"],
+            "resource_id": row["resource_id"],
+            "response_hash": row["response_hash"],
+            "created_at": row["created_at"],
+            "expires_at": row["expires_at"],
+        }
+
+    async def create(
+        self,
+        key: str,
+        operation: str,
+        resource_id: str,
+        response_hash: str | None = None,
+        ttl_seconds: int | None = None,
+    ) -> bool:
+        """Create an idempotency key record.
+
+        Args:
+            key: The idempotency key (SHA256 hash).
+            operation: Operation type (e.g., 'run.create', 'task.create').
+            resource_id: ID of the created resource.
+            response_hash: Optional hash of the response for validation.
+            ttl_seconds: Time-to-live in seconds (defaults to 24 hours).
+
+        Returns:
+            True if created, False if already exists.
+        """
+        ttl = ttl_seconds or self.DEFAULT_TTL_SECONDS
+        now = now_iso()
+        from datetime import timedelta
+
+        parsed_now = datetime.fromisoformat(now.replace("Z", "+00:00").rstrip("+00:00"))
+        expires_at = (parsed_now + timedelta(seconds=ttl)).isoformat()
+
+        try:
+            await self.db.connection.execute(
+                """
+                INSERT INTO idempotency_keys (key, operation, resource_id, response_hash,
+                                              created_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (key, operation, resource_id, response_hash, now, expires_at),
+            )
+            await self.db.connection.commit()
+            return True
+        except Exception:
+            # Key already exists (PRIMARY KEY conflict)
+            return False
+
+    async def delete(self, key: str) -> bool:
+        """Delete an idempotency key record.
+
+        Args:
+            key: The idempotency key.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        cursor = await self.db.connection.execute(
+            "DELETE FROM idempotency_keys WHERE key = ?",
+            (key,),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount > 0
+
+    async def cleanup_expired(self) -> int:
+        """Delete all expired idempotency keys.
+
+        Returns:
+            Number of deleted records.
+        """
+        now = now_iso()
+        cursor = await self.db.connection.execute(
+            "DELETE FROM idempotency_keys WHERE expires_at <= ?",
+            (now,),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount
