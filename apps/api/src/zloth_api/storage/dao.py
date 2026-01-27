@@ -1990,6 +1990,7 @@ class CICheckDAO:
         sha: str | None = None,
         jobs: dict[str, str] | None = None,
         failed_jobs: builtins.list[CIJobResult] | None = None,
+        next_check_at: datetime | None = None,
     ) -> CICheck:
         """Create a new CI check record."""
         id = generate_id()
@@ -1999,9 +2000,9 @@ class CICheckDAO:
             """
             INSERT INTO ci_checks (
                 id, task_id, pr_id, status, workflow_run_id, sha,
-                jobs, failed_jobs, created_at, updated_at
+                jobs, failed_jobs, next_check_at, check_count, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 id,
@@ -2012,6 +2013,8 @@ class CICheckDAO:
                 sha,
                 json.dumps(jobs or {}),
                 json.dumps([fj.model_dump() for fj in (failed_jobs or [])]),
+                next_check_at.isoformat() if next_check_at else None,
+                0,
                 now,
                 now,
             ),
@@ -2027,9 +2030,93 @@ class CICheckDAO:
             sha=sha,
             jobs=jobs or {},
             failed_jobs=failed_jobs or [],
+            next_check_at=next_check_at,
+            check_count=0,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
         )
+
+    async def upsert_for_sha(
+        self,
+        task_id: str,
+        pr_id: str,
+        sha: str,
+        status: str,
+        workflow_run_id: int | None = None,
+        jobs: dict[str, str] | None = None,
+        failed_jobs: builtins.list[CIJobResult] | None = None,
+        next_check_at: datetime | None = None,
+    ) -> CICheck:
+        """Create or update a CI check for a specific SHA (UPSERT).
+
+        Uses INSERT OR REPLACE to handle the unique constraint on (pr_id, sha).
+        This prevents duplicate CI checks for the same SHA.
+
+        Args:
+            task_id: Task ID.
+            pr_id: PR ID.
+            sha: Git commit SHA (required, must not be None).
+            status: CI status.
+            workflow_run_id: Workflow run ID.
+            jobs: Job results dict.
+            failed_jobs: List of failed job results.
+            next_check_at: Next scheduled check time.
+
+        Returns:
+            Created or updated CICheck.
+        """
+        # Check if record exists for this pr_id + sha
+        existing = await self.get_by_pr_and_sha(pr_id, sha)
+
+        if existing:
+            # Update existing record
+            return (
+                await self.update(
+                    id=existing.id,
+                    status=status,
+                    workflow_run_id=workflow_run_id,
+                    sha=sha,
+                    jobs=jobs,
+                    failed_jobs=failed_jobs,
+                    next_check_at=next_check_at,
+                )
+                or existing
+            )
+        else:
+            # Create new record
+            return await self.create(
+                task_id=task_id,
+                pr_id=pr_id,
+                status=status,
+                workflow_run_id=workflow_run_id,
+                sha=sha,
+                jobs=jobs,
+                failed_jobs=failed_jobs,
+                next_check_at=next_check_at,
+            )
+
+    async def supersede_pending_except_sha(self, pr_id: str, sha: str) -> int:
+        """Mark all pending CI checks for a PR as superseded except the given SHA.
+
+        This is called when a new SHA is detected to invalidate old pending checks.
+
+        Args:
+            pr_id: PR ID.
+            sha: The SHA to keep as pending.
+
+        Returns:
+            Number of records updated.
+        """
+        cursor = await self.db.connection.execute(
+            """
+            UPDATE ci_checks
+            SET status = 'superseded', updated_at = ?
+            WHERE pr_id = ? AND status = 'pending' AND (sha IS NULL OR sha != ?)
+            """,
+            (now_iso(), pr_id, sha),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount
 
     async def get(self, id: str) -> CICheck | None:
         """Get a CI check by ID."""
@@ -2101,6 +2188,7 @@ class CICheckDAO:
         sha: str | None = None,
         jobs: dict[str, str] | None = None,
         failed_jobs: builtins.list[CIJobResult] | None = None,
+        next_check_at: datetime | None = None,
     ) -> CICheck | None:
         """Update a CI check record."""
         updates = ["status = ?", "updated_at = ?"]
@@ -2118,6 +2206,9 @@ class CICheckDAO:
         if failed_jobs is not None:
             updates.append("failed_jobs = ?")
             params.append(json.dumps([fj.model_dump() for fj in failed_jobs]))
+        if next_check_at is not None:
+            updates.append("next_check_at = ?")
+            params.append(next_check_at.isoformat())
 
         params.append(id)
 
@@ -2129,13 +2220,93 @@ class CICheckDAO:
 
         return await self.get(id)
 
+    async def list_pending_due_for_check(self, limit: int = 50) -> builtins.list[CICheck]:
+        """Get pending CI checks that are due for polling.
+
+        Returns checks where:
+        - status is 'pending'
+        - next_check_at is NULL or in the past
+
+        Args:
+            limit: Maximum number of records to return.
+
+        Returns:
+            List of CICheck records due for polling.
+        """
+        now = now_iso()
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM ci_checks
+            WHERE status = 'pending'
+            AND (next_check_at IS NULL OR next_check_at <= ?)
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (now, limit),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update_next_check(
+        self,
+        id: str,
+        next_check_at: datetime,
+        increment_count: bool = False,
+    ) -> None:
+        """Update the next check time for a CI check.
+
+        Args:
+            id: CI check ID.
+            next_check_at: Next scheduled check time.
+            increment_count: If True, increment check_count.
+        """
+        if increment_count:
+            await self.db.connection.execute(
+                """
+                UPDATE ci_checks
+                SET next_check_at = ?, check_count = check_count + 1, updated_at = ?
+                WHERE id = ?
+                """,
+                (next_check_at.isoformat(), now_iso(), id),
+            )
+        else:
+            await self.db.connection.execute(
+                """
+                UPDATE ci_checks
+                SET next_check_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (next_check_at.isoformat(), now_iso(), id),
+            )
+        await self.db.connection.commit()
+
+    async def mark_as_timeout(self, id: str) -> CICheck | None:
+        """Mark a CI check as timed out.
+
+        Args:
+            id: CI check ID.
+
+        Returns:
+            Updated CICheck or None if not found.
+        """
+        await self.db.connection.execute(
+            """
+            UPDATE ci_checks
+            SET status = 'timeout', updated_at = ?
+            WHERE id = ?
+            """,
+            (now_iso(), id),
+        )
+        await self.db.connection.commit()
+        return await self.get(id)
+
     def _row_to_model(self, row: Any) -> CICheck:
         """Convert database row to CICheck model."""
         return row_to_model(
             CICheck,
             row,
             json_fields={"jobs", "failed_jobs"},
-            defaults={"jobs": {}, "failed_jobs": []},
+            defaults={"jobs": {}, "failed_jobs": [], "check_count": 0},
         )
 
 

@@ -1084,11 +1084,13 @@ class CICheck(BaseModel):
     id: str
     task_id: str
     pr_id: str
-    status: str  # "pending" | "success" | "failure" | "error"
+    status: str  # "pending" | "success" | "failure" | "error" | "timeout" | "superseded"
     workflow_run_id: int | None = None
     sha: str | None = None
     jobs: dict[str, str] = Field(default_factory=dict)  # job_name -> result
     failed_jobs: list[CIJobResult] = Field(default_factory=list)
+    next_check_at: datetime | None = None  # Next scheduled check time for polling
+    check_count: int = 0  # Number of polling attempts
     created_at: datetime
     updated_at: datetime
 

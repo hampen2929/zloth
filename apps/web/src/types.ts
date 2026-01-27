@@ -576,7 +576,7 @@ export interface FixInstructionResponse {
 }
 
 // CI Check
-export type CICheckStatus = 'pending' | 'success' | 'failure' | 'error';
+export type CICheckStatus = 'pending' | 'success' | 'failure' | 'error' | 'timeout' | 'superseded';
 
 export interface CIJobResult {
   job_name: string;
@@ -593,6 +593,8 @@ export interface CICheck {
   sha: string | null;
   jobs: Record<string, string>;
   failed_jobs: CIJobResult[];
+  next_check_at: string | null;  // Next scheduled check time for polling
+  check_count: number;  // Number of polling attempts
   created_at: string;
   updated_at: string;
 }

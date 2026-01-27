@@ -71,7 +71,9 @@ async def test_clone_workspace_adapter_maps_results() -> None:
         base_branch="main",
         created_at=created_at,
     )
-    ws.sync_with_remote.return_value = MergeResult(success=False, has_conflicts=True, conflict_files=["a"])
+    ws.sync_with_remote.return_value = MergeResult(
+        success=False, has_conflicts=True, conflict_files=["a"]
+    )
     ws.is_behind_remote.return_value = True
     ws.is_valid_workspace.return_value = True
 
@@ -137,4 +139,3 @@ async def test_worktree_workspace_adapter_maps_results() -> None:
     pushed = await adapter.push(Path("/tmp/run_x"), branch="zloth/1234")
     assert pushed.success is True
     assert pushed.required_pull is True
-

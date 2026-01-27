@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import useSWR from 'swr';
 import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi, ciChecksApi } from '@/lib/api';
 import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
@@ -111,11 +111,54 @@ export function ChatCodeView({
   // Check if patch_agent is used
   const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
 
+  // Track if user is at the bottom of the scroll container
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
-  // Auto-scroll to bottom
+  // Scroll position tracking
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    // Consider "at bottom" if within 50px of the bottom
+    const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+    setIsAtBottom(atBottom);
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, runs, reviews]);
+    const container = containerRef.current;
+    if (!container) return;
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
+
+  // Track previous counts for smart auto-scroll
+  const prevMessagesLength = useRef(messages.length);
+  const prevCompletedRunIds = useRef<Set<string>>(new Set());
+
+  // Smart auto-scroll: only scroll when user is at bottom AND there's new content
+  useEffect(() => {
+    // Check for new messages
+    const isNewMessage = messages.length > prevMessagesLength.current;
+    prevMessagesLength.current = messages.length;
+
+    // Check for newly completed runs
+    const completedRuns = runs.filter(
+      (r) => r.status === 'succeeded' || r.status === 'failed'
+    );
+    const newlyCompleted = completedRuns.some(
+      (r) => !prevCompletedRunIds.current.has(r.id)
+    );
+    prevCompletedRunIds.current = new Set(completedRuns.map((r) => r.id));
+
+    // Only auto-scroll if:
+    // 1. User is at the bottom, AND
+    // 2. There's a new message OR a run just completed
+    if (isAtBottom && (isNewMessage || newlyCompleted)) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, runs, isAtBottom]);
+
+  // Note: CI check updates do NOT trigger auto-scroll to avoid disruption
 
   // Select all models by default if none specified (patch_agent only)
   useEffect(() => {
@@ -431,6 +474,11 @@ export function ChatCodeView({
 
       setInput('');
       onRunsCreated();
+
+      // Always scroll to bottom when user sends a message
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     } catch (err) {
       console.error('Failed to create runs:', err);
       error('Failed to create runs. Please try again.');
@@ -667,7 +715,7 @@ export function ChatCodeView({
       )}
 
       {/* Interleaved Conversation Area: User message -> AI output -> Review (chronologically sorted) */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && runs.length === 0 ? (
           <EmptyState />
         ) : (

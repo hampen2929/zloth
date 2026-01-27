@@ -42,6 +42,9 @@ CI_CHECK_COOLDOWN_SECONDS = 10
 # Track last CI check time per task to prevent duplicate triggers
 _last_ci_check_times: dict[str, datetime] = {}
 
+# Deferred CI check queue - stores (task_id, pr_id) pairs waiting for runs to complete
+_deferred_ci_checks: dict[str, str] = {}  # task_id -> pr_id
+
 
 def _can_trigger_ci_check(task_id: str) -> bool:
     """Check if enough time has passed since last CI check for this task."""
@@ -70,6 +73,9 @@ async def _trigger_ci_check_if_enabled(
     1. enable_gating_status preference is enabled
     2. No runs are currently running for this task (AI implementation is complete)
     3. Cooldown period has passed since last CI check for this task
+
+    If runs are in progress, the CI check is deferred and can be triggered later
+    via trigger_deferred_ci_check().
     """
     try:
         prefs = await user_preferences_dao.get()
@@ -86,14 +92,19 @@ async def _trigger_ci_check_if_enabled(
             runs = await run_dao.list(task_id)
             running_runs = [r for r in runs if r.status in (RunStatus.RUNNING, RunStatus.QUEUED)]
             if running_runs:
+                # Register deferred CI check for later execution
+                _deferred_ci_checks[task_id] = pr_id
                 logger.info(
                     f"CI check deferred: {len(running_runs)} run(s) still in progress "
-                    f"for task={task_id}"
+                    f"for task={task_id}, pr={pr_id}"
                 )
                 return
 
         # Record the check time and trigger CI check
         _record_ci_check_time(task_id)
+
+        # Clear any pending deferred check since we're executing now
+        _deferred_ci_checks.pop(task_id, None)
 
         # Run CI check in background (don't block the response)
         asyncio.create_task(_run_ci_check(task_id, pr_id, ci_check_service))
@@ -108,6 +119,63 @@ async def _run_ci_check(task_id: str, pr_id: str, ci_check_service: CICheckServi
         logger.info(f"Auto CI check completed for task={task_id}, pr={pr_id}")
     except Exception as e:
         logger.warning(f"Auto CI check failed for task={task_id}, pr={pr_id}: {e}")
+
+
+async def trigger_deferred_ci_check(
+    task_id: str,
+    ci_check_service: CICheckService,
+    user_preferences_dao: UserPreferencesDAO,
+) -> bool:
+    """Trigger a deferred CI check for a task if one is pending.
+
+    This should be called when a run completes (success or failure) to trigger
+    any CI check that was deferred due to running runs.
+
+    Args:
+        task_id: Task ID.
+        ci_check_service: CI check service.
+        user_preferences_dao: User preferences DAO.
+
+    Returns:
+        True if a deferred CI check was triggered, False otherwise.
+    """
+    pr_id = _deferred_ci_checks.pop(task_id, None)
+    if not pr_id:
+        return False
+
+    # Check if gating is still enabled
+    try:
+        prefs = await user_preferences_dao.get()
+        if not prefs or not prefs.enable_gating_status:
+            logger.debug(f"Deferred CI check skipped (gating disabled): task={task_id}")
+            return False
+    except Exception as e:
+        logger.warning(f"Failed to check gating preference: {e}")
+        return False
+
+    # Check cooldown
+    if not _can_trigger_ci_check(task_id):
+        logger.debug(f"Deferred CI check skipped due to cooldown: task={task_id}")
+        return False
+
+    # Record the check time and trigger
+    _record_ci_check_time(task_id)
+
+    logger.info(f"Triggering deferred CI check for task={task_id}, pr={pr_id}")
+    asyncio.create_task(_run_ci_check(task_id, pr_id, ci_check_service))
+    return True
+
+
+def get_deferred_ci_check(task_id: str) -> str | None:
+    """Get the deferred CI check PR ID for a task, if any.
+
+    Args:
+        task_id: Task ID.
+
+    Returns:
+        PR ID if a deferred CI check is pending, None otherwise.
+    """
+    return _deferred_ci_checks.get(task_id)
 
 
 @router.post("/tasks/{task_id}/prs", response_model=PRCreated, status_code=201)

@@ -267,11 +267,13 @@ CREATE TABLE IF NOT EXISTS ci_checks (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
     pr_id TEXT NOT NULL,
-    status TEXT NOT NULL,              -- pending, success, failure, error
+    status TEXT NOT NULL,              -- pending, success, failure, error, timeout, superseded
     workflow_run_id INTEGER,
     sha TEXT,
     jobs TEXT,                         -- JSON: job_name -> result
     failed_jobs TEXT,                  -- JSON: list of CIJobResult
+    next_check_at TEXT,                -- Next scheduled check time for polling
+    check_count INTEGER DEFAULT 0,     -- Number of polling attempts
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (task_id) REFERENCES tasks(id),
@@ -280,3 +282,8 @@ CREATE TABLE IF NOT EXISTS ci_checks (
 
 CREATE INDEX IF NOT EXISTS idx_ci_checks_task_id ON ci_checks(task_id);
 CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
+
+-- Unique constraint for (pr_id, sha) to prevent duplicate CI checks
+-- Using partial unique index (WHERE sha IS NOT NULL) to allow multiple NULL sha values
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_checks_pr_sha
+ON ci_checks(pr_id, sha) WHERE sha IS NOT NULL;
