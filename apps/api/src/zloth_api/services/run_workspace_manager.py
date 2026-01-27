@@ -1,4 +1,10 @@
-"""Workspace management helpers for run execution."""
+"""Workspace management helpers for run execution.
+
+This module handles workspace lifecycle for run execution, including:
+- Reusing existing workspaces when valid
+- Restoring workspaces from remote branches when local workspace is invalid
+- Creating new workspaces when needed
+"""
 
 from __future__ import annotations
 
@@ -80,6 +86,70 @@ class RunWorkspaceManager:
         )
         logger.info(f"Reusing existing workspace: {workspace_path}")
         return workspace_info
+
+    async def get_or_restore_workspace(
+        self,
+        existing_run: Any | None,
+        repo: Any,
+        base_ref: str,
+        run_id: str,
+    ) -> ExecutionWorkspaceInfo:
+        """Get existing workspace, restore from branch, or create new.
+
+        This method implements workspace restoration logic for branch consistency:
+        1. If existing workspace is valid, reuse it
+        2. If existing run has a working_branch, try to restore from remote
+        3. Fallback to creating a new workspace
+
+        Args:
+            existing_run: Previous run for this task/executor combination.
+            repo: Repository object.
+            base_ref: Base branch for the run.
+            run_id: ID of the new run.
+
+        Returns:
+            ExecutionWorkspaceInfo for the workspace.
+        """
+        # 1. Try to reuse existing valid workspace
+        workspace_info = await self.get_reusable_workspace(existing_run, repo, base_ref)
+        if workspace_info:
+            return workspace_info
+
+        # 2. If existing run has a branch, try to restore from remote
+        if existing_run and existing_run.working_branch:
+            try:
+                logger.info(
+                    f"Attempting to restore workspace from branch '{existing_run.working_branch}'"
+                )
+
+                auth_url: str | None = None
+                if self.github_service and repo.repo_url:
+                    try:
+                        owner, repo_name = parse_github_owner_repo(repo.repo_url)
+                        auth_url = await self.github_service.get_auth_url(owner, repo_name)
+                    except Exception as e:
+                        logger.warning(f"Could not get auth_url for restoration: {e}")
+
+                workspace_info = await self.workspace_adapter.restore_from_branch(
+                    repo=repo,
+                    branch_name=existing_run.working_branch,
+                    base_branch=base_ref,
+                    run_id=run_id,
+                    auth_url=auth_url,
+                )
+                logger.info(
+                    f"Successfully restored workspace from branch '{existing_run.working_branch}'"
+                )
+                return workspace_info
+
+            except Exception as e:
+                logger.warning(
+                    f"Failed to restore workspace from branch "
+                    f"'{existing_run.working_branch}': {e}. Will create new workspace."
+                )
+
+        # 3. Create new workspace
+        return await self.create_workspace(run_id, repo, base_ref)
 
     async def create_workspace(
         self,

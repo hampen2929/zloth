@@ -223,6 +223,7 @@ class TaskDAO:
         repo_id: str,
         title: str | None = None,
         coding_mode: CodingMode = CodingMode.INTERACTIVE,
+        base_ref: str | None = None,
     ) -> Task:
         """Create a new task."""
         id = generate_id()
@@ -230,10 +231,10 @@ class TaskDAO:
 
         await self.db.connection.execute(
             """
-            INSERT INTO tasks (id, repo_id, title, coding_mode, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (id, repo_id, title, coding_mode, base_ref, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (id, repo_id, title, coding_mode.value, now, now),
+            (id, repo_id, title, coding_mode.value, base_ref, now, now),
         )
         await self.db.connection.commit()
 
@@ -242,6 +243,7 @@ class TaskDAO:
             repo_id=repo_id,
             title=title,
             coding_mode=coding_mode,
+            base_ref=base_ref,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
         )
@@ -289,6 +291,17 @@ class TaskDAO:
         await self.db.connection.execute(
             "UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?",
             (title, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_base_ref(self, id: str, base_ref: str) -> None:
+        """Update the task's base_ref (lock base branch for task).
+
+        This should only be called once when the first run is created for a task.
+        """
+        await self.db.connection.execute(
+            "UPDATE tasks SET base_ref = ?, updated_at = ? WHERE id = ?",
+            (base_ref, now_iso(), id),
         )
         await self.db.connection.commit()
 
@@ -381,6 +394,9 @@ class TaskDAO:
                 if "github.com/" in repo_url:
                     repo_name = repo_url.split("github.com/")[-1].rstrip("/").rstrip(".git")
 
+            # Handle base_ref for backward compatibility
+            base_ref = row["base_ref"] if "base_ref" in row.keys() else None
+
             result.append(
                 {
                     "id": row["id"],
@@ -389,6 +405,7 @@ class TaskDAO:
                     "title": row["title"],
                     "coding_mode": CodingMode(coding_mode_str),
                     "kanban_status": kanban_status,
+                    "base_ref": base_ref,
                     "created_at": datetime.fromisoformat(row["created_at"]),
                     "updated_at": datetime.fromisoformat(row["updated_at"]),
                     "run_count": row["run_count"],
@@ -409,7 +426,11 @@ class TaskDAO:
         return row_to_model(
             Task,
             row,
-            defaults={"kanban_status": "backlog", "coding_mode": CodingMode.INTERACTIVE.value},
+            defaults={
+                "kanban_status": "backlog",
+                "coding_mode": CodingMode.INTERACTIVE.value,
+                "base_ref": None,
+            },
         )
 
 
@@ -692,31 +713,49 @@ class RunDAO:
     async def get_latest_worktree_run(
         self,
         task_id: str,
-        executor_type: ExecutorType,
+        executor_type: ExecutorType | None = None,
+        ignore_executor_type: bool = False,
     ) -> Run | None:
-        """Get the latest run with a valid worktree for a task and executor type.
+        """Get the latest run with a valid worktree for a task.
 
         This is used to reuse an existing worktree for subsequent runs in the
         same task, enabling conversation continuation in the same working directory.
 
         Args:
             task_id: Task ID.
-            executor_type: Type of executor.
+            executor_type: Type of executor. Required unless ignore_executor_type is True.
+            ignore_executor_type: If True, return the latest run regardless of executor type.
+                                  This enables workspace sharing across different AI tools.
 
         Returns:
             Run with worktree if found, None otherwise.
         """
-        cursor = await self.db.connection.execute(
-            """
-            SELECT * FROM runs
-            WHERE task_id = ? AND executor_type = ?
-                AND worktree_path IS NOT NULL
-                AND status IN ('succeeded', 'failed', 'running', 'queued')
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (task_id, executor_type.value),
-        )
+        if ignore_executor_type:
+            cursor = await self.db.connection.execute(
+                """
+                SELECT * FROM runs
+                WHERE task_id = ?
+                    AND worktree_path IS NOT NULL
+                    AND status IN ('succeeded', 'failed', 'running', 'queued')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (task_id,),
+            )
+        else:
+            if executor_type is None:
+                raise ValueError("executor_type is required when ignore_executor_type is False")
+            cursor = await self.db.connection.execute(
+                """
+                SELECT * FROM runs
+                WHERE task_id = ? AND executor_type = ?
+                    AND worktree_path IS NOT NULL
+                    AND status IN ('succeeded', 'failed', 'running', 'queued')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (task_id, executor_type.value),
+            )
         row = await cursor.fetchone()
         if not row:
             return None

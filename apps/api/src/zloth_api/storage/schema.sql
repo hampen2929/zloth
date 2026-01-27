@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT,
     coding_mode TEXT NOT NULL DEFAULT 'interactive',  -- interactive, semi_auto, full_auto
     kanban_status TEXT NOT NULL DEFAULT 'backlog',  -- backlog, todo, archived (dynamic: in_progress, in_review, done)
+    base_ref TEXT,  -- locked base branch for this task (set on first run)
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
