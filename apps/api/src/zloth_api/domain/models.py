@@ -156,6 +156,8 @@ class Task(BaseModel):
     coding_mode: CodingMode = CodingMode.INTERACTIVE
     kanban_status: str = "backlog"  # Base status stored in DB (backlog/todo/archived)
     base_ref: str | None = None  # Locked base branch for this task
+    workspace_path: str | None = None  # Fixed workspace path for this task
+    working_branch: str | None = None  # Fixed working branch for this task
     created_at: datetime
     updated_at: datetime
 
