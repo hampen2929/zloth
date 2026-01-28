@@ -275,8 +275,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         if task.base_ref and data.base_ref and data.base_ref != task.base_ref:
             raise ValueError(
-                f"base_ref mismatch for task {task_id}: "
-                f"{data.base_ref} != {task.base_ref}"
+                f"base_ref mismatch for task {task_id}: {data.base_ref} != {task.base_ref}"
             )
 
         # Determine effective base_ref:
