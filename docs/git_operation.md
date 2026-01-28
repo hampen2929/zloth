@@ -42,7 +42,7 @@ pull して統合する機会が不足**しています。
 ```mermaid
 flowchart TD
     A[Run開始] --> B[作業ブランチのリモート差分確認]
-    B -->|behind| C[pull (sync_with_remote)]
+    B -->|behind| C[pull sync_with_remote]
     B -->|up-to-date| D[CLI実行]
     C --> D
     D --> E[commit]
@@ -84,16 +84,16 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[Run開始] --> B[作業ブランチのリモート差分確認]
-    B -->|behind| C[pull (sync_with_remote)]
+    B -->|behind| C[pull sync_with_remote]
     B -->|up-to-date| D[mainの最新をfetch]
     C --> D
-    D --> E[mainを統合 (merge/rebase)]
+    D --> E[mainを統合 merge_or_rebase]
     E -->|conflict| F[AIに解決指示]
     E -->|no conflict| G[CLI実行]
     F --> G
     G --> H[commit]
     H --> I[push_with_retry]
-    I -->|non-fast-forward| J[pull & retry]
+    I -->|non-fast-forward| J[pull and retry]
     I -->|success| K[完了]
 ```
 
