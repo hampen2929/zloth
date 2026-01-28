@@ -237,7 +237,10 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 "use_clone_isolation=false is deprecated and will be ignored; "
                 "zloth now uses clone-based workspaces only."
             )
-        self.workspace_adapter: WorkspaceAdapter = CloneWorkspaceAdapter(self.workspace_service)
+        self.workspace_adapter: WorkspaceAdapter = CloneWorkspaceAdapter(
+            self.workspace_service,
+            self.git_service,
+        )
         self.workspace_manager = RunWorkspaceManager(
             run_dao=self.run_dao,
             workspace_adapter=self.workspace_adapter,
@@ -753,6 +756,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
         # Track if we need to add conflict resolution instructions
         conflict_instruction: str | None = None
+        conflict_files: list[str] = []
 
         try:
             # Update status to running
@@ -804,19 +808,50 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                                 f"[{run.id[:8]}] Merge conflicts detected: "
                                 f"{sync_result.conflict_files}"
                             )
-                            conflict_instruction = self._build_conflict_resolution_instruction(
-                                sync_result.conflict_files
-                            )
+                            conflict_files.extend(sync_result.conflict_files)
                         else:
                             logs.append(f"Pull failed: {sync_result.error}")
                             logger.warning(f"[{run.id[:8]}] Pull failed: {sync_result.error}")
                     else:
                         logger.info(f"[{run.id[:8]}] Branch is up to date with remote")
 
+                    if worktree_info.base_branch:
+                        await self._log_output(run.id, "Checking for base branch updates...")
+                        base_merge_result = await self.workspace_adapter.merge_base_branch(
+                            worktree_info.path,
+                            base_branch=worktree_info.base_branch,
+                            auth_url=auth_url,
+                        )
+                        if base_merge_result.success:
+                            logs.append(
+                                f"Successfully merged base branch: {worktree_info.base_branch}"
+                            )
+                        elif base_merge_result.has_conflicts:
+                            conflict_files_str = ", ".join(base_merge_result.conflict_files)
+                            logs.append(
+                                f"Merge conflicts detected in base branch: {conflict_files_str}. "
+                                "AI will be asked to resolve them."
+                            )
+                            logger.warning(
+                                f"[{run.id[:8]}] Base branch merge conflicts: "
+                                f"{base_merge_result.conflict_files}"
+                            )
+                            conflict_files.extend(base_merge_result.conflict_files)
+                        else:
+                            logs.append(f"Base branch merge failed: {base_merge_result.error}")
+                            logger.warning(
+                                f"[{run.id[:8]}] Base branch merge failed: "
+                                f"{base_merge_result.error}"
+                            )
+
                 except Exception as sync_error:
                     # Log but don't fail - we can still proceed with the run
                     logs.append(f"Remote sync warning: {sync_error}")
                     logger.warning(f"[{run.id[:8]}] Remote sync failed: {sync_error}")
+
+            if conflict_files:
+                unique_conflicts = sorted(set(conflict_files))
+                conflict_instruction = self._build_conflict_resolution_instruction(unique_conflicts)
 
             # 1. Record pre-execution status
             pre_status = await self.git_service.get_status(worktree_info.path)
@@ -1096,8 +1131,9 @@ The following files have merge conflicts that MUST be resolved before proceeding
 2. Look for conflict markers: `<<<<<<<`, `=======`, and `>>>>>>>`
 3. Understand both versions of the conflicting code
 4. Resolve each conflict by keeping the correct code (you may combine both versions if appropriate)
-5. Remove ALL conflict markers completely
-6. Ensure the resolved code is syntactically correct and functional
+5. If the base branch removed functionality that must remain in this branch, preserve it
+6. Remove ALL conflict markers completely
+7. Ensure the resolved code is syntactically correct and functional
 
 ### Conflict Marker Format:
 ```

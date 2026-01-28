@@ -59,6 +59,16 @@ class PullResult:
 
 
 @dataclass
+class MergeResult:
+    """Result of a git merge operation."""
+
+    success: bool
+    has_conflicts: bool = False
+    conflict_files: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+@dataclass
 class PushResult:
     """Result of a git push operation."""
 
@@ -1050,6 +1060,68 @@ class GitService:
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _pull)
+
+    async def merge_base_branch(
+        self,
+        repo_path: Path,
+        base_branch: str,
+        auth_url: str | None = None,
+    ) -> MergeResult:
+        """Merge base branch into current branch.
+
+        Args:
+            repo_path: Path to the repository.
+            base_branch: Base branch to merge (e.g., 'main').
+            auth_url: Authenticated URL for private repos.
+
+        Returns:
+            MergeResult with success status and conflict information.
+        """
+
+        def _merge() -> MergeResult:
+            repo = git.Repo(repo_path)
+
+            if auth_url:
+                try:
+                    original_url = repo.remotes.origin.url
+                except Exception:
+                    original_url = None
+            else:
+                original_url = None
+
+            try:
+                if auth_url:
+                    repo.remotes.origin.set_url(auth_url)
+
+                repo.remotes.origin.fetch()
+
+                remote_ref = f"origin/{base_branch}"
+                try:
+                    repo.git.merge(remote_ref)
+                    return MergeResult(success=True)
+                except git.GitCommandError as e:
+                    error_str = str(e)
+                    if "CONFLICT" in error_str or "Automatic merge failed" in error_str:
+                        conflict_files: list[str] = []
+                        try:
+                            unmerged = repo.git.diff("--name-only", "--diff-filter=U")
+                            if unmerged:
+                                conflict_files = unmerged.strip().split("\n")
+                        except Exception:
+                            pass
+                        return MergeResult(
+                            success=False,
+                            has_conflicts=True,
+                            conflict_files=conflict_files,
+                            error="Merge conflicts detected",
+                        )
+                    return MergeResult(success=False, error=str(e))
+            finally:
+                if original_url:
+                    repo.remotes.origin.set_url(original_url)
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _merge)
 
     async def delete_remote_branch(
         self,

@@ -14,7 +14,7 @@ from typing import Protocol
 
 from zloth_api.domain.models import Repo
 from zloth_api.services.git_service import GitService
-from zloth_api.services.workspace_service import WorkspaceService
+from zloth_api.services.workspace_service import MergeResult, WorkspaceService
 
 
 @dataclass(frozen=True)
@@ -92,6 +92,14 @@ class WorkspaceAdapter(Protocol):
         self, path: Path, *, branch: str, auth_url: str | None = None
     ) -> SyncResult: ...
 
+    async def merge_base_branch(
+        self,
+        path: Path,
+        *,
+        base_branch: str,
+        auth_url: str | None = None,
+    ) -> SyncResult: ...
+
     async def push(
         self, path: Path, *, branch: str, auth_url: str | None = None
     ) -> PushAttemptResult: ...
@@ -100,8 +108,9 @@ class WorkspaceAdapter(Protocol):
 class CloneWorkspaceAdapter:
     """Adapter for clone-based isolation using WorkspaceService."""
 
-    def __init__(self, workspace_service: WorkspaceService) -> None:
+    def __init__(self, workspace_service: WorkspaceService, git_service: GitService) -> None:
         self._ws = workspace_service
+        self._git = git_service
 
     async def is_valid(self, path: Path) -> bool:
         return await self._ws.is_valid_workspace(path)
@@ -195,14 +204,34 @@ class CloneWorkspaceAdapter:
             error=res.error,
         )
 
+    async def merge_base_branch(
+        self,
+        path: Path,
+        *,
+        base_branch: str,
+        auth_url: str | None = None,
+    ) -> SyncResult:
+        await self._ws.unshallow(path, auth_url=auth_url)
+        res = await self._ws.merge_base_branch(path, base_branch=base_branch, auth_url=auth_url)
+        return self._to_sync_result(res)
+
     async def push(
         self, path: Path, *, branch: str, auth_url: str | None = None
     ) -> PushAttemptResult:
-        try:
-            await self._ws.push(path, branch=branch, auth_url=auth_url)
-            return PushAttemptResult(success=True, required_pull=False)
-        except Exception as e:
-            return PushAttemptResult(success=False, required_pull=False, error=str(e))
+        res = await self._git.push_with_retry(path, branch=branch, auth_url=auth_url)
+        return PushAttemptResult(
+            success=res.success,
+            required_pull=res.required_pull,
+            error=res.error,
+        )
+
+    def _to_sync_result(self, res: MergeResult) -> SyncResult:
+        return SyncResult(
+            success=res.success,
+            has_conflicts=res.has_conflicts,
+            conflict_files=list(res.conflict_files),
+            error=res.error,
+        )
 
 
 class WorktreeWorkspaceAdapter:
@@ -286,6 +315,21 @@ class WorktreeWorkspaceAdapter:
         self, path: Path, *, branch: str, auth_url: str | None = None
     ) -> SyncResult:
         res = await self._git.pull(path, branch=branch, auth_url=auth_url)
+        return SyncResult(
+            success=res.success,
+            has_conflicts=res.has_conflicts,
+            conflict_files=list(res.conflict_files),
+            error=res.error,
+        )
+
+    async def merge_base_branch(
+        self,
+        path: Path,
+        *,
+        base_branch: str,
+        auth_url: str | None = None,
+    ) -> SyncResult:
+        res = await self._git.merge_base_branch(path, base_branch=base_branch, auth_url=auth_url)
         return SyncResult(
             success=res.success,
             has_conflicts=res.has_conflicts,
