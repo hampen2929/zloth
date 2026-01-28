@@ -364,7 +364,12 @@ class PRService:
             diff = run.patch
 
         # Generate title and description with AI in a single call
-        template = await self._load_pr_template(repo_obj)
+        template = await self._load_pr_template(
+            repo_obj,
+            owner=owner,
+            repo_name=repo_name,
+            ref=run.base_ref or repo_obj.default_branch,
+        )
         title, description = await self._generate_title_and_description(
             diff=diff,
             template=template,
@@ -469,7 +474,12 @@ class PRService:
             diff = run.patch
 
         # Generate title and description with AI in a single call
-        template = await self._load_pr_template(repo_obj)
+        template = await self._load_pr_template(
+            repo_obj,
+            owner=owner,
+            repo_name=repo_name,
+            ref=run.base_ref or repo_obj.default_branch,
+        )
         title, description = await self._generate_title_and_description(
             diff=diff,
             template=template,
@@ -1241,7 +1251,12 @@ IMPORTANT INSTRUCTIONS:
             )
 
         # Load pull_request_template
-        template = await self._load_pr_template(repo_obj)
+        template = await self._load_pr_template(
+            repo_obj,
+            owner=owner,
+            repo_name=repo_name,
+            ref=latest_run.base_ref if latest_run else repo_obj.default_branch,
+        )
 
         # Generate and update based on mode
         if mode == PRUpdateMode.BOTH and latest_run:
@@ -1306,11 +1321,21 @@ IMPORTANT INSTRUCTIONS:
             raise NotFoundError("PR not found after update", details={"pr_id": pr_id})
         return updated_pr
 
-    async def _load_pr_template(self, repo: Repo) -> str | None:
+    async def _load_pr_template(
+        self,
+        repo: Repo,
+        *,
+        owner: str | None = None,
+        repo_name: str | None = None,
+        ref: str | None = None,
+    ) -> str | None:
         """Load repository's pull_request_template.
 
         Args:
             repo: Repository object.
+            owner: Optional repository owner (for GitHub API fallback).
+            repo_name: Optional repository name (for GitHub API fallback).
+            ref: Optional git ref for template lookup via GitHub API.
 
         Returns:
             Template content or None if not found.
@@ -1329,6 +1354,17 @@ IMPORTANT INSTRUCTIONS:
         for path in template_paths:
             if path.exists():
                 return path.read_text()
+
+        if owner and repo_name:
+            for path in template_paths:
+                content = await self.github_service.get_file_contents(
+                    owner=owner,
+                    repo=repo_name,
+                    path=str(path.relative_to(workspace_path)),
+                    ref=ref,
+                )
+                if content:
+                    return content
 
         return None
 
