@@ -43,7 +43,10 @@ export function CIResultCard({
       case 'pending':
         return 'border-yellow-500/30 bg-yellow-900/10';
       case 'error':
+      case 'timeout':
         return 'border-red-500/30 bg-red-900/10';
+      case 'superseded':
+        return 'border-gray-500/30 bg-gray-900/10';
       default:
         return 'border-gray-700 bg-gray-800/50';
     }
@@ -58,18 +61,23 @@ export function CIResultCard({
       case 'pending':
         return <ClockIcon className="w-5 h-5 text-yellow-400 animate-pulse" />;
       case 'error':
+      case 'timeout':
         return <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />;
+      case 'superseded':
+        return <span className="w-5 h-5 text-gray-500">○</span>;
       default:
         return <ClockIcon className="w-5 h-5 text-gray-400" />;
     }
   };
 
   const getStatusBadge = () => {
-    const statusConfig = {
+    const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
       success: { bg: 'bg-green-500/20', text: 'text-green-400', label: 'Success' },
       failure: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'Failure' },
       pending: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: 'Pending' },
       error: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'Error' },
+      timeout: { bg: 'bg-orange-500/20', text: 'text-orange-400', label: 'Timeout' },
+      superseded: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Superseded' },
     };
     const config = statusConfig[ciCheck.status] || statusConfig.pending;
     return (
@@ -214,6 +222,16 @@ export function CIResultCard({
                 <div className="flex flex-col items-center">
                   <ExclamationTriangleIcon className="w-8 h-8 text-red-400" />
                   <p className="mt-2 text-gray-400 text-sm">Failed to check CI status</p>
+                </div>
+              ) : ciCheck.status === 'timeout' ? (
+                <div className="flex flex-col items-center">
+                  <ExclamationTriangleIcon className="w-8 h-8 text-orange-400" />
+                  <p className="mt-2 text-gray-400 text-sm">CI check timed out</p>
+                </div>
+              ) : ciCheck.status === 'superseded' ? (
+                <div className="flex flex-col items-center">
+                  <span className="text-gray-500 text-3xl">○</span>
+                  <p className="mt-2 text-gray-400 text-sm">Superseded by newer commit</p>
                 </div>
               ) : (
                 <p className="text-gray-400 text-sm">No CI jobs found</p>

@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # Cooldown period for CI checks per PR+SHA combination (in seconds)
 CI_CHECK_SHA_COOLDOWN_SECONDS = 30
 
+# Polling configuration for server-side CI check updates
+CI_CHECK_POLL_INTERVAL_SECONDS = 10
+CI_CHECK_MAX_ATTEMPTS = 360  # 10 seconds * 360 = 1 hour timeout
+
 
 class CICheckService:
     """Service for checking CI status of PRs."""
@@ -77,6 +81,7 @@ class CICheckService:
         """Check CI status for a PR.
 
         Fetches current CI status from GitHub and creates/updates a CICheck record.
+        Uses UPSERT to prevent duplicate CI checks for the same SHA.
         Implements cooldown to prevent excessive API calls for the same PR+SHA.
 
         Args:
@@ -88,7 +93,7 @@ class CICheckService:
             CICheckResponse with current status and completion flag.
 
         Raises:
-            ValueError: If PR or task not found.
+            ValueError: If PR or task not found, or PR is not open.
         """
         logger.debug(f"Checking CI for task={task_id}, pr={pr_id}, force={force}")
 
@@ -106,6 +111,11 @@ class CICheckService:
         if pr.task_id != task_id:
             logger.warning(f"PR {pr_id} does not belong to task {task_id}")
             raise ValueError(f"PR {pr_id} does not belong to task {task_id}")
+
+        # Guard: PR must be open
+        if pr.status != "open":
+            logger.warning(f"PR {pr_id} is not open (status: {pr.status})")
+            raise ValueError(f"PR is not open (status: {pr.status})")
 
         # Check for existing recent CI check (cooldown)
         # If we recently checked this PR's SHA, return the existing result
@@ -141,44 +151,30 @@ class CICheckService:
         status = self._derive_status_from_jobs(ci_data.get("jobs", {}))
         sha = ci_data.get("sha")
 
-        # Create or update CICheck record
-        # Look for existing check to avoid duplicate records
-        existing = None
-        if sha:
-            # If we have SHA, look for existing record with this SHA
-            existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha)
-            if not existing:
-                # Also check if there's a pending record without SHA that we should update
-                pending_without_sha = await self.ci_check_dao.get_latest_pending_by_pr_id(pr_id)
-                if pending_without_sha and pending_without_sha.sha is None:
-                    existing = pending_without_sha
-        else:
-            # No SHA available - look for any existing pending record for this PR
-            existing = await self.ci_check_dao.get_latest_pending_by_pr_id(pr_id)
+        if not sha:
+            # SHA is required to prevent duplicate CI checks
+            logger.warning(f"Could not determine PR head SHA for PR #{pr.number}")
+            raise ValueError("Could not determine PR head SHA")
 
-        if existing:
-            # Update existing check
-            ci_check = await self.ci_check_dao.update(
-                id=existing.id,
-                status=status,
-                workflow_run_id=ci_data.get("workflow_run_id"),
-                sha=sha,
-                jobs=ci_data.get("jobs"),
-                failed_jobs=ci_data.get("failed_jobs"),
-            )
-            if not ci_check:
-                raise ValueError(f"Failed to update CI check: {existing.id}")
-        else:
-            # Create new check record
-            ci_check = await self.ci_check_dao.create(
-                task_id=task_id,
-                pr_id=pr_id,
-                status=status,
-                workflow_run_id=ci_data.get("workflow_run_id"),
-                sha=sha,
-                jobs=ci_data.get("jobs"),
-                failed_jobs=ci_data.get("failed_jobs"),
-            )
+        # Supersede old pending checks when a new SHA is detected
+        await self.ci_check_dao.supersede_pending_except_sha(pr_id, sha)
+
+        # Calculate next_check_at for pending status (server-side polling)
+        next_check_at = None
+        if status == "pending":
+            next_check_at = datetime.utcnow() + timedelta(seconds=CI_CHECK_POLL_INTERVAL_SECONDS)
+
+        # Use UPSERT to prevent duplicate CI checks for the same SHA
+        ci_check = await self.ci_check_dao.upsert_for_sha(
+            task_id=task_id,
+            pr_id=pr_id,
+            sha=sha,
+            status=status,
+            workflow_run_id=ci_data.get("workflow_run_id"),
+            jobs=ci_data.get("jobs"),
+            failed_jobs=ci_data.get("failed_jobs"),
+            next_check_at=next_check_at,
+        )
 
         # Record check time for cooldown tracking
         self._record_check_time(pr_id, sha)
