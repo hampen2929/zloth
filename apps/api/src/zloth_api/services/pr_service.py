@@ -1064,7 +1064,10 @@ IMPORTANT INSTRUCTIONS:
     async def update(self, task_id: str, pr_id: str, data: PRUpdate) -> PR:
         """Update an existing Pull Request with a new run.
 
-        This method applies the patch from the selected run to the PR branch.
+        This method applies the patch from the selected run to the PR branch
+        and regenerates the PR title and description using the repository's
+        pull_request_template.
+
         Note: This method still applies patches for backward compatibility,
         but new runs with CLI executors should already have committed/pushed.
 
@@ -1095,87 +1098,170 @@ IMPORTANT INSTRUCTIONS:
         if not run:
             raise NotFoundError("Run not found", details={"run_id": data.selected_run_id})
 
+        # Parse GitHub info (needed for both paths)
+        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
+
         # For CLI executor runs, the commit should already be on the branch
         # The branch should be the same as the PR branch
         if run.commit_sha and run.working_branch == pr.branch:
             # Commit is already on the PR branch, just update the database
             await self.pr_dao.update(pr_id, run.commit_sha)
-            updated_pr = await self.pr_dao.get(pr_id)
-            if not updated_pr:
-                raise NotFoundError("PR not found after update", details={"pr_id": pr_id})
-            return updated_pr
-
-        # For PatchAgent runs or different branches, we need to apply the patch
-        # This is backward compatibility code
-        if not run.patch:
-            raise ValidationError(
-                "Run has no patch to apply",
-                details={"run_id": data.selected_run_id},
-            )
-
-        # Parse GitHub info
-        owner, repo_name = self._parse_github_url(repo_obj.repo_url)
-
-        # Apply patch to PR branch using GitService
-        workspace_path = Path(repo_obj.workspace_path)
-
-        # Checkout PR branch, apply patch, commit, and push
-        await self.git_service.checkout(workspace_path, pr.branch)
-
-        # Apply patch manually
-        import subprocess
-
-        patch_file = workspace_path / ".zloth_patch.diff"
-        try:
-            patch_file.write_text(run.patch)
-            result = subprocess.run(
-                ["git", "apply", "--whitespace=fix", str(patch_file)],
-                cwd=workspace_path,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                await self.git_service.checkout(workspace_path, repo_obj.default_branch)
-                error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-                raise ExternalServiceError(
-                    f"Failed to apply patch: {error_msg}",
-                    details={"pr_id": pr_id},
+        else:
+            # For PatchAgent runs or different branches, we need to apply the patch
+            # This is backward compatibility code
+            if not run.patch:
+                raise ValidationError(
+                    "Run has no patch to apply",
+                    details={"run_id": data.selected_run_id},
                 )
-        finally:
-            patch_file.unlink(missing_ok=True)
 
-        # Stage and commit
-        await self.git_service.stage_all(workspace_path)
-        commit_message = data.message or f"Update: {run.summary or ''}"
-        commit_message = await ensure_english_commit_message(
-            commit_message,
-            hint=run.summary or "",
-        )
-        commit_sha = await self.git_service.commit(workspace_path, commit_message)
+            # Apply patch to PR branch using GitService
+            workspace_path = Path(repo_obj.workspace_path)
 
-        # Push
-        auth_url = await self.github_service.get_auth_url(owner, repo_name)
+            # Checkout PR branch, apply patch, commit, and push
+            await self.git_service.checkout(workspace_path, pr.branch)
+
+            # Apply patch manually
+            import subprocess
+
+            patch_file = workspace_path / ".zloth_patch.diff"
+            try:
+                patch_file.write_text(run.patch)
+                result = subprocess.run(
+                    ["git", "apply", "--whitespace=fix", str(patch_file)],
+                    cwd=workspace_path,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    await self.git_service.checkout(workspace_path, repo_obj.default_branch)
+                    error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+                    raise ExternalServiceError(
+                        f"Failed to apply patch: {error_msg}",
+                        details={"pr_id": pr_id},
+                    )
+            finally:
+                patch_file.unlink(missing_ok=True)
+
+            # Stage and commit
+            await self.git_service.stage_all(workspace_path)
+            commit_message = data.message or f"Update: {run.summary or ''}"
+            commit_message = await ensure_english_commit_message(
+                commit_message,
+                hint=run.summary or "",
+            )
+            commit_sha = await self.git_service.commit(workspace_path, commit_message)
+
+            # Push
+            auth_url = await self.github_service.get_auth_url(owner, repo_name)
+            try:
+                await self.git_service.push(workspace_path, pr.branch, auth_url)
+            except Exception as e:
+                if "403" in str(e) or "Write access" in str(e):
+                    raise GitHubPermissionError(
+                        f"GitHub App lacks write access to {owner}/{repo_name}. "
+                        "Please ensure the GitHub App has 'Contents' permission "
+                        "set to 'Read and write' and is installed on this repository."
+                    ) from e
+                raise
+
+            # Switch back to default branch
+            await self.git_service.checkout(workspace_path, repo_obj.default_branch)
+
+            # Update database
+            await self.pr_dao.update(pr_id, commit_sha)
+
+        # Regenerate PR title and description with template
         try:
-            await self.git_service.push(workspace_path, pr.branch, auth_url)
+            await self._update_pr_description_with_template(
+                task_id=task_id,
+                pr_id=pr_id,
+                pr=pr,
+                task=task,
+                repo_obj=repo_obj,
+                run=run,
+                owner=owner,
+                repo_name=repo_name,
+            )
         except Exception as e:
-            if "403" in str(e) or "Write access" in str(e):
-                raise GitHubPermissionError(
-                    f"GitHub App lacks write access to {owner}/{repo_name}. "
-                    "Please ensure the GitHub App has 'Contents' permission "
-                    "set to 'Read and write' and is installed on this repository."
-                ) from e
-            raise
-
-        # Switch back to default branch
-        await self.git_service.checkout(workspace_path, repo_obj.default_branch)
-
-        # Update database
-        await self.pr_dao.update(pr_id, commit_sha)
+            # Don't fail the update if description generation fails
+            logger.warning(f"Failed to regenerate PR description during update: {e}")
 
         updated_pr = await self.pr_dao.get(pr_id)
         if not updated_pr:
             raise NotFoundError("PR not found after update", details={"pr_id": pr_id})
         return updated_pr
+
+    async def _update_pr_description_with_template(
+        self,
+        *,
+        task_id: str,
+        pr_id: str,
+        pr: PR,
+        task: Task,
+        repo_obj: Repo,
+        run: Run,
+        owner: str,
+        repo_name: str,
+    ) -> None:
+        """Update PR title and description using repository's pull_request_template.
+
+        This is a helper method used by update() to regenerate the PR description
+        after applying new changes.
+
+        Args:
+            task_id: Task ID.
+            pr_id: PR ID.
+            pr: PR object.
+            task: Task object.
+            repo_obj: Repository object.
+            run: Run object.
+            owner: GitHub repository owner.
+            repo_name: GitHub repository name.
+        """
+        # Get cumulative diff for description generation
+        cumulative_diff = ""
+        if run.worktree_path:
+            worktree_path = Path(run.worktree_path)
+            if worktree_path.exists():
+                cumulative_diff = await self.git_service.get_diff_from_base(
+                    worktree_path,
+                    base_ref=run.base_ref or repo_obj.default_branch,
+                )
+
+        # Fallback to using patch from run
+        if not cumulative_diff and run.patch:
+            cumulative_diff = run.patch
+
+        if not cumulative_diff:
+            logger.warning("Could not get diff for PR description generation")
+            return
+
+        # Load pull_request_template
+        template = await self._load_pr_template(repo_obj)
+
+        # Generate title and description
+        new_title, new_description = await self._generate_title_and_description(
+            diff=cumulative_diff,
+            template=template,
+            task=task,
+            run=run,
+        )
+
+        # Update PR via GitHub API
+        await self.github_service.update_pull_request(
+            owner=owner,
+            repo=repo_name,
+            pr_number=pr.number,
+            title=new_title,
+            body=new_description,
+        )
+
+        # Update database
+        await self.pr_dao.update_title_and_body(pr_id, new_title, new_description)
+
+        # Also update Task title to match PR title
+        await self.task_dao.update_title(task_id, new_title)
 
     async def regenerate_description(
         self, task_id: str, pr_id: str, *, mode: PRUpdateMode = PRUpdateMode.BOTH
