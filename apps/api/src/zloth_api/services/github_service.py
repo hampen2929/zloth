@@ -536,6 +536,56 @@ class GitHubService:
             json=update_data,
         )
 
+    async def get_file_contents(
+        self,
+        owner: str,
+        repo: str,
+        path: str,
+        *,
+        ref: str | None = None,
+    ) -> str | None:
+        """Get file contents from a repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            path: File path in the repository.
+            ref: Optional git ref (branch, tag, or sha).
+
+        Returns:
+            File contents as a string, or None if not found.
+        """
+        # Get the correct installation for this owner
+        installation_id = await self._get_installation_for_owner(owner)
+
+        params: dict[str, Any] = {}
+        if ref:
+            params["ref"] = ref
+
+        try:
+            data = await self._github_request(
+                "GET",
+                f"/repos/{owner}/{repo}/contents/{path}",
+                installation_id=installation_id,
+                params=params,
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+        if not isinstance(data, dict):
+            return None
+
+        content = data.get("content")
+        if not content:
+            return None
+
+        try:
+            return base64.b64decode(content).decode()
+        except Exception:
+            return None
+
     async def find_pull_request_by_head(
         self,
         owner: str,
