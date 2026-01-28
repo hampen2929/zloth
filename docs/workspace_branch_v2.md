@@ -3,9 +3,8 @@
 ## 調査対象と結論（要約）
 
 **結論:** Task 内でワークスペース/ブランチが切り替わる主要因は、
-1) **ワークスペース再利用条件が厳格**（無効判定・デフォルトブランチ最新性チェック）であること、
+1) **Task に workspace/branch が永続化されていない場合がある**こと、
 2) **Run 作成時の base_ref が Task 基準と異なる場合に新規作成される**こと、
-3) **旧 worktree パスが「レガシー扱い」され再利用されない**こと、
 の複合要因です。以下にコードベースでの原因箇所と挙動を整理します。
 
 ---
@@ -25,11 +24,7 @@ flowchart TD
     H -->|No| I[再利用不可]
     H -->|Yes| J{legacy worktree?}
     J -->|Yes| I
-    J -->|No| K{base_ref==default_branch?}
-    K -->|No| L[再利用OK]
-    K -->|Yes| M{origin/defaultはHEAD祖先?}
-    M -->|No| I
-    M -->|Yes| L
+    J -->|No| L[再利用OK]
     I --> N{既存branchで復元可?}
     N -->|Yes| O[restore_from_branch]
     N -->|No| G
@@ -52,24 +47,16 @@ Run 作成時に `RunDAO.get_latest_worktree_run` が呼ばれ、**最新の「w
 
 1. **worktree_path が無い/無効**（ディレクトリ消失・破損・非 git）【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L45-L63】
 2. **旧 worktree ルート配下のパス** → 「レガシー扱い」で強制的に再利用不可【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L51-L57】
-3. **base_ref が default_branch の場合に限り**、`origin/default` が `HEAD` の祖先でなければ「古い」と判断して再利用不可【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L66-L79】
-
 この結果、**既存の Task 内 Run があっても新規ワークスペースが作られる**ケースが発生します。
 
 ---
 
 ## 2. 主要原因の詳細分析
 
-### 原因 A: デフォルトブランチ更新判定による再利用拒否
+### 原因 A: Task に workspace/branch が永続化されていない
 
-`RunWorkspaceManager.get_reusable_workspace` は `base_ref == repo.default_branch` の場合に限って、
-**`origin/default_branch` が `HEAD` の祖先かどうか**を `git merge-base --is-ancestor` で判定します。【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L66-L79】【F:apps/api/src/zloth_api/services/git_service.py†L251-L289】
-
-この判定が **False** になると「古いワークスペース」として再利用を拒否し、新規ブランチが作成されます。【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L66-L79】
-
-特に以下の条件で発生しやすいです：
-- default_branch に新しい commit が入った（Task 継続中）
-- ローカルワークスペースが remote と乖離している
+Task に workspace/branch が保存されていない場合、Run 作成時に **最新の Run から推測**して
+workspace を再利用します。これにより、想定と異なる workspace が拾われる余地があります。【F:apps/api/src/zloth_api/services/run_service.py†L416-L489】
 
 ---
 
@@ -108,8 +95,8 @@ Task 固定の base_ref と異なる Run が生成されます。【F:apps/api/s
 - 手動削除/破損
 - Git リポジトリとして壊れた
 
-この場合、`get_or_restore_workspace` が **同じブランチでの復元を試みる**ものの、
-リモートにブランチが存在しない場合は新規作成にフォールバックします。【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L94-L152】【F:apps/api/src/zloth_api/services/workspace_service.py†L744-L828】
+この場合、**同じブランチでの復元を試みる**ものの、
+リモートにブランチが存在しない場合は **エラーとして扱う**必要があります。【F:apps/api/src/zloth_api/services/run_service.py†L449-L466】【F:apps/api/src/zloth_api/services/workspace_service.py†L744-L829】
 
 ---
 
@@ -121,7 +108,6 @@ Task 固定の base_ref と異なる Run が生成されます。【F:apps/api/s
 
 - `Skipping reuse of legacy worktree path` → 旧 worktree パスのため再利用不可【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L51-L57】
 - `Workspace invalid or broken, will create new` → 無効判定で新規作成【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L59-L63】
-- `Existing workspace is behind latest default; creating new` → default_branch 更新判定【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L72-L79】
 
 ### 3.2 DB で確認すべきカラム
 
@@ -161,7 +147,6 @@ flowchart TD
 
 ### 4.2 再利用ロジックが「安全側」に倒れている
 
-- default_branch の更新判定
 - legacy worktree の排除
 - workspace 無効判定
 
@@ -173,10 +158,10 @@ flowchart TD
 
 | 原因 | 直接のトリガー | 根拠コード |
 | --- | --- | --- |
-| default_branch 更新判定 | origin/default が HEAD 祖先でない | RunWorkspaceManager + GitService【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L66-L79】【F:apps/api/src/zloth_api/services/git_service.py†L251-L289】 |
+| Task に workspace/branch が未保存 | 最新 Run からの推測再利用 | RunService._create_cli_run【F:apps/api/src/zloth_api/services/run_service.py†L416-L489】 |
 | legacy worktree 再利用拒否 | worktrees_dir 配下のパス | RunWorkspaceManager【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L51-L57】 |
-| base_ref の明示指定 | data.base_ref が Task と異なる | RunService.create_runs【F:apps/api/src/zloth_api/services/run_service.py†L275-L286】 |
-| workspace 無効化 | 破損/削除 | RunWorkspaceManager + WorkspaceService【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L59-L63】【F:apps/api/src/zloth_api/services/workspace_service.py†L744-L828】 |
+| base_ref の明示指定 | data.base_ref が Task と異なる | RunService.create_runs【F:apps/api/src/zloth_api/services/run_service.py†L276-L288】 |
+| workspace 無効化 | 破損/削除 | RunWorkspaceManager + WorkspaceService【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L59-L63】【F:apps/api/src/zloth_api/services/workspace_service.py†L744-L829】 |
 
 ---
 
@@ -226,12 +211,12 @@ flowchart TD
 
 ### 6.4 実装上の要点（既存コードへの影響）
 
-- `RunWorkspaceManager.get_reusable_workspace` の **default_branch 更新判定を削除**  
-  （Task 継続性の要件に反するため）【F:apps/api/src/zloth_api/services/run_workspace_manager.py†L66-L79】
+- `RunService._create_cli_run` で **Task workspace/branch を固定保存**  
+  （Task 以降は同一 workspace/branch を必ず使用）【F:apps/api/src/zloth_api/services/run_service.py†L416-L489】
 - `RunService.create_runs` で **Task.base_ref を固定し、違反時は拒否**  
-  （Run 作成時に base_ref が Task とズレるケースを排除）【F:apps/api/src/zloth_api/services/run_service.py†L275-L286】
+  （Run 作成時に base_ref が Task とズレるケースを排除）【F:apps/api/src/zloth_api/services/run_service.py†L276-L288】
 - `WorkspaceService.restore_workspace` 失敗時の **新規 branch 作成は禁止**  
-  （復元できない場合は明示的に失敗として扱う）【F:apps/api/src/zloth_api/services/workspace_service.py†L744-L828】
+  （復元できない場合は明示的に失敗として扱う）【F:apps/api/src/zloth_api/services/workspace_service.py†L744-L829】
 
 ---
 
@@ -239,7 +224,7 @@ flowchart TD
 
 | 原因 | 直接のトリガー | 対応方針 |
 | --- | --- | --- |
-| default_branch 更新判定 | origin/default が HEAD 祖先でない | 判定を削除し Task 継続性を優先 |
+| Task workspace 未保存 | 最新 Run の推測再利用 | Task workspace を永続化して固定 |
 | legacy worktree 再利用拒否 | worktrees_dir 配下のパス | TaskWorkspace 永続化で回避 |
 | base_ref の明示指定 | data.base_ref が Task と異なる | 一致しない場合は拒否 |
 | workspace 無効化 | 破損/削除 | 同一branchで復元、失敗時はエラー |

@@ -748,6 +748,7 @@ class WorkspaceService:
         base_branch: str,
         run_id: str,
         auth_url: str | None = None,
+        workspace_path: Path | None = None,
     ) -> WorkspaceInfo:
         """Restore workspace from an existing remote branch.
 
@@ -769,21 +770,21 @@ class WorkspaceService:
             git.GitCommandError: If clone or checkout fails.
             ValueError: If the branch does not exist on remote.
         """
-        workspace_path = self.workspaces_dir / f"run_{run_id}"
+        target_path = workspace_path or (self.workspaces_dir / f"run_{run_id}")
 
         # Use auth_url for clone if provided (required for private repos)
         clone_url = auth_url or repo_url
 
         def _restore_workspace() -> WorkspaceInfo:
             # Remove existing workspace if it exists
-            if workspace_path.exists():
-                shutil.rmtree(workspace_path)
+            if target_path.exists():
+                shutil.rmtree(target_path)
 
             # Clone the repository with base branch first
-            logger.info(f"Cloning repository to {workspace_path} for restoration")
+            logger.info(f"Cloning repository to {target_path} for restoration")
             repo = git.Repo.clone_from(
                 clone_url,
-                workspace_path,
+                target_path,
                 depth=1,
                 single_branch=False,  # Need to fetch the working branch
                 branch=base_branch,
@@ -818,7 +819,7 @@ class WorkspaceService:
                     repo.remotes.origin.set_url(original_url)
 
             return WorkspaceInfo(
-                path=workspace_path,
+                path=target_path,
                 branch_name=branch_name,
                 base_branch=base_branch,
                 created_at=datetime.utcnow(),

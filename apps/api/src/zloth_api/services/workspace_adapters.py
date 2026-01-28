@@ -69,6 +69,7 @@ class WorkspaceAdapter(Protocol):
         base_branch: str,
         run_id: str,
         auth_url: str | None = None,
+        workspace_path: Path | None = None,
     ) -> ExecutionWorkspaceInfo: ...
 
     async def cleanup(self, *, path: Path, delete_branch: bool) -> None: ...
@@ -138,6 +139,7 @@ class CloneWorkspaceAdapter:
         base_branch: str,
         run_id: str,
         auth_url: str | None = None,
+        workspace_path: Path | None = None,
     ) -> ExecutionWorkspaceInfo:
         """Restore workspace from an existing remote branch.
 
@@ -151,6 +153,7 @@ class CloneWorkspaceAdapter:
             base_branch=base_branch,
             run_id=run_id,
             auth_url=auth_url,
+            workspace_path=workspace_path,
         )
         return ExecutionWorkspaceInfo(
             path=info.path,
@@ -242,6 +245,7 @@ class WorktreeWorkspaceAdapter:
         base_branch: str,
         run_id: str,
         auth_url: str | None = None,
+        workspace_path: Path | None = None,
     ) -> ExecutionWorkspaceInfo:
         """Restore workspace from an existing branch.
 
