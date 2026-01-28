@@ -63,21 +63,6 @@ class RunWorkspaceManager:
             logger.warning(f"Workspace invalid or broken, will create new: {workspace_path}")
             return None
 
-        should_check_default = (base_ref == repo.default_branch) and bool(repo.default_branch)
-        if should_check_default:
-            default_ref = f"origin/{repo.default_branch}"
-            up_to_date = await self.git_service.is_ancestor(
-                repo_path=workspace_path,
-                ancestor=default_ref,
-                descendant="HEAD",
-            )
-            if not up_to_date:
-                logger.info(
-                    "Existing workspace is behind latest default; creating new "
-                    f"(workspace={workspace_path}, default={default_ref})"
-                )
-                return None
-
         workspace_info = ExecutionWorkspaceInfo(
             path=workspace_path,
             branch_name=existing_run.working_branch or "",
@@ -150,6 +135,33 @@ class RunWorkspaceManager:
 
         # 3. Create new workspace
         return await self.create_workspace(run_id, repo, base_ref)
+
+    async def restore_workspace(
+        self,
+        *,
+        repo: Any,
+        branch_name: str,
+        base_ref: str,
+        run_id: str,
+        workspace_path: Path,
+    ) -> ExecutionWorkspaceInfo:
+        """Restore workspace from an existing branch at a fixed path."""
+        auth_url: str | None = None
+        if self.github_service and repo.repo_url:
+            try:
+                owner, repo_name = parse_github_owner_repo(repo.repo_url)
+                auth_url = await self.github_service.get_auth_url(owner, repo_name)
+            except Exception as e:
+                logger.warning(f"Could not get auth_url for restoration: {e}")
+
+        return await self.workspace_adapter.restore_from_branch(
+            repo=repo,
+            branch_name=branch_name,
+            base_branch=base_ref,
+            run_id=run_id,
+            auth_url=auth_url,
+            workspace_path=workspace_path,
+        )
 
     async def create_workspace(
         self,

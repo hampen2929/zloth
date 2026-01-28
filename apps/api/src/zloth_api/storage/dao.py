@@ -244,6 +244,8 @@ class TaskDAO:
             title=title,
             coding_mode=coding_mode,
             base_ref=base_ref,
+            workspace_path=None,
+            working_branch=None,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
         )
@@ -302,6 +304,18 @@ class TaskDAO:
         await self.db.connection.execute(
             "UPDATE tasks SET base_ref = ?, updated_at = ? WHERE id = ?",
             (base_ref, now_iso(), id),
+        )
+        await self.db.connection.commit()
+
+    async def update_workspace(self, id: str, workspace_path: str, working_branch: str) -> None:
+        """Update the task's fixed workspace path and branch."""
+        await self.db.connection.execute(
+            """
+            UPDATE tasks
+            SET workspace_path = ?, working_branch = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (workspace_path, working_branch, now_iso(), id),
         )
         await self.db.connection.commit()
 
@@ -430,6 +444,8 @@ class TaskDAO:
                 "kanban_status": "backlog",
                 "coding_mode": CodingMode.INTERACTIVE.value,
                 "base_ref": None,
+                "workspace_path": None,
+                "working_branch": None,
             },
         )
 

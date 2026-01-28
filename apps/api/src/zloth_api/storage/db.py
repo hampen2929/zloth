@@ -169,6 +169,14 @@ class Database:
             await conn.execute("ALTER TABLE tasks ADD COLUMN base_ref TEXT")
             await conn.commit()
 
+        if "workspace_path" not in task_column_names:
+            await conn.execute("ALTER TABLE tasks ADD COLUMN workspace_path TEXT")
+            await conn.commit()
+
+        if "working_branch" not in task_column_names:
+            await conn.execute("ALTER TABLE tasks ADD COLUMN working_branch TEXT")
+            await conn.commit()
+
     @property
     def connection(self) -> aiosqlite.Connection:
         """Get the database connection."""
