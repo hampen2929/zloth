@@ -28,6 +28,7 @@ from zloth_api.domain.models import (
     Job,
     Run,
     RunCreate,
+    Task,
 )
 from zloth_api.errors import NotFoundError
 from zloth_api.executors.claude_code_executor import ClaudeCodeExecutor, ClaudeCodeOptions
@@ -272,8 +273,13 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if not repo:
             raise NotFoundError("Repo not found", details={"repo_id": task.repo_id})
 
+        if task.base_ref and data.base_ref and data.base_ref != task.base_ref:
+            raise ValueError(
+                f"base_ref mismatch for task {task_id}: {data.base_ref} != {task.base_ref}"
+            )
+
         # Determine effective base_ref:
-        # 1. Explicit base_ref from request takes precedence
+        # 1. Explicit base_ref from request takes precedence (if consistent with task)
         # 2. Otherwise use Task's locked base_ref (set on first run)
         # 3. Fallback to repo's selected_branch or default_branch
         effective_base_ref = (
@@ -312,6 +318,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         for executor_type in cli_executor_types:
             run = await self._create_cli_run(
                 task_id=task_id,
+                task=task,
                 repo=repo,
                 instruction=data.instruction,
                 base_ref=effective_base_ref,
@@ -374,6 +381,7 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
     async def _create_cli_run(
         self,
         task_id: str,
+        task: Task,
         repo: Any,
         instruction: str,
         base_ref: str,
@@ -404,21 +412,21 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             executor_type=executor_type,
         )
 
-        # Check for existing workspace/worktree to reuse
-        # If share_workspace_across_executors is enabled, we look for any workspace
-        # in this task regardless of executor type, allowing work to continue
-        # across different AI tools.
+        # Check for existing workspace/worktree to reuse when task does not yet
+        # have a fixed workspace path/branch.
         share_across = settings.share_workspace_across_executors
-        existing_run = await self.run_dao.get_latest_worktree_run(
-            task_id=task_id,
-            executor_type=executor_type,
-            ignore_executor_type=share_across,
-        )
-        if share_across and existing_run:
-            logger.info(
-                f"Workspace sharing enabled: found existing run with "
-                f"executor={existing_run.executor_type}, branch={existing_run.working_branch}"
+        existing_run = None
+        if not task.workspace_path or not task.working_branch:
+            existing_run = await self.run_dao.get_latest_worktree_run(
+                task_id=task_id,
+                executor_type=executor_type,
+                ignore_executor_type=share_across,
             )
+            if share_across and existing_run:
+                logger.info(
+                    f"Workspace sharing enabled: found existing run with "
+                    f"executor={existing_run.executor_type}, branch={existing_run.working_branch}"
+                )
 
         # Create the run record first to get the run_id for workspace creation
         run = await self.run_dao.create(
@@ -429,19 +437,55 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             base_ref=base_ref,
         )
 
-        # Get or restore workspace using the new method that handles:
-        # 1. Reusing valid existing workspace
-        # 2. Restoring from remote branch if workspace invalid but branch exists
-        # 3. Creating new workspace as fallback
-        workspace_info = await self.workspace_manager.get_or_restore_workspace(
-            existing_run=existing_run,
-            repo=repo,
-            base_ref=base_ref,
-            run_id=run.id,
-        )
+        workspace_path = task.workspace_path
+        working_branch = task.working_branch
+
+        if not workspace_path or not working_branch:
+            if existing_run and existing_run.worktree_path and existing_run.working_branch:
+                workspace_path = existing_run.worktree_path
+                working_branch = existing_run.working_branch
+
+        if workspace_path and working_branch:
+            workspace_dir = Path(workspace_path)
+            is_valid = await self.workspace_adapter.is_valid(workspace_dir)
+            if is_valid:
+                workspace_info = ExecutionWorkspaceInfo(
+                    path=workspace_dir,
+                    branch_name=working_branch,
+                    base_branch=task.base_ref or base_ref,
+                    created_at=datetime.utcnow(),
+                )
+            else:
+                workspace_info = await self.workspace_manager.restore_workspace(
+                    repo=repo,
+                    branch_name=working_branch,
+                    base_ref=task.base_ref or base_ref,
+                    run_id=run.id,
+                    workspace_path=workspace_dir,
+                )
+        else:
+            # No fixed workspace yet (new task) -> create and fix it
+            workspace_info = await self.workspace_manager.create_workspace(run.id, repo, base_ref)
 
         # Update run with workspace info
         await self.workspace_manager.update_run_workspace(run.id, workspace_info)
+
+        if task.workspace_path and task.working_branch:
+            if (
+                task.workspace_path != str(workspace_info.path)
+                or task.working_branch != workspace_info.branch_name
+            ):
+                raise ValueError(
+                    "Task workspace invariant violated: "
+                    f"{task.workspace_path=} {task.working_branch=} "
+                    f"{workspace_info.path=} {workspace_info.branch_name=}"
+                )
+        else:
+            await self.task_dao.update_workspace(
+                task.id,
+                workspace_path=str(workspace_info.path),
+                working_branch=workspace_info.branch_name,
+            )
 
         # Update the run object with new info
         updated_run = await self.run_dao.get(run.id)
