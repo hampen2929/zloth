@@ -123,7 +123,7 @@ sequenceDiagram
     Note over U,G: 1. ワークスペース作成
     U->>Z: タスク作成
     Z->>G: shallow clone (depth=1, single-branch)
-    G->>W: main@commit_A のみ取得
+    G->>W: main の commit_A のみ取得
     Note right of W: mainの最新: commit_A<br/>履歴: commit_Aのみ
 
     Note over U,G: 2. mainブランチが更新される
@@ -145,15 +145,15 @@ sequenceDiagram
 ```mermaid
 graph TB
     subgraph 期待["期待される状態"]
-        E_MAIN["origin/main @ commit_D"]
-        E_WS["workspace/main @ commit_D"]
+        E_MAIN["origin/main: commit_D"]
+        E_WS["workspace/main: commit_D"]
         E_MAIN -.->|同期| E_WS
     end
 
     subgraph 現状["現状"]
-        C_MAIN["origin/main @ commit_D"]
-        C_WS["workspace/main @ commit_A"]
-        C_MAIN -.->|❌ 同期されない| C_WS
+        C_MAIN["origin/main: commit_D"]
+        C_WS["workspace/main: commit_A"]
+        C_MAIN -.->|同期されない| C_WS
     end
 
     style C_WS fill:#ffcccc
@@ -197,7 +197,7 @@ repo = git.Repo.clone_from(
 flowchart TD
     subgraph 初期化["ワークスペース初期化"]
         A[Task作成] --> B[shallow clone<br/>depth=1, single-branch]
-        B --> C[base_branch@作成時点]
+        B --> C[base_branch の作成時点]
     end
 
     subgraph 実行["Run実行"]
@@ -238,7 +238,7 @@ flowchart TD
 flowchart TD
     subgraph 初期化["ワークスペース初期化"]
         A[Task作成] --> B[shallow clone]
-        B --> C[base_branch@作成時点]
+        B --> C[base_branch の作成時点]
     end
 
     subgraph 実行["Run実行"]
@@ -514,7 +514,7 @@ sequenceDiagram
     Note over U,G: 1. ワークスペース作成
     U->>Z: タスク作成
     Z->>G: shallow clone
-    G->>W: main@commit_A
+    G->>W: main の commit_A を取得
 
     Note over U,G: 2. mainブランチが更新される
     G->>G: mainにcommit_B, C, Dが追加
@@ -522,7 +522,7 @@ sequenceDiagram
     Note over U,G: 3. Run実行（修正後）
     U->>Z: 指示を送信
     Z->>G: git fetch origin main
-    G->>W: main@commit_D に更新 ✅
+    G->>W: main を commit_D に更新
     Z->>A: AI実行
     A->>W: mainの内容を確認
     W->>A: commit_Dの内容を返す ✅
