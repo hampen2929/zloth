@@ -478,7 +478,7 @@ class PRService:
             repo_obj,
             owner=owner,
             repo_name=repo_name,
-            ref=run.base_ref or repo_obj.default_branch,
+            ref=latest_run.base_ref if latest_run else repo_obj.default_branch,
         )
         title, description = await self._generate_title_and_description(
             diff=diff,
@@ -1255,7 +1255,7 @@ IMPORTANT INSTRUCTIONS:
             repo_obj,
             owner=owner,
             repo_name=repo_name,
-            ref=run.base_ref or repo_obj.default_branch,
+            ref=latest_run.base_ref if latest_run else repo_obj.default_branch,
         )
 
         # Generate and update based on mode
