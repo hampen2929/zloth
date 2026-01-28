@@ -99,7 +99,11 @@ class Settings(BaseSettings):
     base_dir: Path = Field(
         default_factory=lambda: Path(__file__).parent.parent.parent.parent.parent
     )
-    workspaces_dir: Path | None = Field(default=None)
+    workspaces_dir: Path | None = Field(
+        default=None,
+        description="Directory for git clone workspaces. Defaults to ~/.zloth/workspaces "
+        "to avoid inheriting parent directory's CLAUDE.md",
+    )
     worktrees_dir: Path | None = Field(
         default=None,
         description="Directory for git worktrees. Defaults to ~/.zloth/worktrees "
@@ -227,7 +231,9 @@ class Settings(BaseSettings):
     def model_post_init(self, __context: object) -> None:
         """Set derived paths after initialization."""
         if self.workspaces_dir is None:
-            self.workspaces_dir = self.base_dir / "workspaces"
+            # Default to ~/.zloth/workspaces to avoid inheriting
+            # parent directory's CLAUDE.md when CLI agents run in workspaces
+            self.workspaces_dir = Path.home() / ".zloth" / "workspaces"
         if self.worktrees_dir is None:
             # Default to ~/.zloth/worktrees to avoid inheriting
             # parent directory's CLAUDE.md when CLI agents run in worktrees
