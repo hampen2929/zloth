@@ -493,7 +493,7 @@ export const iconSizes = {
 | `Cmd/Ctrl + /` | ショートカット一覧 | ヘルプ表示 |
 | `Cmd/Ctrl + ,` | 設定を開く | Settings モーダル |
 | `Cmd/Ctrl + Enter` | 送信 | メッセージ送信 |
-| `Cmd/Ctrl + N` | 撮影 | ホームへ移動 |
+| `Cmd/Ctrl + N` | 新規タスク | ホームへ移動 |
 | `Cmd/Ctrl + 1/2/3` | タブ切替 | Summary/Diff/Logs |
 | `Escape` | 入力クリア/モーダル閉じ | コンテキストに応じて |
 | `/` | 入力欄フォーカス | クイック入力 |

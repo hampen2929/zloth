@@ -84,7 +84,7 @@ export function getShortcutsList(): { key: string; description: string }[] {
   return [
     { key: `${mod} + ,`, description: '設定を開く' },
     { key: `${mod} + /`, description: 'ショートカット一覧を表示' },
-    { key: `${mod} + N`, description: '撮影' },
+    { key: `${mod} + N`, description: '新規タスク' },
     { key: `${mod} + Enter`, description: 'タスクを送信' },
     { key: '/', description: '入力欄にフォーカス' },
     { key: 'Escape', description: 'モーダルを閉じる' },
