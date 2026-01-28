@@ -10,12 +10,22 @@ import pytest
 
 from zloth_api.domain.models import Repo
 from zloth_api.services.diff_parser import parse_unified_diff
-from zloth_api.services.git_service import GitService, PullResult, PushResult, WorktreeInfo
+from zloth_api.services.git_service import (
+    GitService,
+    MergeResult as GitMergeResult,
+    PullResult,
+    PushResult,
+    WorktreeInfo,
+)
 from zloth_api.services.workspace_adapters import (
     CloneWorkspaceAdapter,
     WorktreeWorkspaceAdapter,
 )
-from zloth_api.services.workspace_service import MergeResult, WorkspaceInfo, WorkspaceService
+from zloth_api.services.workspace_service import (
+    MergeResult as WorkspaceMergeResult,
+    WorkspaceInfo,
+    WorkspaceService,
+)
 from zloth_api.utils.github_url import parse_github_owner_repo
 
 
@@ -64,6 +74,7 @@ class TestDiffParser:
 @pytest.mark.asyncio
 async def test_clone_workspace_adapter_maps_results() -> None:
     ws = AsyncMock(spec=WorkspaceService)
+    git = AsyncMock(spec=GitService)
     created_at = datetime.utcnow()
     ws.create_workspace.return_value = WorkspaceInfo(
         path=Path("/tmp/run_x"),
@@ -71,11 +82,18 @@ async def test_clone_workspace_adapter_maps_results() -> None:
         base_branch="main",
         created_at=created_at,
     )
-    ws.sync_with_remote.return_value = MergeResult(success=False, has_conflicts=True, conflict_files=["a"])
+    ws.sync_with_remote.return_value = WorkspaceMergeResult(
+        success=False, has_conflicts=True, conflict_files=["a"]
+    )
     ws.is_behind_remote.return_value = True
     ws.is_valid_workspace.return_value = True
 
-    adapter = CloneWorkspaceAdapter(ws)
+    git.push_with_retry.return_value = PushResult(success=True, required_pull=True)
+    ws.merge_base_branch.return_value = WorkspaceMergeResult(
+        success=False, has_conflicts=True, conflict_files=["b"]
+    )
+
+    adapter = CloneWorkspaceAdapter(ws, git)
 
     repo = Repo(
         id="r1",
@@ -98,6 +116,15 @@ async def test_clone_workspace_adapter_maps_results() -> None:
     assert sync.has_conflicts is True
     assert sync.conflict_files == ["a"]
 
+    base_merge = await adapter.merge_base_branch(Path("/tmp/run_x"), base_branch="main")
+    assert base_merge.success is False
+    assert base_merge.has_conflicts is True
+    assert base_merge.conflict_files == ["b"]
+
+    pushed = await adapter.push(Path("/tmp/run_x"), branch="zloth/1234")
+    assert pushed.success is True
+    assert pushed.required_pull is True
+
 
 @pytest.mark.asyncio
 async def test_worktree_workspace_adapter_maps_results() -> None:
@@ -113,6 +140,7 @@ async def test_worktree_workspace_adapter_maps_results() -> None:
     git.is_behind_remote.return_value = False
     git.is_valid_worktree.return_value = True
     git.push_with_retry.return_value = PushResult(success=True, required_pull=True)
+    git.merge_base_branch.return_value = GitMergeResult(success=True)
 
     adapter = WorktreeWorkspaceAdapter(git)
 
@@ -138,3 +166,5 @@ async def test_worktree_workspace_adapter_maps_results() -> None:
     assert pushed.success is True
     assert pushed.required_pull is True
 
+    base_merge = await adapter.merge_base_branch(Path("/tmp/run_x"), base_branch="main")
+    assert base_merge.success is True
