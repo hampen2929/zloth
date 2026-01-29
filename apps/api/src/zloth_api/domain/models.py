@@ -416,10 +416,7 @@ class AgentConstraints(BaseModel):
         default_factory=lambda: [
             "git commit",
             "git push",
-            "git checkout",
             "git reset --hard",
-            "git rebase",
-            "git merge",
         ],
         description="Git commands that are forbidden for agents",
     )
@@ -430,8 +427,12 @@ class AgentConstraints(BaseModel):
             "git log",
             "git show",
             "git branch",
+            "git checkout",
+            "git merge",
+            "git rebase",
+            "git add",
         ],
-        description="Read-only git commands that are allowed",
+        description="Git commands that are allowed for agents (including conflict resolution)",
     )
 
     def to_prompt(self) -> str:
