@@ -578,7 +578,9 @@ class TestReviewDAO:
             workspace_path="/workspaces/review",
         )
         task = await task_dao.create(repo_id=repo.id, title="Review Task")
-        run = await run_dao.create(task_id=task.id, instruction="Do thing", executor_type=ExecutorType.PATCH_AGENT)
+        run = await run_dao.create(
+            task_id=task.id, instruction="Do thing", executor_type=ExecutorType.PATCH_AGENT
+        )
 
         review = Review(
             id=generate_id(),

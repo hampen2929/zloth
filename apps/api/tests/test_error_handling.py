@@ -45,4 +45,3 @@ def test_domain_exception_is_wrapped_with_details() -> None:
     assert body["error"]["code"] == "NOT_FOUND"
     assert body["error"]["request_id"] == "rid-123"
     assert body["error"]["details"]["thing_id"] == "t-1"
-
