@@ -12,10 +12,12 @@ from zloth_api.domain.models import Repo
 from zloth_api.services.diff_parser import parse_unified_diff
 from zloth_api.services.git_service import (
     GitService,
-    MergeResult as GitMergeResult,
     PullResult,
     PushResult,
     WorktreeInfo,
+)
+from zloth_api.services.git_service import (
+    MergeResult as GitMergeResult,
 )
 from zloth_api.services.workspace_adapters import (
     CloneWorkspaceAdapter,
@@ -23,6 +25,8 @@ from zloth_api.services.workspace_adapters import (
 )
 from zloth_api.services.workspace_service import (
     MergeResult as WorkspaceMergeResult,
+)
+from zloth_api.services.workspace_service import (
     WorkspaceInfo,
     WorkspaceService,
 )

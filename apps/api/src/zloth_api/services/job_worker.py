@@ -224,28 +224,37 @@ class JobWorker:
     async def _run_loop(self) -> None:
         """Main polling loop that processes jobs."""
         while not self._stop_event.is_set():
-            # Prune completed tasks
-            for job_id, task in list(self._running.items()):
-                if task.done():
-                    self._running.pop(job_id, None)
+            try:
+                # Prune completed tasks
+                for job_id, task in list(self._running.items()):
+                    if task.done():
+                        self._running.pop(job_id, None)
 
-            # If we're at capacity, wait a bit
-            if len(self._running) >= self._max_concurrent:
+                # If we're at capacity, wait a bit
+                if len(self._running) >= self._max_concurrent:
+                    await asyncio.sleep(self._poll_interval_seconds)
+                    continue
+
+                # Try to claim a job
+                job = await self._queue.dequeue(
+                    locked_by=self._worker_id,
+                    visibility_timeout_seconds=settings.job_timeout_seconds,
+                )
+                if not job:
+                    await asyncio.sleep(self._poll_interval_seconds)
+                    continue
+
+                # Execute the job
+                task = asyncio.create_task(self._execute_job(job))
+                self._running[job.id] = task
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "JobWorker loop error (worker_id=%s). Will retry after delay.",
+                    self._worker_id,
+                )
                 await asyncio.sleep(self._poll_interval_seconds)
-                continue
-
-            # Try to claim a job
-            job = await self._queue.dequeue(
-                locked_by=self._worker_id,
-                visibility_timeout_seconds=settings.job_timeout_seconds,
-            )
-            if not job:
-                await asyncio.sleep(self._poll_interval_seconds)
-                continue
-
-            # Execute the job
-            task = asyncio.create_task(self._execute_job(job))
-            self._running[job.id] = task
 
     async def _execute_job(self, job: Job) -> None:
         """Execute a single job with concurrency control."""
