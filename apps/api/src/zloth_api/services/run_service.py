@@ -851,7 +851,15 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
 
             if conflict_files:
                 unique_conflicts = sorted(set(conflict_files))
-                conflict_instruction = self._build_conflict_resolution_instruction(unique_conflicts)
+                await self._resolve_conflicts_with_ai(
+                    run=run,
+                    worktree_path=worktree_info.path,
+                    conflict_files=unique_conflicts,
+                    executor=executor,
+                    executor_name=executor_name,
+                    logs=logs,
+                )
+                conflict_instruction = None
 
             # 1. Record pre-execution status
             pre_status = await self.git_service.get_status(worktree_info.path)
@@ -1146,6 +1154,64 @@ The following files have merge conflicts that MUST be resolved before proceeding
 
 After resolving ALL conflicts, proceed with the original task below.
 """
+
+    async def _resolve_conflicts_with_ai(
+        self,
+        run: Run,
+        worktree_path: Path,
+        conflict_files: builtins.list[str],
+        executor: ClaudeCodeExecutor | CodexExecutor | GeminiExecutor,
+        executor_name: str,
+        logs: builtins.list[str],
+    ) -> None:
+        """Resolve merge conflicts before proceeding with the main task.
+
+        Args:
+            run: Run object.
+            worktree_path: Path to the workspace.
+            conflict_files: List of files with merge conflicts.
+            executor: CLI executor instance.
+            executor_name: Human-readable executor name for logs.
+            logs: Log list to append to.
+        """
+        conflict_instruction = self._build_conflict_resolution_instruction(conflict_files)
+        constraints = AgentConstraints()
+        instruction = (
+            f"{constraints.to_prompt()}\n\n"
+            f"{conflict_instruction}\n\n"
+            "## Task\n"
+            "Resolve the merge conflicts only. Do not make any unrelated changes."
+        )
+
+        await self._log_output(run.id, "Resolving merge conflicts with AI...")
+        logs.append("Resolving merge conflicts before main task execution.")
+
+        result = await executor.execute(
+            worktree_path=worktree_path,
+            instruction=instruction,
+            on_output=lambda line: self._log_output(run.id, line),
+            resume_session_id=None,
+        )
+
+        logs.extend(result.logs)
+
+        if not result.success:
+            raise RuntimeError(f"Conflict resolution failed: {result.error or 'unknown error'}")
+
+        await self._read_and_remove_summary_file(worktree_path, logs)
+
+        remaining_conflicts = await self.workspace_service.get_conflict_files(worktree_path)
+        if remaining_conflicts:
+            remaining = ", ".join(remaining_conflicts)
+            raise RuntimeError(f"Unresolved merge conflicts remain: {remaining}")
+
+        merge_head = worktree_path / ".git" / "MERGE_HEAD"
+        if merge_head.exists():
+            commit_sha = await self.workspace_service.complete_merge(
+                worktree_path,
+                message="Resolve merge conflicts",
+            )
+            logs.append(f"Completed merge after conflict resolution: {commit_sha[:8]}")
 
     def _parse_github_url(self, repo_url: str) -> tuple[str, str]:
         """Backward-compatible wrapper (use parse_github_owner_repo)."""
