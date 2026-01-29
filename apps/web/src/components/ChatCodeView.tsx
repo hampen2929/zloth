@@ -20,10 +20,13 @@ import {
   ClipboardDocumentIcon,
   CodeBracketSquareIcon,
   ChevronDownIcon,
+  ArrowsPointingOutIcon,
 } from '@heroicons/react/24/outline';
 import { ReviewButton } from './ReviewButton';
 import { ReviewResultCard } from './ReviewResultCard';
 import { CIResultCard } from './CIResultCard';
+import { ComparisonModal } from './ComparisonModal';
+import { getComparableRuns } from '@/lib/comparison-utils';
 
 interface ChatCodeViewProps {
   taskId: string;
@@ -60,6 +63,7 @@ export function ChatCodeView({
   const [checkingCI, setCheckingCI] = useState(false);
   const [hasPendingCIChecks, setHasPendingCIChecks] = useState(false);
   const [recentPRCreation, setRecentPRCreation] = useState(false);
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { success, error } = useToast();
   const { copy } = useClipboard();
@@ -110,6 +114,10 @@ export function ChatCodeView({
 
   // Check if patch_agent is used
   const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
+
+  // Check if comparison is possible (2+ executors with succeeded runs)
+  const comparableRuns = useMemo(() => getComparableRuns(sortedRuns), [sortedRuns]);
+  const canCompare = comparableRuns.size >= 2;
 
 
   // Auto-scroll to bottom
@@ -649,7 +657,7 @@ export function ChatCodeView({
       {/* Executor Selector Cards - one per executor type */}
       {uniqueExecutorTypes.length > 0 && (
         <div className="px-4 py-3 border-b border-gray-800">
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {uniqueExecutorTypes.map((executorType) => {
               const stats = getExecutorStats(executorType);
               return (
@@ -662,6 +670,18 @@ export function ChatCodeView({
                 />
               );
             })}
+            {/* Compare button - only shown when 2+ executors have succeeded runs */}
+            {canCompare && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCompareModalOpen(true)}
+                className="ml-auto flex-shrink-0"
+              >
+                <ArrowsPointingOutIcon className="w-4 h-4 mr-1.5" />
+                Compare
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -742,6 +762,12 @@ export function ChatCodeView({
         selectedModelCount={selectedExecutorType === 'patch_agent' ? selectedModels.length : undefined}
       />
 
+      {/* Comparison Modal */}
+      <ComparisonModal
+        isOpen={compareModalOpen}
+        onClose={() => setCompareModalOpen(false)}
+        runs={sortedRuns}
+      />
     </div>
   );
 }
