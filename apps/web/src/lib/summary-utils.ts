@@ -4,18 +4,59 @@
 import type { Run, StructuredSummary, SummaryType } from '@/types';
 
 /**
+ * Check if a log line is metadata/noise that should be skipped for plain text extraction.
+ */
+function isMetadataLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+
+  // Skip common metadata patterns
+  const metadataPatterns = [
+    /^Executing:/i,
+    /^Working directory:/i,
+    /^Instruction length:/i,
+    /^Running in (read-only|full-auto) mode/i,
+    /^Continuing session:/i,
+    /^---\s*codex attempt/i,
+    /^\[system\]/i,
+    /^To continue this session/i,
+    /^session id:/i,
+    /^Detected \d+ changed file/i,
+    /^Committed:/i,
+    /^Pushed to branch:/i,
+    /^Pull(ed)? remote changes/i,
+    /^Push failed/i,
+    /^No changes detected/i,
+    /^codex\s+exec/i,
+    /^claude\s+-p/i,
+  ];
+
+  for (const pattern of metadataPatterns) {
+    if (pattern.test(trimmed)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Extract assistant's response text from logs.
- * Logs may contain JSON lines in stream-json format from Claude Code CLI.
+ * Handles both:
+ * - Claude Code: JSON lines in stream-json format
+ * - Codex/Gemini: Plain text output
  */
 function extractResponseFromLogs(logs: string[]): string {
   const responseTexts: string[] = [];
+  let hasJsonContent = false;
 
+  // First pass: try to extract from JSON format (Claude Code stream-json)
   for (const log of logs) {
-    // Try to parse as JSON (stream-json format)
     if (log.startsWith('{')) {
       try {
         const data = JSON.parse(log);
         if (data.type === 'assistant' && data.message?.content) {
+          hasJsonContent = true;
           const content = data.message.content;
           if (Array.isArray(content)) {
             for (const block of content) {
@@ -26,15 +67,44 @@ function extractResponseFromLogs(logs: string[]): string {
           }
         }
       } catch {
-        // Not valid JSON, skip
+        // Not valid JSON, skip in this pass
       }
     }
   }
 
-  // Join all response texts
-  const fullResponse = responseTexts.join('\n').trim();
+  // If we found JSON content, return it
+  if (hasJsonContent && responseTexts.length > 0) {
+    return responseTexts.join('\n').trim();
+  }
 
-  return fullResponse;
+  // Second pass: extract plain text for Codex/Gemini or when no JSON content found
+  // This handles CLI executors that output plain text
+  const plainTextLines: string[] = [];
+
+  for (const log of logs) {
+    // Skip JSON lines (already processed or noise)
+    if (log.startsWith('{') || log.startsWith('[')) {
+      continue;
+    }
+
+    // Skip metadata lines
+    if (isMetadataLine(log)) {
+      continue;
+    }
+
+    // Add meaningful content
+    const trimmed = log.trim();
+    if (trimmed && trimmed.length > 0) {
+      plainTextLines.push(trimmed);
+    }
+  }
+
+  // Return collected plain text
+  if (plainTextLines.length > 0) {
+    return plainTextLines.join('\n').trim();
+  }
+
+  return '';
 }
 
 /**
