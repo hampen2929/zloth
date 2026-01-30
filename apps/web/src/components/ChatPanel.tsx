@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { tasksApi, runsApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType } from '@/types';
+import type { Message, ModelProfile, ExecutorType, ImageAttachment } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -13,6 +13,8 @@ import {
   ChatBubbleLeftIcon,
   CheckIcon,
   CommandLineIcon,
+  PhotoIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 interface PendingMessage {
@@ -21,6 +23,17 @@ interface PendingMessage {
   status: 'pending' | 'error';
   errorMessage?: string;
 }
+
+interface AttachedImage {
+  id: string;
+  file: File;
+  preview: string;  // Data URL for preview
+}
+
+// Image upload constants
+const MAX_IMAGES = 10;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
 interface ChatPanelProps {
   taskId: string;
@@ -48,8 +61,10 @@ export function ChatPanel({
   const [usePatchAgent, setUsePatchAgent] = useState(executorType === 'patch_agent');
   const [loading, setLoading] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { success, error } = useToast();
 
   // Auto-scroll to bottom
@@ -96,6 +111,112 @@ export function ChatPanel({
     }
   }, [input]);
 
+  // Process image files and add to attachments
+  const processImageFiles = useCallback((files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    const validFiles: File[] = [];
+
+    for (const file of fileArray) {
+      // Check type
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        error(`Unsupported image type: ${file.type}. Allowed: PNG, JPEG, GIF, WebP`);
+        continue;
+      }
+      // Check size
+      if (file.size > MAX_IMAGE_SIZE) {
+        error(`Image too large: ${file.name}. Maximum size is 10MB.`);
+        continue;
+      }
+      validFiles.push(file);
+    }
+
+    // Check total count
+    const totalImages = attachedImages.length + validFiles.length;
+    if (totalImages > MAX_IMAGES) {
+      error(`Maximum ${MAX_IMAGES} images allowed per message.`);
+      const allowedCount = MAX_IMAGES - attachedImages.length;
+      validFiles.splice(allowedCount);
+    }
+
+    // Create preview URLs and add to state
+    for (const file of validFiles) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const preview = e.target?.result as string;
+        const newImage: AttachedImage = {
+          id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          file,
+          preview,
+        };
+        setAttachedImages((prev) => [...prev, newImage]);
+      };
+      reader.readAsDataURL(file);
+    }
+  }, [attachedImages.length, error]);
+
+  // Handle file input change
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      processImageFiles(e.target.files);
+      // Reset input to allow selecting the same file again
+      e.target.value = '';
+    }
+  }, [processImageFiles]);
+
+  // Handle paste event for clipboard images
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    const imageFiles: File[] = [];
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFiles.push(file);
+        }
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault(); // Prevent pasting as text
+      processImageFiles(imageFiles);
+    }
+  }, [processImageFiles]);
+
+  // Remove attached image
+  const removeImage = useCallback((imageId: string) => {
+    setAttachedImages((prev) => prev.filter((img) => img.id !== imageId));
+  }, []);
+
+  // Convert attached images to ImageAttachment format for API
+  const convertImagesToAttachments = async (): Promise<ImageAttachment[]> => {
+    const attachments: ImageAttachment[] = [];
+
+    for (const img of attachedImages) {
+      // Read file as base64
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data URL prefix (e.g., "data:image/png;base64,")
+          const base64Data = result.split(',')[1];
+          resolve(base64Data);
+        };
+        reader.readAsDataURL(img.file);
+      });
+
+      attachments.push({
+        id: img.id,
+        filename: img.file.name || 'pasted-image',
+        content_type: img.file.type,
+        size_bytes: img.file.size,
+        data: base64,
+      });
+    }
+
+    return attachments;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -107,19 +228,27 @@ export function ChatPanel({
     // Optimistic UI: Clear input and show pending message immediately
     const pendingId = `pending-${Date.now()}`;
     const messageContent = input.trim();
+    const currentImages = [...attachedImages]; // Save current images before clearing
 
     setPendingMessages((prev) => [
       ...prev,
       { id: pendingId, content: messageContent, status: 'pending' },
     ]);
     setInput('');
+    setAttachedImages([]); // Clear images
     setLoading(true);
 
     try {
+      // Convert images to API format
+      const imageAttachments = currentImages.length > 0
+        ? await convertImagesToAttachments()
+        : undefined;
+
       // Add user message and get the message ID
       const message = await tasksApi.addMessage(taskId, {
         role: 'user',
         content: messageContent,
+        images: imageAttachments,
       });
 
       // Build executor_types array
@@ -134,6 +263,7 @@ export function ChatPanel({
         executor_types: executorTypesToRun,
         model_ids: usePatchAgent && selectedModels.length > 0 ? selectedModels : undefined,
         message_id: message.id,
+        images: imageAttachments,
       });
 
       // Show success message
@@ -237,7 +367,33 @@ export function ChatPanel({
                     <CpuChipIcon className="w-4 h-4" />
                   )}
                   <span className="capitalize font-medium">{msg.role}</span>
+                  {msg.images && msg.images.length > 0 && (
+                    <span className="flex items-center gap-1 text-gray-600">
+                      <PhotoIcon className="w-3 h-3" />
+                      {msg.images.length} image{msg.images.length > 1 ? 's' : ''}
+                    </span>
+                  )}
                 </div>
+                {/* Image attachments */}
+                {msg.images && msg.images.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {msg.images.map((img) => (
+                      <a
+                        key={img.id}
+                        href={`data:${img.content_type};base64,${img.data}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        <img
+                          src={`data:${img.content_type};base64,${img.data}`}
+                          alt={img.filename}
+                          className="max-w-[200px] max-h-[150px] object-contain rounded border border-gray-600 hover:border-blue-500 transition-colors cursor-pointer"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                )}
                 <div className="text-sm whitespace-pre-wrap text-gray-200">
                   {msg.content}
                 </div>
@@ -410,12 +566,70 @@ export function ChatPanel({
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="border-t border-gray-800 p-3">
+        {/* Image preview area */}
+        {attachedImages.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3 p-2 bg-gray-800/50 rounded-lg border border-gray-700">
+            {attachedImages.map((img) => (
+              <div key={img.id} className="relative group">
+                <img
+                  src={img.preview}
+                  alt={img.file.name || 'Attached image'}
+                  className="w-16 h-16 object-cover rounded border border-gray-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeImage(img.id)}
+                  className={cn(
+                    'absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full',
+                    'bg-red-600 hover:bg-red-500 text-white',
+                    'flex items-center justify-center',
+                    'opacity-0 group-hover:opacity-100 transition-opacity'
+                  )}
+                  aria-label={`Remove ${img.file.name || 'image'}`}
+                >
+                  <XMarkIcon className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex gap-2">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            multiple
+            onChange={handleFileSelect}
+            className="hidden"
+            aria-hidden="true"
+          />
+
+          {/* Image upload button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || attachedImages.length >= MAX_IMAGES}
+            className={cn(
+              'self-end p-2 rounded transition-colors',
+              'bg-gray-800 border border-gray-700',
+              'hover:bg-gray-700 hover:border-gray-600',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500'
+            )}
+            title={`Attach images (${attachedImages.length}/${MAX_IMAGES})`}
+            aria-label="Attach images"
+          >
+            <PhotoIcon className="w-5 h-5 text-gray-400" />
+          </button>
+
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter your instructions..."
+            onPaste={handlePaste}
+            placeholder="Enter your instructions... (paste images with Ctrl/Cmd+V)"
             rows={1}
             className={cn(
               'flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded resize-none',
@@ -444,6 +658,7 @@ export function ChatPanel({
         <div className="flex items-center justify-between mt-2">
           <span className="text-xs text-gray-500">
             {getShortcutText('Enter')} to submit
+            {attachedImages.length > 0 && ` • ${attachedImages.length} image${attachedImages.length > 1 ? 's' : ''} attached`}
           </span>
           <span className="text-xs text-gray-500">
             {(() => {

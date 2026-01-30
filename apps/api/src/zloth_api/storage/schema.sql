@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS messages (
     task_id TEXT NOT NULL REFERENCES tasks(id),
     role TEXT NOT NULL,              -- user, assistant, system
     content TEXT NOT NULL,
+    images TEXT NOT NULL DEFAULT '[]',  -- JSON array of ImageAttachment objects
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

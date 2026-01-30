@@ -229,11 +229,28 @@ class TaskDetail(Task):
 # ============================================================
 
 
+class ImageAttachment(BaseModel):
+    """Image attachment for messages.
+
+    Images are stored as base64-encoded data with metadata.
+    Supported formats: PNG, JPEG, GIF, WebP.
+    """
+
+    id: str = Field(..., description="Unique image ID")
+    filename: str = Field(..., description="Original filename")
+    content_type: str = Field(..., description="MIME type (image/png, image/jpeg, etc.)")
+    size_bytes: int = Field(..., description="File size in bytes")
+    data: str = Field(..., description="Base64-encoded image data")
+
+
 class MessageCreate(BaseModel):
     """Request for creating a Message."""
 
     role: MessageRole
     content: str
+    images: list[ImageAttachment] | None = Field(
+        None, description="Optional image attachments (max 10)"
+    )
 
 
 class Message(BaseModel):
@@ -243,6 +260,7 @@ class Message(BaseModel):
     task_id: str
     role: MessageRole
     content: str
+    images: list[ImageAttachment] = Field(default_factory=list, description="Image attachments")
     created_at: datetime
 
     class Config:
@@ -271,6 +289,9 @@ class RunCreate(BaseModel):
         description="List of executor types to run in parallel (overrides executor_type)",
     )
     message_id: str | None = Field(None, description="ID of the triggering message")
+    images: list[ImageAttachment] | None = Field(
+        None, description="Optional image attachments for multi-modal instruction"
+    )
 
 
 class RunSummary(BaseModel):
@@ -489,6 +510,9 @@ class AgentRequest(BaseModel):
     instruction: str = Field(..., description="Natural language instruction")
     context: dict[str, Any] | None = Field(None, description="Additional context")
     constraints: AgentConstraints = Field(default_factory=lambda: AgentConstraints())
+    images: list[ImageAttachment] | None = Field(
+        None, description="Optional image attachments for multi-modal instruction"
+    )
 
 
 class AgentResult(BaseModel):

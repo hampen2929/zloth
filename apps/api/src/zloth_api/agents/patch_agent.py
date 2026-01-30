@@ -103,11 +103,13 @@ class PatchAgent(BaseAgent):
         user_prompt = self._build_prompt(request.instruction, file_contents)
 
         # Generate patch from LLM
-        logs.append("Calling LLM to generate patch...")
+        image_info = f" (with {len(request.images)} images)" if request.images else ""
+        logs.append(f"Calling LLM to generate patch{image_info}...")
         try:
             raw_response = await self.llm_client.generate(
                 messages=[{"role": "user", "content": user_prompt}],
                 system=SYSTEM_PROMPT,
+                images=request.images,
             )
         except Exception as e:
             return AgentResult(

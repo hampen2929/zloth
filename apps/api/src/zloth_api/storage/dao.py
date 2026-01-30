@@ -31,6 +31,7 @@ from zloth_api.domain.models import (
     CICheck,
     CIJobResult,
     FileDiff,
+    ImageAttachment,
     Job,
     Message,
     ModelProfile,
@@ -456,17 +457,36 @@ class MessageDAO:
     def __init__(self, db: Database):
         self.db = db
 
-    async def create(self, task_id: str, role: MessageRole, content: str) -> Message:
-        """Create a new message."""
+    async def create(
+        self,
+        task_id: str,
+        role: MessageRole,
+        content: str,
+        images: list[ImageAttachment] | None = None,
+    ) -> Message:
+        """Create a new message.
+
+        Args:
+            task_id: Task ID.
+            role: Message role (user, assistant, system).
+            content: Message content text.
+            images: Optional list of image attachments.
+
+        Returns:
+            Created Message object.
+        """
         id = generate_id()
         created_at = now_iso()
 
+        # Serialize images to JSON
+        images_json = json.dumps([img.model_dump() for img in images]) if images else "[]"
+
         await self.db.connection.execute(
             """
-            INSERT INTO messages (id, task_id, role, content, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages (id, task_id, role, content, images, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (id, task_id, role.value, content, created_at),
+            (id, task_id, role.value, content, images_json, created_at),
         )
         await self.db.connection.commit()
 
@@ -475,6 +495,7 @@ class MessageDAO:
             task_id=task_id,
             role=role,
             content=content,
+            images=images or [],
             created_at=datetime.fromisoformat(created_at),
         )
 
@@ -488,7 +509,19 @@ class MessageDAO:
         return [self._row_to_model(row) for row in rows]
 
     def _row_to_model(self, row: Any) -> Message:
-        return row_to_model(Message, row)
+        # Parse images JSON
+        images_json = row["images"] if "images" in row.keys() else "[]"
+        images_data = json.loads(images_json) if images_json else []
+        images = [ImageAttachment(**img) for img in images_data]
+
+        return Message(
+            id=row["id"],
+            task_id=row["task_id"],
+            role=MessageRole(row["role"]),
+            content=row["content"],
+            images=images,
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
 
 
 class RunDAO:

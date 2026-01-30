@@ -74,18 +74,29 @@ export interface TaskDetail extends Task {
   ci_checks: CICheckSummary[];
 }
 
+// Image Attachment
+export interface ImageAttachment {
+  id: string;
+  filename: string;
+  content_type: string;  // image/png, image/jpeg, image/gif, image/webp
+  size_bytes: number;
+  data: string;  // Base64-encoded image data
+}
+
 // Message
 export interface Message {
   id: string;
   task_id: string;
   role: MessageRole;
   content: string;
+  images: ImageAttachment[];
   created_at: string;
 }
 
 export interface MessageCreate {
   role: MessageRole;
   content: string;
+  images?: ImageAttachment[];  // Optional image attachments (max 10)
 }
 
 // Run
@@ -161,6 +172,7 @@ export interface RunCreate {
   executor_type?: ExecutorType;
   executor_types?: ExecutorType[];  // Multiple CLI executors for parallel execution
   message_id?: string;
+  images?: ImageAttachment[];  // Optional image attachments for multi-modal instruction
 }
 
 export interface RunsCreated {

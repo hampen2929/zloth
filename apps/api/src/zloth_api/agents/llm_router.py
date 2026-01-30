@@ -1,7 +1,9 @@
 """LLM Router for multi-provider support."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from anthropic import AsyncAnthropic
@@ -10,6 +12,9 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from zloth_api.domain.enums import Provider
+
+if TYPE_CHECKING:
+    from zloth_api.domain.models import ImageAttachment
 
 
 @dataclass
@@ -35,22 +40,24 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         system: str | None = None,
+        images: list[ImageAttachment] | None = None,
     ) -> str:
         """Generate a response from the LLM.
 
         Args:
             messages: List of messages with 'role' and 'content'.
             system: Optional system prompt.
+            images: Optional list of image attachments for multi-modal input.
 
         Returns:
             Generated text response.
         """
         if self.config.provider == Provider.OPENAI:
-            return await self._generate_openai(messages, system)
+            return await self._generate_openai(messages, system, images)
         elif self.config.provider == Provider.ANTHROPIC:
-            return await self._generate_anthropic(messages, system)
+            return await self._generate_anthropic(messages, system, images)
         elif self.config.provider == Provider.GOOGLE:
-            return await self._generate_google(messages, system)
+            return await self._generate_google(messages, system, images)
         else:
             raise ValueError(f"Unsupported provider: {self.config.provider}")
 
@@ -58,15 +65,31 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         system: str | None = None,
+        images: list[ImageAttachment] | None = None,
     ) -> str:
         """Generate using OpenAI API."""
         if self._openai_client is None:
             self._openai_client = AsyncOpenAI(api_key=self.config.api_key)
 
-        all_messages = []
+        all_messages: list[dict[str, Any]] = []
         if system:
             all_messages.append({"role": "system", "content": system})
-        all_messages.extend(messages)
+
+        # Handle multi-modal messages with images
+        for msg in messages:
+            if msg["role"] == "user" and images:
+                # Build multi-modal content for user message with images
+                content: list[dict[str, Any]] = [{"type": "text", "text": msg["content"]}]
+                for img in images:
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{img.content_type};base64,{img.data}"},
+                        }
+                    )
+                all_messages.append({"role": "user", "content": content})
+            else:
+                all_messages.append(msg)
 
         # gpt-5-mini uses max_completion_tokens and doesn't support temperature
         typed_messages = cast(list[ChatCompletionMessageParam], all_messages)
@@ -90,12 +113,34 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         system: str | None = None,
+        images: list[ImageAttachment] | None = None,
     ) -> str:
         """Generate using Anthropic API."""
         if self._anthropic_client is None:
             self._anthropic_client = AsyncAnthropic(api_key=self.config.api_key)
 
-        typed_messages = cast(list[MessageParam], messages)
+        # Handle multi-modal messages with images
+        formatted_messages: list[dict[str, Any]] = []
+        for msg in messages:
+            if msg["role"] == "user" and images:
+                # Build multi-modal content for user message with images
+                content: list[dict[str, Any]] = [{"type": "text", "text": msg["content"]}]
+                for img in images:
+                    content.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": img.content_type,
+                                "data": img.data,
+                            },
+                        }
+                    )
+                formatted_messages.append({"role": "user", "content": content})
+            else:
+                formatted_messages.append(msg)
+
+        typed_messages = cast(list[MessageParam], formatted_messages)
         response = await self._anthropic_client.messages.create(
             model=self.config.model_name,
             max_tokens=self.config.max_tokens,
@@ -115,21 +160,31 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         system: str | None = None,
+        images: list[ImageAttachment] | None = None,
     ) -> str:
         """Generate using Google Generative AI API (REST)."""
         # Use REST API for async support
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.config.model_name}:generateContent"
 
-        # Convert messages to Google format
+        # Convert messages to Google format with multi-modal support
         contents = []
         for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
-            contents.append(
-                {
-                    "role": role,
-                    "parts": [{"text": msg["content"]}],
-                }
-            )
+            parts: list[dict[str, Any]] = [{"text": msg["content"]}]
+
+            # Add images for user messages
+            if role == "user" and images:
+                for img in images:
+                    parts.append(
+                        {
+                            "inline_data": {
+                                "mime_type": img.content_type,
+                                "data": img.data,
+                            }
+                        }
+                    )
+
+            contents.append({"role": role, "parts": parts})
 
         request_body: dict[str, Any] = {
             "contents": contents,

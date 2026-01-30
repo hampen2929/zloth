@@ -221,15 +221,42 @@ async def add_message(
     task_dao: TaskDAO = Depends(get_task_dao),
     message_dao: MessageDAO = Depends(get_message_dao),
 ) -> Message:
-    """Add a message to a task."""
+    """Add a message to a task.
+
+    Supports optional image attachments. Images should be provided as base64-encoded
+    data with metadata. Maximum 10 images per message, max 10MB per image.
+    Supported formats: PNG, JPEG, GIF, WebP.
+    """
     task = await task_dao.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Validate images if present
+    if data.images:
+        if len(data.images) > 10:
+            raise HTTPException(status_code=400, detail="Maximum 10 images per message allowed")
+
+        allowed_types = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+        max_size = 10 * 1024 * 1024  # 10MB
+
+        for img in data.images:
+            if img.content_type not in allowed_types:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported image type: {img.content_type}. "
+                    f"Allowed: {', '.join(allowed_types)}",
+                )
+            if img.size_bytes > max_size:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image too large: {img.filename}. Maximum size is 10MB.",
+                )
 
     message = await message_dao.create(
         task_id=task_id,
         role=data.role,
         content=data.content,
+        images=data.images,
     )
 
     await task_dao.update_timestamp(task_id)

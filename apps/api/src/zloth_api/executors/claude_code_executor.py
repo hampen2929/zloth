@@ -1,15 +1,23 @@
 """Claude Code CLI executor for running Claude Code in worktrees."""
 
+from __future__ import annotations
+
 import asyncio
+import base64
 import json
 import logging
 import os
 import re
+import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from zloth_api.domain.models import FileDiff
+
+if TYPE_CHECKING:
+    from zloth_api.domain.models import ImageAttachment
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +120,7 @@ class ClaudeCodeExecutor:
         on_output: Callable[[str], Awaitable[None]] | None = None,
         resume_session_id: str | None = None,
         read_only: bool = False,
+        images: list[ImageAttachment] | None = None,
     ) -> ExecutorResult:
         """Execute claude CLI with the given instruction.
 
@@ -121,12 +130,14 @@ class ClaudeCodeExecutor:
             on_output: Optional callback for streaming output.
             resume_session_id: Optional session ID to resume a previous conversation.
             read_only: If True, run in plan mode (read-only, no file modifications).
+            images: Optional list of image attachments for multi-modal input.
 
         Returns:
             ExecutorResult with success status, patch, and logs.
         """
         logs: list[str] = []
         output_lines: list[str] = []
+        temp_image_files: list[Path] = []
 
         # Prepare environment
         env = os.environ.copy()
@@ -147,6 +158,16 @@ class ClaudeCodeExecutor:
             "--output-format",
             "stream-json",  # Streaming JSON for session_id extraction
         ]
+
+        # Handle image attachments
+        if images:
+            try:
+                temp_image_files = await self._save_images_to_temp(images, logs)
+                for temp_file in temp_image_files:
+                    cmd.extend(["--images", str(temp_file)])
+                logs.append(f"Added {len(temp_image_files)} image(s) to command")
+            except Exception as e:
+                logs.append(f"Warning: Failed to process images: {e}")
 
         # Permission mode: read_only uses plan mode, otherwise use dangerously-skip-permissions
         if read_only:
@@ -303,6 +324,65 @@ class ClaudeCodeExecutor:
                 logs=logs,
                 error=str(e),
             )
+        finally:
+            # Clean up temporary image files
+            if temp_image_files:
+                self._cleanup_temp_files(temp_image_files, logs)
+
+    async def _save_images_to_temp(
+        self,
+        images: list[ImageAttachment],
+        logs: list[str],
+    ) -> list[Path]:
+        """Save image attachments to temporary files for CLI consumption.
+
+        Args:
+            images: List of image attachments with base64-encoded data.
+            logs: Log list to append to.
+
+        Returns:
+            List of paths to temporary image files.
+        """
+        temp_files: list[Path] = []
+
+        # Map content types to extensions
+        ext_map = {
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+        }
+
+        for img in images:
+            ext = ext_map.get(img.content_type, ".png")
+
+            # Create temp file with appropriate extension
+            fd, temp_path = tempfile.mkstemp(suffix=ext, prefix="zloth_img_")
+            try:
+                # Decode base64 and write to file
+                image_data = base64.b64decode(img.data)
+                os.write(fd, image_data)
+                temp_files.append(Path(temp_path))
+                logs.append(f"Saved temp image: {img.filename} -> {temp_path}")
+            finally:
+                os.close(fd)
+
+        return temp_files
+
+    def _cleanup_temp_files(self, temp_files: list[Path], logs: list[str]) -> None:
+        """Clean up temporary image files.
+
+        Args:
+            temp_files: List of temporary file paths to delete.
+            logs: Log list to append to.
+        """
+        for temp_file in temp_files:
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+                    logs.append(f"Cleaned up temp file: {temp_file}")
+            except Exception as e:
+                logs.append(f"Warning: Failed to cleanup {temp_file}: {e}")
 
     def _extract_session_id(self, output_lines: list[str]) -> str | None:
         """Extract session ID from Claude CLI output.
