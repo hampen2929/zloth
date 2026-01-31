@@ -249,6 +249,23 @@ setup_repository() {
     echo ""
 }
 
+# Replace a line in .env file safely (handles special characters in value)
+# Usage: replace_env_var "VAR_NAME" "new_value"
+replace_env_var() {
+    local var_name="$1"
+    local new_value="$2"
+    local temp_file
+
+    temp_file=$(mktemp)
+
+    # Use awk to safely replace the line (avoids sed delimiter issues with base64)
+    awk -v var="$var_name" -v val="$new_value" '
+        BEGIN { FS=OFS="=" }
+        $1 == var { print var, val; next }
+        { print }
+    ' .env > "$temp_file" && mv "$temp_file" .env
+}
+
 # Setup environment file
 setup_environment() {
     print_step "Setting up environment configuration..."
@@ -261,8 +278,7 @@ setup_environment() {
             print_warning "Encryption key not configured. Generating new key..."
             local new_key
             new_key=$(generate_encryption_key)
-            sed -i.bak "s/^ZLOTH_ENCRYPTION_KEY=.*/ZLOTH_ENCRYPTION_KEY=$new_key/" .env
-            rm -f .env.bak
+            replace_env_var "ZLOTH_ENCRYPTION_KEY" "$new_key"
             print_success "Encryption key generated and saved"
         else
             print_success "Using existing .env configuration"
@@ -274,14 +290,8 @@ setup_environment() {
         local encryption_key
         encryption_key=$(generate_encryption_key)
 
-        # Replace placeholder with actual key
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            sed -i '' "s/^ZLOTH_ENCRYPTION_KEY=.*/ZLOTH_ENCRYPTION_KEY=$encryption_key/" .env
-        else
-            # Linux
-            sed -i "s/^ZLOTH_ENCRYPTION_KEY=.*/ZLOTH_ENCRYPTION_KEY=$encryption_key/" .env
-        fi
+        # Replace placeholder with actual key (use awk to avoid sed delimiter issues)
+        replace_env_var "ZLOTH_ENCRYPTION_KEY" "$encryption_key"
 
         print_success "Environment file created with encryption key"
     fi
