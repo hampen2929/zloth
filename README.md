@@ -61,14 +61,68 @@ zloth is designed for:
 
 ## Quick Start
 
-### Prerequisites
+### One-liner Installation (Recommended)
+
+The fastest way to get started:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash
+```
+
+This will:
+- Check prerequisites (Docker, Git)
+- Clone the repository
+- Generate encryption key automatically
+- Start all services
+
+After installation, open http://localhost:3000
+
+### Docker Setup (Manual)
+
+If you prefer manual setup:
+
+```bash
+# Clone the repository
+git clone https://github.com/hampen2929/zloth.git
+cd zloth
+
+# Copy and configure environment
+cp .env.example .env
+
+# Generate encryption key
+echo "ZLOTH_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+
+# Start services
+docker compose up -d
+```
+
+Open http://localhost:3000
+
+### Production Deployment (HTTPS)
+
+For production with HTTPS support:
+
+```bash
+# Set your domain
+export ZLOTH_DOMAIN=zloth.example.com
+export ZLOTH_ACME_EMAIL=admin@example.com
+
+# Start production stack
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Development Setup
+
+For contributors and developers:
+
+#### Prerequisites
 
 - Python 3.13+
 - Node.js 20+
 - Git
-- GitHub Personal Access Token (for PR operations)
+- [uv](https://github.com/astral-sh/uv) (Python package manager)
 
-### Development Setup
+#### Setup Steps
 
 1. **Clone the repository**
    ```bash
@@ -91,7 +145,7 @@ zloth is designed for:
 4. **Configure environment**
    ```bash
    cp .env.example .env
-   # Edit .env with your settings
+   echo "ZLOTH_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
    ```
 
 5. **Start the servers**
@@ -106,17 +160,6 @@ zloth is designed for:
    ```
 
 6. **Open http://localhost:3000**
-
-### Docker Setup
-
-```bash
-# Copy and configure environment
-cp .env.example .env
-# Edit .env with your settings
-
-# Start services
-docker-compose up -d
-```
 
 ## Usage
 

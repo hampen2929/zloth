@@ -1,0 +1,75 @@
+# Caddyfile for zloth production deployment
+#
+# This file is used by docker-compose.prod.yml for HTTPS termination.
+#
+# Features:
+#   - Automatic HTTPS via Let's Encrypt
+#   - HTTP to HTTPS redirect
+#   - Reverse proxy to API and Web services
+#   - WebSocket support for real-time updates
+#
+
+# Use environment variable for domain, fallback to localhost
+{$ZLOTH_DOMAIN:localhost} {
+    # TLS configuration
+    # For localhost, use internal CA (self-signed)
+    # For real domains, Let's Encrypt is used automatically
+    @localhost host localhost
+    tls {$ZLOTH_ACME_EMAIL:internal}
+
+    # API routes
+    handle /v1/* {
+        reverse_proxy api:8000
+    }
+
+    handle /health {
+        reverse_proxy api:8000
+    }
+
+    handle /docs {
+        reverse_proxy api:8000
+    }
+
+    handle /openapi.json {
+        reverse_proxy api:8000
+    }
+
+    # WebSocket support for API
+    handle /ws/* {
+        reverse_proxy api:8000
+    }
+
+    # All other routes go to the web frontend
+    handle {
+        reverse_proxy web:3000
+    }
+
+    # Logging
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+
+    # Security headers
+    header {
+        # Prevent clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Remove server header
+        -Server
+    }
+
+    # Compression
+    encode gzip zstd
+}
+
+# HTTP redirect to HTTPS (for non-localhost)
+http://{$ZLOTH_DOMAIN} {
+    redir https://{$ZLOTH_DOMAIN}{uri} permanent
+}
