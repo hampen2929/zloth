@@ -80,13 +80,19 @@ class GitHubService:
         auto-discover installations from the GitHub App.
         """
         # Check if config exists
-        existing = await self.db.fetch_one("SELECT id FROM github_app_config WHERE id = 1")
+        existing = await self.db.fetch_one(
+            "SELECT id, private_key FROM github_app_config WHERE id = 1"
+        )
 
-        if data.private_key:
+        private_key = data.private_key.strip() if data.private_key else ""
+        if private_key:
             # Encode private key to base64 for storage
-            encoded_key = base64.b64encode(data.private_key.encode()).decode()
+            encoded_key = base64.b64encode(private_key.encode()).decode()
         else:
             encoded_key = None
+
+        if existing and not encoded_key and not existing["private_key"]:
+            raise ValueError("Private key is required to complete configuration")
 
         if existing:
             # Update

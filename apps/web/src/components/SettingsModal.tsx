@@ -344,6 +344,7 @@ export function GitHubAppTab() {
   const [installationId, setInstallationId] = useState('');
   const [loading, setLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [privateKeyError, setPrivateKeyError] = useState<string | null>(null);
   const { success } = useToast();
 
   // When source is 'env', the config is read-only
@@ -361,11 +362,20 @@ export function GitHubAppTab() {
     e.preventDefault();
     setLoading(true);
     setSaveError(null);
+    setPrivateKeyError(null);
+
+    if (!config?.is_configured && !privateKey.trim()) {
+      setPrivateKeyError('Private key is required for initial configuration.');
+      setLoading(false);
+      return;
+    }
+
+    const trimmedPrivateKey = privateKey.trim();
 
     try {
       await githubApi.saveConfig({
         app_id: appId,
-        private_key: privateKey || undefined,
+        private_key: trimmedPrivateKey || undefined,
         installation_id: installationId || undefined,
       });
       mutate('github-config');
@@ -468,10 +478,17 @@ export function GitHubAppTab() {
           <Textarea
             label="Private Key"
             value={privateKey}
-            onChange={(e) => setPrivateKey(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setPrivateKey(value);
+              if (privateKeyError && value.trim()) {
+                setPrivateKeyError(null);
+              }
+            }}
             placeholder="-----BEGIN RSA PRIVATE KEY-----"
             rows={4}
             className="font-mono text-xs"
+            error={privateKeyError || undefined}
             hint={config?.is_configured
               ? 'Leave blank to keep existing key. Paste new key to update.'
               : 'Paste the private key generated from your GitHub App'}
@@ -488,7 +505,7 @@ export function GitHubAppTab() {
 
           <Button
             type="submit"
-            disabled={!appId}
+            disabled={!appId || (!config?.is_configured && !privateKey.trim())}
             isLoading={loading}
             className="w-full"
           >
