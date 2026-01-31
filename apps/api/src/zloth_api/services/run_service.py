@@ -888,10 +888,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 f"[{run.id[:8]}] Instruction length: {len(instruction_with_constraints)} chars"
             )
 
-            # 2.5. Write AGENTS.md for Codex/Gemini to discover constraints
-            # This ensures Codex reliably follows instructions like creating the summary file
-            await self._write_agents_md(worktree_info.path, executor_type, logs)
-
             # 3. Execute the CLI (file editing only)
             logger.info(f"[{run.id[:8]}] Executing CLI...")
             await self._log_output(run.id, f"Launching {executor_name} CLI...")
@@ -940,10 +936,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     session_id=result.session_id or resume_session_id,
                 )
                 return
-
-            # 3.5. Remove generated AGENTS.md (before staging)
-            # This ensures our generated file is not committed
-            await self._remove_agents_md(worktree_info.path, logs)
 
             # 4. Read and remove summary file (before staging)
             summary_from_file = await self._read_and_remove_summary_file(worktree_info.path, logs)
@@ -1089,77 +1081,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             logs.append(f"Warning: Could not read summary file: {e}")
 
         return summary
-
-    async def _write_agents_md(
-        self,
-        worktree_path: Path,
-        executor_type: ExecutorType,
-        logs: builtins.list[str],
-    ) -> None:
-        """Write AGENTS.md file for Codex/Gemini CLI to discover.
-
-        Codex CLI reads AGENTS.md files (similar to how Claude Code reads CLAUDE.md)
-        to get project-specific instructions. We write the constraints to AGENTS.md
-        so that Codex reliably follows instructions like creating the summary file.
-
-        The file is written to the worktree root and will be cleaned up by git reset
-        or removed before commit (since it's not part of the actual changes).
-
-        Args:
-            worktree_path: Path to the worktree.
-            executor_type: Type of executor being used.
-            logs: Log list to append to.
-        """
-        # Only write AGENTS.md for Codex and Gemini (Claude uses CLAUDE.md)
-        if executor_type not in (ExecutorType.CODEX_CLI, ExecutorType.GEMINI_CLI):
-            return
-
-        agents_md_path = worktree_path / "AGENTS.md"
-
-        # Skip if AGENTS.md already exists in the repository
-        if agents_md_path.exists():
-            logs.append("AGENTS.md already exists in repository, skipping generation")
-            return
-
-        try:
-            constraints = AgentConstraints()
-            content = constraints.to_prompt()
-
-            agents_md_path.write_text(content, encoding="utf-8")
-            logs.append("Generated AGENTS.md with execution constraints")
-            logger.info(f"Wrote AGENTS.md to {worktree_path}")
-        except Exception as e:
-            # Non-fatal: log warning but continue execution
-            logs.append(f"Warning: Could not write AGENTS.md: {e}")
-            logger.warning(f"Failed to write AGENTS.md: {e}")
-
-    async def _remove_agents_md(
-        self,
-        worktree_path: Path,
-        logs: builtins.list[str],
-    ) -> None:
-        """Remove the generated AGENTS.md file before staging.
-
-        This ensures the generated AGENTS.md is not committed as part of the changes.
-
-        Args:
-            worktree_path: Path to the worktree.
-            logs: Log list to append to.
-        """
-        agents_md_path = worktree_path / "AGENTS.md"
-
-        # Check if we created it (by looking for our marker in the content)
-        try:
-            if agents_md_path.exists():
-                content = agents_md_path.read_text(encoding="utf-8")
-                # Only remove if it contains our constraint markers
-                if "## Important Constraints" in content and SUMMARY_FILE_PATH in content:
-                    agents_md_path.unlink()
-                    logs.append("Removed generated AGENTS.md")
-                    logger.info(f"Removed generated AGENTS.md from {worktree_path}")
-        except Exception as e:
-            logs.append(f"Warning: Could not remove AGENTS.md: {e}")
-            logger.warning(f"Failed to remove AGENTS.md: {e}")
 
     async def _log_output(self, run_id: str, line: str) -> None:
         """Log output from CLI execution.
