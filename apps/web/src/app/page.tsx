@@ -49,7 +49,14 @@ export default function HomePage() {
 
   // Data fetching
   const { data: models } = useSWR('models', modelsApi.list);
-  const { data: repos, isLoading: reposLoading } = useSWR('github-repos', githubApi.listRepos);
+  const { data: githubConfig, isLoading: githubConfigLoading } = useSWR(
+    'github-config',
+    githubApi.getConfig
+  );
+  const { data: repos, isLoading: reposLoading } = useSWR(
+    githubConfig?.is_configured ? 'github-repos' : null,
+    githubApi.listRepos
+  );
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
     selectedRepo ? `branches-${selectedRepo.owner}-${selectedRepo.name}` : null,
@@ -193,8 +200,8 @@ export default function HomePage() {
   const getValidationErrors = () => {
     const errors: { message: string; action?: { label: string; href: string } }[] = [];
 
-    // Only show GitHub App error after loading completes
-    if (!reposLoading && !repos) {
+    // Only show GitHub App error after config loading completes
+    if (!githubConfigLoading && githubConfig && !githubConfig.is_configured) {
       errors.push({
         message: 'GitHub Appが未設定です',
         action: { label: '設定する', href: '#settings-github' },
