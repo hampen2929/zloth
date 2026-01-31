@@ -1,3 +1,8 @@
+# zloth Docker Compose Configuration
+#
+# Default ports can be customized via environment variables:
+#   ZLOTH_API_PORT=8080 ZLOTH_WEB_PORT=3001 docker compose up -d
+#
 version: '3.8'
 
 services:
@@ -6,7 +11,7 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${ZLOTH_API_PORT:-8000}:8000"
     volumes:
       - ./workspaces:/app/workspaces
       - ./data:/app/data
@@ -28,7 +33,7 @@ services:
       args:
         - API_URL=http://api:8000
     ports:
-      - "3000:3000"
+      - "${ZLOTH_WEB_PORT:-3000}:3000"
     depends_on:
       - api
     restart: unless-stopped

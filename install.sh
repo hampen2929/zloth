@@ -11,6 +11,8 @@
 # Options:
 #   --dir DIR         Installation directory (default: ./zloth)
 #   --branch BRANCH   Git branch to checkout (default: main)
+#   --api-port PORT   API server port (default: 8000)
+#   --web-port PORT   Web UI port (default: 3000)
 #   --no-start        Don't start services after installation
 #   --upgrade         Upgrade existing installation
 #   --help            Show this help message
@@ -28,6 +30,8 @@ NC='\033[0m' # No Color
 # Default values
 INSTALL_DIR="./zloth"
 BRANCH="main"
+API_PORT="8000"
+WEB_PORT="3000"
 START_SERVICES=true
 UPGRADE_MODE=false
 REPO_URL="https://github.com/hampen2929/zloth.git"
@@ -70,6 +74,14 @@ parse_args() {
                 BRANCH="$2"
                 shift 2
                 ;;
+            --api-port)
+                API_PORT="$2"
+                shift 2
+                ;;
+            --web-port)
+                WEB_PORT="$2"
+                shift 2
+                ;;
             --no-start)
                 START_SERVICES=false
                 shift
@@ -97,6 +109,8 @@ show_help() {
     echo "Options:"
     echo "  --dir DIR         Installation directory (default: ./zloth)"
     echo "  --branch BRANCH   Git branch to checkout (default: main)"
+    echo "  --api-port PORT   API server port (default: 8000)"
+    echo "  --web-port PORT   Web UI port (default: 3000)"
     echo "  --no-start        Don't start services after installation"
     echo "  --upgrade         Upgrade existing installation"
     echo "  --help            Show this help message"
@@ -110,6 +124,9 @@ show_help() {
     echo ""
     echo "  # Upgrade existing installation"
     echo "  cd zloth && curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --upgrade"
+    echo ""
+    echo "  # Use custom ports (if defaults are in use)"
+    echo "  curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --api-port 8080 --web-port 3001"
 }
 
 # Check prerequisites
@@ -176,6 +193,96 @@ check_prerequisites() {
             esac
         done
         exit 1
+    fi
+
+    echo ""
+}
+
+# Check if a port is available
+check_port() {
+    local port=$1
+    if command -v ss &> /dev/null; then
+        ! ss -tuln 2>/dev/null | grep -q ":${port} "
+    elif command -v netstat &> /dev/null; then
+        ! netstat -tuln 2>/dev/null | grep -q ":${port} "
+    elif command -v lsof &> /dev/null; then
+        ! lsof -i ":${port}" &>/dev/null
+    else
+        # If no tool available, assume port is free
+        return 0
+    fi
+}
+
+# Find next available port starting from given port
+find_available_port() {
+    local port=$1
+    local max_attempts=10
+
+    for ((i=0; i<max_attempts; i++)); do
+        if check_port "$port"; then
+            echo "$port"
+            return 0
+        fi
+        ((port++))
+    done
+
+    # Return original if no free port found (will fail later with clear error)
+    echo "$1"
+    return 1
+}
+
+# Check and handle port conflicts
+check_ports() {
+    print_step "Checking port availability..."
+
+    local api_available=true
+    local web_available=true
+
+    if ! check_port "$API_PORT"; then
+        api_available=false
+        print_warning "Port $API_PORT (API) is already in use"
+    fi
+
+    if ! check_port "$WEB_PORT"; then
+        web_available=false
+        print_warning "Port $WEB_PORT (Web) is already in use"
+    fi
+
+    if [ "$api_available" = false ] || [ "$web_available" = false ]; then
+        echo ""
+        print_warning "Some ports are already in use."
+        echo ""
+        echo "Options:"
+        echo "  1. Stop the services using those ports"
+        echo "  2. Use different ports with --api-port and --web-port options"
+        echo ""
+
+        # Try to find available ports
+        if [ "$api_available" = false ]; then
+            local suggested_api
+            suggested_api=$(find_available_port "$((API_PORT + 1))")
+            echo "  Suggested API port: $suggested_api"
+        fi
+
+        if [ "$web_available" = false ]; then
+            local suggested_web
+            suggested_web=$(find_available_port "$((WEB_PORT + 1))")
+            echo "  Suggested Web port: $suggested_web"
+        fi
+
+        echo ""
+        echo "Example:"
+        echo "  $0 --api-port ${suggested_api:-8080} --web-port ${suggested_web:-3001}"
+        echo ""
+
+        read -p "Continue anyway? (services will fail to start) [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_error "Installation cancelled due to port conflicts."
+            exit 1
+        fi
+    else
+        print_success "Ports $API_PORT (API) and $WEB_PORT (Web) are available"
     fi
 
     echo ""
@@ -319,11 +426,15 @@ start_services() {
 
     print_step "Starting zloth services..."
 
+    # Set port environment variables for docker-compose
+    export ZLOTH_API_PORT="$API_PORT"
+    export ZLOTH_WEB_PORT="$WEB_PORT"
+
     # Use docker compose (v2) or docker-compose (v1)
     if docker compose version &> /dev/null; then
-        docker compose up -d --build
+        ZLOTH_API_PORT="$API_PORT" ZLOTH_WEB_PORT="$WEB_PORT" docker compose up -d --build
     else
-        docker-compose up -d --build
+        ZLOTH_API_PORT="$API_PORT" ZLOTH_WEB_PORT="$WEB_PORT" docker-compose up -d --build
     fi
 
     print_success "Services started"
@@ -342,7 +453,7 @@ wait_for_services() {
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
-        if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+        if curl -sf "http://localhost:${API_PORT}/health" > /dev/null 2>&1; then
             print_success "API server is ready"
             break
         fi
@@ -371,13 +482,13 @@ print_completion() {
 
     if [ "$START_SERVICES" = true ]; then
         echo "  Access zloth at:"
-        echo "    Web UI:  http://localhost:3000"
-        echo "    API:     http://localhost:8000"
+        echo "    Web UI:  http://localhost:${WEB_PORT}"
+        echo "    API:     http://localhost:${API_PORT}"
         echo ""
     fi
 
     echo "  Next steps:"
-    echo "    1. Open http://localhost:3000 in your browser"
+    echo "    1. Open http://localhost:${WEB_PORT} in your browser"
     echo "    2. Go to Settings and add your LLM API keys"
     echo "    3. (Optional) Configure GitHub App for PR operations"
     echo ""
@@ -395,6 +506,11 @@ main() {
     print_banner
     parse_args "$@"
     check_prerequisites
+
+    # Check port availability before starting (only if services will be started)
+    if [ "$START_SERVICES" = true ]; then
+        check_ports
+    fi
 
     if [ "$UPGRADE_MODE" = false ]; then
         setup_repository
