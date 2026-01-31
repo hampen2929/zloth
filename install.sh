@@ -417,7 +417,47 @@ setup_environment() {
         print_success "Environment file created with encryption key"
     fi
 
+    # Save custom ports to .env if they differ from defaults
+    if [ "$API_PORT" != "8000" ] || [ "$WEB_PORT" != "3000" ]; then
+        # Remove old port settings if they exist
+        grep -v "^ZLOTH_API_PORT=" .env > .env.tmp && mv .env.tmp .env 2>/dev/null || true
+        grep -v "^ZLOTH_WEB_PORT=" .env > .env.tmp && mv .env.tmp .env 2>/dev/null || true
+
+        # Add new port settings
+        echo "" >> .env
+        echo "# Custom ports (set by installer)" >> .env
+        echo "ZLOTH_API_PORT=$API_PORT" >> .env
+        echo "ZLOTH_WEB_PORT=$WEB_PORT" >> .env
+
+        print_success "Custom ports saved to .env (API: $API_PORT, Web: $WEB_PORT)"
+    fi
+
     echo ""
+}
+
+# Ensure docker-compose.yml supports custom ports
+patch_docker_compose() {
+    # Check if docker-compose.yml already supports custom ports
+    if grep -q 'ZLOTH_API_PORT' docker-compose.yml 2>/dev/null; then
+        return 0
+    fi
+
+    print_step "Patching docker-compose.yml for custom port support..."
+
+    # Backup original
+    cp docker-compose.yml docker-compose.yml.bak
+
+    # Patch the ports using sed
+    # Replace "8000:8000" with "${ZLOTH_API_PORT:-8000}:8000"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' 's/"8000:8000"/"${ZLOTH_API_PORT:-8000}:8000"/' docker-compose.yml
+        sed -i '' 's/"3000:3000"/"${ZLOTH_WEB_PORT:-3000}:3000"/' docker-compose.yml
+    else
+        sed -i 's/"8000:8000"/"${ZLOTH_API_PORT:-8000}:8000"/' docker-compose.yml
+        sed -i 's/"3000:3000"/"${ZLOTH_WEB_PORT:-3000}:3000"/' docker-compose.yml
+    fi
+
+    print_success "docker-compose.yml patched for custom ports"
 }
 
 # Create required directories
@@ -535,6 +575,12 @@ main() {
 
     setup_environment
     setup_directories
+
+    # Patch docker-compose.yml if custom ports are used
+    if [ "$API_PORT" != "8000" ] || [ "$WEB_PORT" != "3000" ]; then
+        patch_docker_compose
+    fi
+
     start_services
     wait_for_services
     print_completion
