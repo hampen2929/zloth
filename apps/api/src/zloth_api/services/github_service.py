@@ -79,8 +79,10 @@ class GitHubService:
         Note: installation_id is optional. If not provided, the service will
         auto-discover installations from the GitHub App.
         """
-        # Check if config exists
-        existing = await self.db.fetch_one("SELECT id FROM github_app_config WHERE id = 1")
+        # Check if config exists and has a valid private_key
+        existing = await self.db.fetch_one(
+            "SELECT id, private_key FROM github_app_config WHERE id = 1"
+        )
 
         if data.private_key:
             # Encode private key to base64 for storage
@@ -89,8 +91,12 @@ class GitHubService:
             encoded_key = None
 
         if existing:
+            # Check if existing config has a valid private_key
+            existing_has_valid_key = bool(existing["private_key"])
+
             # Update
             if encoded_key:
+                # New private key provided - update everything
                 await self.db.execute(
                     """
                     UPDATE github_app_config
@@ -100,7 +106,8 @@ class GitHubService:
                     """,
                     (data.app_id, encoded_key, data.installation_id),
                 )
-            else:
+            elif existing_has_valid_key:
+                # No new private key, but existing one is valid - keep it
                 await self.db.execute(
                     """
                     UPDATE github_app_config
@@ -109,8 +116,14 @@ class GitHubService:
                     """,
                     (data.app_id, data.installation_id),
                 )
+            else:
+                # No new private key and existing one is invalid - require new key
+                raise ValueError(
+                    "Private key is required. The existing configuration "
+                    "does not have a valid private key."
+                )
         else:
-            # Insert
+            # Insert - private key is always required for new config
             if not encoded_key:
                 raise ValueError("Private key is required for initial configuration")
             await self.db.execute(
@@ -128,7 +141,12 @@ class GitHubService:
 
         return GitHubAppConfig(
             app_id=data.app_id,
+            app_id_masked=self._mask_value(data.app_id),
             installation_id=data.installation_id,
+            installation_id_masked=self._mask_value(data.installation_id)
+            if data.installation_id
+            else None,
+            has_private_key=True,
             is_configured=True,
             source="db",
         )

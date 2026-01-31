@@ -466,15 +466,15 @@ export function GitHubAppTab() {
           />
 
           <Textarea
-            label="Private Key"
+            label={config?.is_configured && config?.has_private_key ? 'Private Key' : 'Private Key (required)'}
             value={privateKey}
             onChange={(e) => setPrivateKey(e.target.value)}
             placeholder="-----BEGIN RSA PRIVATE KEY-----"
             rows={4}
             className="font-mono text-xs"
-            hint={config?.is_configured
+            hint={config?.is_configured && config?.has_private_key
               ? 'Leave blank to keep existing key. Paste new key to update.'
-              : 'Paste the private key generated from your GitHub App'}
+              : 'Paste the private key generated from your GitHub App (required)'}
           />
 
           <Input
@@ -488,7 +488,7 @@ export function GitHubAppTab() {
 
           <Button
             type="submit"
-            disabled={!appId}
+            disabled={!appId || (!privateKey && (!config?.is_configured || !config?.has_private_key))}
             isLoading={loading}
             className="w-full"
           >
