@@ -35,30 +35,38 @@ class GitHubService:
     async def get_config(self) -> GitHubAppConfig:
         """Get GitHub App configuration status.
 
+        Precedence:
+        1) If BOTH env app_id and env private_key exist → use env.
+        2) Else if DB has app_id and private_key → use DB.
+        3) Otherwise → not configured.
+
         Note: installation_id is optional. If not set, the service will
         auto-discover installations from the GitHub App.
         """
-        # Check environment variables first
-        if settings.github_app_id and settings.github_app_private_key:
-            installation_id = settings.github_app_installation_id or None
+        env_app_id = settings.github_app_id or None
+        env_installation_id = settings.github_app_installation_id or None
+        env_key_present = bool(settings.github_app_private_key)
+
+        # 1) Environment has complete credentials
+        if env_app_id and env_key_present:
             return GitHubAppConfig(
-                app_id=settings.github_app_id,
-                app_id_masked=self._mask_value(settings.github_app_id),
-                installation_id=installation_id,
-                installation_id_masked=self._mask_value(installation_id)
-                if installation_id
+                app_id=env_app_id,
+                app_id_masked=self._mask_value(env_app_id),
+                installation_id=env_installation_id,
+                installation_id_masked=self._mask_value(env_installation_id)
+                if env_installation_id
                 else None,
                 has_private_key=True,
                 is_configured=True,
                 source="env",
             )
 
-        # Check database
+        # 2) Check database credentials
         row = await self.db.fetch_one(
             "SELECT app_id, installation_id, private_key FROM github_app_config WHERE id = 1"
         )
-        if row and row["app_id"] and row["private_key"]:
-            installation_id = row["installation_id"] if row["installation_id"] else None
+        if row and (row["app_id"] or None) and (row["private_key"] or None):
+            installation_id = row["installation_id"] or None
             return GitHubAppConfig(
                 app_id=row["app_id"],
                 app_id_masked=self._mask_value(row["app_id"]),
@@ -71,6 +79,7 @@ class GitHubService:
                 source="db",
             )
 
+        # 3) Not configured
         return GitHubAppConfig(is_configured=False)
 
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
@@ -88,9 +97,10 @@ class GitHubService:
         )
 
         encoded_key: str | None
-        if data.private_key:
+        # Normalize incoming key: treat whitespace-only as missing
+        if data.private_key and data.private_key.strip():
             # Encode private key (PEM or raw text) to base64 for storage
-            encoded_key = base64.b64encode(data.private_key.encode()).decode()
+            encoded_key = base64.b64encode(data.private_key.strip().encode()).decode()
         else:
             encoded_key = None
 

@@ -10,7 +10,7 @@ from zloth_api.domain.models import GitHubAppConfigSave
 
 
 @pytest.mark.asyncio
-async def test_initial_save_and_get_config_db_only(monkeypatch):
+async def test_initial_save_and_get_config_db_only(monkeypatch, tmp_path: Path):
     # Ensure env does not interfere
     for key in [
         "ZLOTH_GITHUB_APP_ID",
@@ -24,7 +24,7 @@ async def test_initial_save_and_get_config_db_only(monkeypatch):
     settings.github_app_private_key = ""
     settings.github_app_installation_id = ""
 
-    db = Database(db_path=Path("test_github.db"))
+    db = Database(db_path=tmp_path / "test_github.db")
     await db.connect()
     await db.initialize()
     svc = GitHubService(db)
