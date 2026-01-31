@@ -237,50 +237,64 @@ check_ports() {
 
     local api_available=true
     local web_available=true
+    local suggested_api=""
+    local suggested_web=""
 
     if ! check_port "$API_PORT"; then
         api_available=false
         print_warning "Port $API_PORT (API) is already in use"
+        suggested_api=$(find_available_port "$((API_PORT + 1))")
     fi
 
     if ! check_port "$WEB_PORT"; then
         web_available=false
         print_warning "Port $WEB_PORT (Web) is already in use"
+        suggested_web=$(find_available_port "$((WEB_PORT + 1))")
     fi
 
     if [ "$api_available" = false ] || [ "$web_available" = false ]; then
         echo ""
         print_warning "Some ports are already in use."
         echo ""
-        echo "Options:"
-        echo "  1. Stop the services using those ports"
-        echo "  2. Use different ports with --api-port and --web-port options"
-        echo ""
 
-        # Try to find available ports
-        if [ "$api_available" = false ]; then
-            local suggested_api
-            suggested_api=$(find_available_port "$((API_PORT + 1))")
+        # Show suggested ports
+        if [ -n "$suggested_api" ]; then
             echo "  Suggested API port: $suggested_api"
         fi
-
-        if [ "$web_available" = false ]; then
-            local suggested_web
-            suggested_web=$(find_available_port "$((WEB_PORT + 1))")
+        if [ -n "$suggested_web" ]; then
             echo "  Suggested Web port: $suggested_web"
         fi
-
-        echo ""
-        echo "Example:"
-        echo "  $0 --api-port ${suggested_api:-8080} --web-port ${suggested_web:-3001}"
         echo ""
 
-        read -p "Continue anyway? (services will fail to start) [y/N] " -n 1 -r
+        echo "Options:"
+        echo "  [1] Use suggested ports automatically"
+        echo "  [2] Cancel and specify ports manually"
+        echo ""
+
+        read -p "Choose option [1/2]: " -n 1 -r
         echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_error "Installation cancelled due to port conflicts."
-            exit 1
-        fi
+
+        case $REPLY in
+            1)
+                # Update ports to suggested values
+                if [ -n "$suggested_api" ]; then
+                    API_PORT="$suggested_api"
+                    print_success "API port changed to $API_PORT"
+                fi
+                if [ -n "$suggested_web" ]; then
+                    WEB_PORT="$suggested_web"
+                    print_success "Web port changed to $WEB_PORT"
+                fi
+                ;;
+            *)
+                echo ""
+                echo "To use custom ports, run:"
+                echo "  $0 --api-port ${suggested_api:-8080} --web-port ${suggested_web:-3001}"
+                echo ""
+                print_error "Installation cancelled due to port conflicts."
+                exit 1
+                ;;
+        esac
     else
         print_success "Ports $API_PORT (API) and $WEB_PORT (Web) are available"
     fi
