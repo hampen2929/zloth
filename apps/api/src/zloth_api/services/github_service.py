@@ -1,6 +1,7 @@
 """GitHub App service for zloth API."""
 
 import base64
+import logging
 import time
 from typing import Any
 
@@ -14,6 +15,8 @@ from zloth_api.domain.models import (
     GitHubRepository,
 )
 from zloth_api.storage.db import Database
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubService:
@@ -38,8 +41,11 @@ class GitHubService:
         Note: installation_id is optional. If not set, the service will
         auto-discover installations from the GitHub App.
         """
+        logger.info("get_config called")
+
         # Check environment variables first
         if settings.github_app_id and settings.github_app_private_key:
+            logger.info("Using config from environment variables")
             installation_id = settings.github_app_installation_id or None
             return GitHubAppConfig(
                 app_id=settings.github_app_id,
@@ -57,8 +63,15 @@ class GitHubService:
         row = await self.db.fetch_one(
             "SELECT app_id, installation_id, private_key FROM github_app_config WHERE id = 1"
         )
+        logger.info(
+            "Database row: exists=%s, has_app_id=%s, has_private_key=%s",
+            bool(row),
+            bool(row["app_id"]) if row else False,
+            bool(row["private_key"]) if row else False,
+        )
         if row and row["app_id"] and row["private_key"]:
             installation_id = row["installation_id"] if row["installation_id"] else None
+            logger.info("Returning is_configured=True from database")
             return GitHubAppConfig(
                 app_id=row["app_id"],
                 app_id_masked=self._mask_value(row["app_id"]),
@@ -71,6 +84,7 @@ class GitHubService:
                 source="db",
             )
 
+        logger.info("Returning is_configured=False")
         return GitHubAppConfig(is_configured=False)
 
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
@@ -79,24 +93,36 @@ class GitHubService:
         Note: installation_id is optional. If not provided, the service will
         auto-discover installations from the GitHub App.
         """
+        logger.info(
+            "save_config called: app_id=%s, has_private_key=%s, installation_id=%s",
+            data.app_id,
+            bool(data.private_key),
+            data.installation_id,
+        )
+
         # Check if config exists and has a valid private_key
         existing = await self.db.fetch_one(
             "SELECT id, private_key FROM github_app_config WHERE id = 1"
         )
+        logger.info("Existing config: %s", "found" if existing else "not found")
 
         if data.private_key:
             # Encode private key to base64 for storage
             encoded_key = base64.b64encode(data.private_key.encode()).decode()
+            logger.info("Private key encoded, length=%d", len(encoded_key))
         else:
             encoded_key = None
+            logger.info("No private key provided")
 
         if existing:
             # Check if existing config has a valid private_key
             existing_has_valid_key = bool(existing["private_key"])
+            logger.info("Existing has valid key: %s", existing_has_valid_key)
 
             # Update
             if encoded_key:
                 # New private key provided - update everything
+                logger.info("Updating with new private key")
                 await self.db.execute(
                     """
                     UPDATE github_app_config
@@ -108,6 +134,7 @@ class GitHubService:
                 )
             elif existing_has_valid_key:
                 # No new private key, but existing one is valid - keep it
+                logger.info("Updating without private key (keeping existing)")
                 await self.db.execute(
                     """
                     UPDATE github_app_config
@@ -118,6 +145,7 @@ class GitHubService:
                 )
             else:
                 # No new private key and existing one is invalid - require new key
+                logger.error("No private key provided and existing key is invalid")
                 raise ValueError(
                     "Private key is required. The existing configuration "
                     "does not have a valid private key."
@@ -125,7 +153,9 @@ class GitHubService:
         else:
             # Insert - private key is always required for new config
             if not encoded_key:
+                logger.error("No private key provided for initial configuration")
                 raise ValueError("Private key is required for initial configuration")
+            logger.info("Inserting new config")
             await self.db.execute(
                 """
                 INSERT INTO github_app_config (id, app_id, private_key, installation_id)
@@ -139,6 +169,7 @@ class GitHubService:
         # Clear installations cache
         self._installations_cache = None
 
+        logger.info("Config saved successfully, returning is_configured=True")
         return GitHubAppConfig(
             app_id=data.app_id,
             app_id_masked=self._mask_value(data.app_id),
