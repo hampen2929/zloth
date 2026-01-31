@@ -76,21 +76,27 @@ class GitHubService:
     async def save_config(self, data: GitHubAppConfigSave) -> GitHubAppConfig:
         """Save GitHub App configuration to database.
 
-        Note: installation_id is optional. If not provided, the service will
-        auto-discover installations from the GitHub App.
+        Behaviors:
+        - On first-time configuration, both ``app_id`` and ``private_key`` are required.
+        - On updates, ``private_key`` is optional; if omitted, the existing key is retained.
+        - Returns the fresh, canonical configuration (same as GET /github/config),
+          so clients see accurate flags like ``has_private_key`` and ``is_configured``.
         """
-        # Check if config exists
-        existing = await self.db.fetch_one("SELECT id FROM github_app_config WHERE id = 1")
+        # Check if config row exists and whether a key is already present
+        existing = await self.db.fetch_one(
+            "SELECT id, private_key FROM github_app_config WHERE id = 1"
+        )
 
+        encoded_key: str | None
         if data.private_key:
-            # Encode private key to base64 for storage
+            # Encode private key (PEM or raw text) to base64 for storage
             encoded_key = base64.b64encode(data.private_key.encode()).decode()
         else:
             encoded_key = None
 
         if existing:
-            # Update
-            if encoded_key:
+            # Update existing row
+            if encoded_key is not None:
                 await self.db.execute(
                     """
                     UPDATE github_app_config
@@ -101,6 +107,10 @@ class GitHubService:
                     (data.app_id, encoded_key, data.installation_id),
                 )
             else:
+                # No new key provided; keep current key. If for some reason the
+                # stored key is missing, block the update to avoid an unusable state.
+                if not (existing["private_key"] or ""):
+                    raise ValueError("Private key is required for initial configuration")
                 await self.db.execute(
                     """
                     UPDATE github_app_config
@@ -110,7 +120,7 @@ class GitHubService:
                     (data.app_id, data.installation_id),
                 )
         else:
-            # Insert
+            # First-time insert requires a private key
             if not encoded_key:
                 raise ValueError("Private key is required for initial configuration")
             await self.db.execute(
@@ -121,17 +131,12 @@ class GitHubService:
                 (data.app_id, encoded_key, data.installation_id),
             )
 
-        # Clear token cache
+        # Clear caches impacted by credentials change
         self._token_cache.clear()
-        # Clear installations cache
         self._installations_cache = None
 
-        return GitHubAppConfig(
-            app_id=data.app_id,
-            installation_id=data.installation_id,
-            is_configured=True,
-            source="db",
-        )
+        # Return canonical state (ensures flags like has_private_key/is_configured are correct)
+        return await self.get_config()
 
     async def _get_private_key(self) -> str | None:
         """Get private key from env or database."""
