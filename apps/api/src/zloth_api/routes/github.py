@@ -1,5 +1,7 @@
 """GitHub App routes."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from zloth_api.dependencies import get_github_service
@@ -9,6 +11,8 @@ from zloth_api.domain.models import (
     GitHubRepository,
 )
 from zloth_api.services.github_service import GitHubService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/github", tags=["github"])
 
@@ -41,8 +45,10 @@ async def list_repos(
     try:
         return await github_service.list_repos()
     except ValueError as e:
+        logger.warning("list_repos ValueError: %s", e)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.exception("list_repos failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to list repos: {str(e)}")
 
 
