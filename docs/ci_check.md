@@ -145,6 +145,114 @@ if not jobs:
 3. **権限エラーの明示的なハンドリング**
    - `checks:read` 権限がない場合、ユーザーに明確なエラーメッセージを表示
 
+---
+
+### 問題: MetricsのPending CI数が実際のタスク数より大幅に多い
+
+**症状**:
+- タスク数は10程度なのに、MetricsページのPending CI数が数十〜数千になる
+- データベースに大量の重複したCI Checkレコードが蓄積される
+
+**原因**:
+
+1. **ポーリングごとに新しいレコードが作成される**
+   - `check_ci()` が呼ばれるたびに、新しいCI Checkレコードが作成される可能性がある
+   - フロントエンドは10秒ごとにポーリング、タイムアウトは30分
+   - 1つのPRで最大180回のポーリング → 大量の重複レコード
+
+2. **SHA未取得時のレコード重複**
+   - CIがまだ開始していない場合、`sha=None` でレコードが作成される
+   - 次のポーリングでも `sha=None` → 既存レコードの検索がスキップされ、新規レコードが作成
+   - SHAが取得できるようになると、また新しいレコードが作成される
+
+3. **Metricsクエリが単純なCOUNT**
+   - `SELECT COUNT(*) FROM ci_checks WHERE status = 'pending'`
+   - PR/タスクごとの重複排除をしていない
+
+**該当コード**:
+
+```python
+# ci_check_service.py:146-157 (問題のあるロジック)
+existing = None
+if sha:
+    existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha)
+    # sha=None の既存レコードは検索されない
+else:
+    # sha が None の場合、既存レコードを探さずに新規作成
+    existing = await self.ci_check_dao.get_latest_pending_by_pr_id(pr_id)
+
+# dao.py:2561-2567 (Metricsクエリ)
+SELECT COUNT(*) as count
+FROM ci_checks
+WHERE status = 'pending'
+# → 重複を含む全レコードをカウント
+```
+
+**重複レコード生成の流れ**:
+
+```mermaid
+sequenceDiagram
+    participant Frontend
+    participant API
+    participant DB
+
+    Note over Frontend,DB: Poll 1: CI未開始
+    Frontend->>API: POST /check-ci
+    API->>DB: get_latest_pending_by_pr_id(pr_id)
+    DB-->>API: null
+    API->>DB: create(sha=null, status=pending)
+    Note over DB: Record A created
+
+    Note over Frontend,DB: Poll 2: CI未開始 (10秒後)
+    Frontend->>API: POST /check-ci
+    API->>DB: get_latest_pending_by_pr_id(pr_id)
+    DB-->>API: Record A
+    API->>DB: update(Record A)
+    Note over DB: Record A updated (正常)
+
+    Note over Frontend,DB: Poll 3: CI開始、SHA取得
+    Frontend->>API: POST /check-ci
+    API->>DB: get_by_pr_and_sha(pr_id, "abc123")
+    DB-->>API: null (SHA違い)
+    API->>DB: get_latest_pending_by_pr_id(pr_id)
+    DB-->>API: Record A (sha=null)
+    API->>DB: update(Record A, sha="abc123")
+    Note over DB: Record A updated with SHA
+
+    Note over Frontend,DB: 新しいコミットがpushされた場合
+    Frontend->>API: POST /check-ci
+    API->>DB: get_by_pr_and_sha(pr_id, "def456")
+    DB-->>API: null
+    API->>DB: create(sha="def456", status=pending)
+    Note over DB: Record B created (新しいSHA)
+```
+
+**影響**:
+- データベース肥大化
+- Metricsの数値が実態と乖離
+- API応答の遅延（大量レコードの取得）
+
+### 改善案
+
+1. **Metricsクエリの修正**
+   - PRごとにユニークなCI Checkのみをカウント
+   ```sql
+   SELECT COUNT(DISTINCT pr_id) as count
+   FROM ci_checks
+   WHERE status = 'pending'
+   ```
+
+2. **定期的なクリーンアップ**
+   - 古いpendingレコードを自動削除
+   - `scripts/reset_pending.py` を定期実行
+
+3. **レコード重複防止の強化**
+   - 詳細は `docs/ci_check_duplicate_fix.md` を参照
+
+**関連ドキュメント**: [CI Check Duplicate Fix](./ci_check_duplicate_fix.md)
+
+---
+
 ## API仕様
 
 ### エンドポイント
