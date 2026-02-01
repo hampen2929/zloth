@@ -23,7 +23,12 @@ import {
   TrashIcon,
   PlusIcon,
   Cog6ToothIcon,
+  SwatchIcon,
+  SunIcon,
+  MoonIcon,
+  ComputerDesktopIcon,
 } from '@heroicons/react/24/outline';
+import { useTheme, type Theme } from '@/context/ThemeContext';
 
 const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   {
@@ -43,7 +48,7 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
-export type SettingsTabType = 'models' | 'github' | 'defaults';
+export type SettingsTabType = 'models' | 'github' | 'defaults' | 'appearance';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -55,6 +60,7 @@ export const settingsTabConfig: { id: SettingsTabType; label: string; icon: Reac
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
+  { id: 'appearance', label: 'Appearance', icon: <SwatchIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
@@ -103,6 +109,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
         {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
+        {activeTab === 'appearance' && <AppearanceTab />}
       </ModalBody>
     </Modal>
   );
@@ -1040,6 +1047,80 @@ export function DefaultsTab() {
             Clear
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+export function AppearanceTab() {
+  const { theme, setTheme } = useTheme();
+
+  const themeOptions: { value: Theme; label: string; icon: React.ReactNode; description: string }[] = [
+    {
+      value: 'system',
+      label: 'System',
+      icon: <ComputerDesktopIcon className="w-5 h-5" />,
+      description: 'Follow your system preference',
+    },
+    {
+      value: 'dark',
+      label: 'Dark',
+      icon: <MoonIcon className="w-5 h-5" />,
+      description: 'Always use dark theme',
+    },
+    {
+      value: 'light',
+      label: 'Light',
+      icon: <SunIcon className="w-5 h-5" />,
+      description: 'Always use light theme',
+    },
+  ];
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-100">Appearance</h3>
+        <p className="text-sm text-gray-400 mt-1">
+          Customize how zloth looks on your device.
+        </p>
+      </div>
+
+      {/* Theme selection */}
+      <div className="space-y-3">
+        <label className="block text-sm font-medium text-gray-300">Theme</label>
+        <div className="grid grid-cols-3 gap-3">
+          {themeOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setTheme(option.value)}
+              className={cn(
+                'flex flex-col items-center gap-2 p-4 rounded-lg border transition-all',
+                'focus:outline-none focus:ring-2 focus:ring-blue-500',
+                theme === option.value
+                  ? 'border-blue-500 bg-blue-900/20 text-blue-400'
+                  : 'border-gray-700 bg-gray-800/30 text-gray-400 hover:border-gray-600 hover:text-gray-300'
+              )}
+            >
+              {option.icon}
+              <span className="text-sm font-medium">{option.label}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500">
+          {theme === 'system'
+            ? 'Theme will change based on your operating system settings.'
+            : `Using ${theme} theme.`}
+        </p>
+      </div>
+
+      {/* Future: Font size, reduced motion, etc. */}
+      <div className="mt-8 p-4 bg-gray-800/20 border border-gray-700 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-400 mb-2">Coming Soon</h4>
+        <ul className="text-xs text-gray-500 space-y-1">
+          <li>• Font size adjustment</li>
+          <li>• Reduced motion preference</li>
+          <li>• High contrast mode</li>
+        </ul>
       </div>
     </div>
   );

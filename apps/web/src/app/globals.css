@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* Theme variables - Dark theme (default) */
+:root,
+[data-theme='dark'] {
   /* Background colors */
   --background: #030712;
   --foreground: #f9fafb;
@@ -31,12 +33,68 @@
   --border-default: #374151;
   --border-hover: #4b5563;
   --border-focus: #3b82f6;
+  --border-subtle: #1f2937;
 
   /* Interactive colors */
   --interactive-primary: #3b82f6;
   --interactive-primary-hover: #2563eb;
   --interactive-secondary: #6b7280;
   --interactive-secondary-hover: #9ca3af;
+
+  /* Scrollbar colors */
+  --scrollbar-track: #1f2937;
+  --scrollbar-thumb: #4b5563;
+  --scrollbar-thumb-hover: #6b7280;
+
+  /* Code block */
+  --code-bg: #1f2937;
+}
+
+/* Light theme */
+[data-theme='light'] {
+  /* Background colors */
+  --background: #ffffff;
+  --foreground: #111827;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --bg-elevated: #ffffff;
+
+  /* Text colors */
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-muted: #6b7280;
+  --text-disabled: #9ca3af;
+
+  /* Semantic status colors */
+  --success: #16a34a;
+  --success-muted: rgba(22, 163, 74, 0.1);
+  --error: #dc2626;
+  --error-muted: rgba(220, 38, 38, 0.1);
+  --warning: #d97706;
+  --warning-muted: rgba(217, 119, 6, 0.1);
+  --info: #2563eb;
+  --info-muted: rgba(37, 99, 235, 0.1);
+
+  /* Border colors */
+  --border-default: #e5e7eb;
+  --border-hover: #d1d5db;
+  --border-focus: #3b82f6;
+  --border-subtle: #f3f4f6;
+
+  /* Interactive colors */
+  --interactive-primary: #2563eb;
+  --interactive-primary-hover: #1d4ed8;
+  --interactive-secondary: #9ca3af;
+  --interactive-secondary-hover: #6b7280;
+
+  /* Scrollbar colors */
+  --scrollbar-track: #f3f4f6;
+  --scrollbar-thumb: #d1d5db;
+  --scrollbar-thumb-hover: #9ca3af;
+
+  /* Code block */
+  --code-bg: #f3f4f6;
 }
 
 body {
@@ -51,21 +109,21 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* Code block styling */
 pre {
-  background: #1f2937 !important;
+  background: var(--code-bg) !important;
   border-radius: 0.5rem;
   padding: 1rem;
   overflow-x: auto;
