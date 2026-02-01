@@ -11,22 +11,6 @@ export type PRCreationMode = 'create' | 'link';
 export type CodingMode = 'interactive' | 'semi_auto' | 'full_auto';
 export type PRUpdateMode = 'both' | 'description' | 'title';
 
-// Model Profile
-export interface ModelProfile {
-  id: string;
-  provider: Provider;
-  model_name: string;
-  display_name: string | null;
-  created_at: string;
-}
-
-export interface ModelProfileCreate {
-  provider: Provider;
-  model_name: string;
-  display_name?: string;
-  api_key: string;
-}
-
 // Repository
 export interface Repo {
   id: string;
@@ -156,7 +140,6 @@ export interface Run {
 
 export interface RunCreate {
   instruction: string;
-  model_ids?: string[];
   base_ref?: string;
   executor_type?: ExecutorType;
   executor_types?: ExecutorType[];  // Multiple CLI executors for parallel execution

@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
+import { reposApi, tasksApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
 import type { GitHubRepository, ExecutorType, CodingMode } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,6 @@ export default function HomePage() {
   const [instruction, setInstruction, clearInstruction] = useSessionStorage('new-task-instruction', '');
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
-  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedCLIs, setSelectedCLIs] = useState<ExecutorType[]>(['claude_code']);
   const [selectedMode, setSelectedMode] = useState<CodingMode>('interactive');
   const [loading, setLoading] = useState(false);
@@ -48,7 +47,6 @@ export default function HomePage() {
   useClickOutside(repoDropdownRef, () => setShowRepoDropdown(false), showRepoDropdown);
 
   // Data fetching
-  const { data: models } = useSWR('models', modelsApi.list);
   const { data: repos, isLoading: reposLoading } = useSWR('github-repos', githubApi.listRepos);
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
@@ -90,13 +88,6 @@ export default function HomePage() {
   const filteredRepos = repos?.filter(
     (repo) => !repoSearch || repo.full_name.toLowerCase().includes(repoSearch.toLowerCase())
   );
-
-  // Toggle model selection
-  const toggleModel = (modelId: string) => {
-    setSelectedModels((prev) =>
-      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
-    );
-  };
 
   // Toggle CLI selection
   const toggleCLI = (cli: ExecutorType) => {
@@ -247,13 +238,8 @@ export default function HomePage() {
               {/* Executor Selector */}
               <ExecutorSelector
                 selectedCLIs={selectedCLIs}
-                selectedModels={selectedModels}
-                models={models || []}
                 onCLIToggle={toggleCLI}
                 onCLIsChange={setSelectedCLIs}
-                onModelToggle={toggleModel}
-                onModelsChange={setSelectedModels}
-                hideModels={true}
               />
             </div>
 

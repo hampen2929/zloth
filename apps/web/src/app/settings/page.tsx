@@ -3,7 +3,6 @@
 import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
-  ModelsTab,
   GitHubAppTab,
   DefaultsTab,
   ExecutorsTab,
@@ -15,7 +14,7 @@ import { cn } from '@/lib/utils';
 function SettingsContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab') as SettingsTabType | null;
-  const validTabs = useMemo(() => ['executors', 'models', 'github', 'defaults'], []);
+  const validTabs = useMemo(() => ['executors', 'github', 'defaults'], []);
   const [activeTab, setActiveTab] = useState<SettingsTabType>(
     tabParam && validTabs.includes(tabParam) ? tabParam : 'executors'
   );
@@ -57,7 +56,6 @@ function SettingsContent() {
 
       {/* Content */}
       <div className="pb-8">
-        {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
         {activeTab === 'executors' && <ExecutorsTab />}

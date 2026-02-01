@@ -10,7 +10,6 @@ from zloth_api.domain.enums import ExecutorType, RunStatus
 from zloth_api.domain.models import Run
 from zloth_api.executors.base_executor import ExecutorResult
 from zloth_api.services.git_service import GitService
-from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.run_service import RunService
 from zloth_api.services.workspace_service import WorkspaceService
@@ -45,7 +44,6 @@ async def test_resolve_conflicts_completes_merge(tmp_path: Path) -> None:
         run_dao=AsyncMock(spec=RunDAO),
         task_dao=AsyncMock(spec=TaskDAO),
         job_dao=AsyncMock(spec=JobDAO),
-        model_service=AsyncMock(spec=ModelService),
         repo_service=AsyncMock(spec=RepoService),
         git_service=AsyncMock(spec=GitService),
         workspace_service=workspace_service,
@@ -87,7 +85,6 @@ async def test_resolve_conflicts_raises_on_remaining_conflicts(tmp_path: Path) -
         run_dao=AsyncMock(spec=RunDAO),
         task_dao=AsyncMock(spec=TaskDAO),
         job_dao=AsyncMock(spec=JobDAO),
-        model_service=AsyncMock(spec=ModelService),
         repo_service=AsyncMock(spec=RepoService),
         git_service=AsyncMock(spec=GitService),
         workspace_service=workspace_service,
