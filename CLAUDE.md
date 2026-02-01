@@ -320,7 +320,19 @@ if not run.model_id or not run.provider:
 ### v0.1 Scope Limitations
 1. **No command execution**: Shell commands disabled for security in v0.1
 2. **Patch output only**: Agents output only Unified diff format patches
-3. **GitHub App auth**: Uses GitHub App for authentication (requires Contents and Pull requests permissions)
+3. **GitHub App auth**: Uses GitHub App for authentication
+
+### GitHub App Required Permissions
+
+The GitHub App must have the following permissions configured:
+
+| Permission | Access Level | Purpose |
+|------------|--------------|---------|
+| **Contents** | Read and write | Push branches and read repository files |
+| **Pull requests** | Read and write | Create and update pull requests |
+| **Workflows** | Read and write | Trigger and manage GitHub Actions workflows |
+| **Checks** | Read-only | Monitor CI/CD check status on PRs |
+| **Metadata** | Read-only | Basic repository information (automatically included) |
 
 ### Security
 - API keys encrypted at rest using Fernet (AES-128)
@@ -351,7 +363,12 @@ A: Try `docker compose build --no-cache`
 A: Check that `ZLOTH_ENCRYPTION_KEY` is set
 
 **Q: Cannot create PR**
-A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull requests` permissions.
+A: Configure GitHub App in Settings. Ensure the app has the required permissions:
+- Contents (Read and write) - for pushing branches
+- Pull requests (Read and write) - for creating PRs
+- Workflows (Read and write) - for triggering CI
+- Checks (Read-only) - for monitoring CI status
+- Metadata (Read-only) - automatically included
 
 ## Claude Code Guidelines
 

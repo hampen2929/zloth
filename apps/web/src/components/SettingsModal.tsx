@@ -497,8 +497,64 @@ export function GitHubAppTab() {
         </form>
       )}
 
+      {/* Required Permissions */}
+      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-800/50 rounded-lg">
+        <h4 className="text-sm font-medium text-blue-300 mb-3">Required Permissions</h4>
+        <p className="text-xs text-gray-400 mb-3">
+          Your GitHub App must have the following permissions configured:
+        </p>
+        <div className="space-y-3">
+          {/* Repository permissions */}
+          <div>
+            <p className="text-xs font-medium text-gray-300 mb-2">Repository permissions:</p>
+            <div className="space-y-1.5 ml-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                <span className="text-xs text-gray-300">Contents</span>
+                <span className="text-xs text-blue-400 font-medium ml-auto">Read and write</span>
+              </div>
+              <p className="text-xs text-gray-500 ml-4">Required to push branches and read repository files</p>
+
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                <span className="text-xs text-gray-300">Pull requests</span>
+                <span className="text-xs text-blue-400 font-medium ml-auto">Read and write</span>
+              </div>
+              <p className="text-xs text-gray-500 ml-4">Required to create and update pull requests</p>
+
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                <span className="text-xs text-gray-300">Workflows</span>
+                <span className="text-xs text-blue-400 font-medium ml-auto">Read and write</span>
+              </div>
+              <p className="text-xs text-gray-500 ml-4">Required to trigger and manage GitHub Actions workflows</p>
+
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-yellow-500 flex-shrink-0"></span>
+                <span className="text-xs text-gray-300">Checks</span>
+                <span className="text-xs text-gray-400 font-medium ml-auto">Read-only</span>
+              </div>
+              <p className="text-xs text-gray-500 ml-4">Required to monitor CI/CD check status on PRs</p>
+
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-yellow-500 flex-shrink-0"></span>
+                <span className="text-xs text-gray-300">Metadata</span>
+                <span className="text-xs text-gray-400 font-medium ml-auto">Read-only</span>
+              </div>
+              <p className="text-xs text-gray-500 ml-4">Required for basic repository information (automatically included)</p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 pt-3 border-t border-blue-800/30">
+          <p className="text-xs text-gray-500">
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Required</span>
+            <span className="inline-flex items-center gap-1 ml-3"><span className="w-2 h-2 rounded-full bg-yellow-500"></span> Read-only</span>
+          </p>
+        </div>
+      </div>
+
       {/* Environment variable info */}
-      <div className="mt-6 p-4 bg-gray-800/20 border border-gray-700 rounded-lg">
+      <div className="mt-4 p-4 bg-gray-800/20 border border-gray-700 rounded-lg">
         <h4 className="text-sm font-medium text-gray-300 mb-2">Environment Variables</h4>
         <p className="text-xs text-gray-500 mb-3">
           You can also configure the GitHub App via environment variables:
