@@ -54,6 +54,7 @@ import type {
   MetricsSummary,
   MetricsTrend,
   RealtimeMetrics,
+  ExecutorsStatus,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -745,6 +746,11 @@ export const metricsApi = {
     if (repoId) params.set('repo_id', repoId);
     return fetchApi<MetricsTrend[]>(`/metrics/trends?${params.toString()}`);
   },
+};
+
+// Executors
+export const executorsApi = {
+  getStatus: () => fetchApi<ExecutorsStatus>('/executors/status'),
 };
 
 export { ApiError };

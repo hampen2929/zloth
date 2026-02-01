@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
-import { modelsApi, githubApi, preferencesApi } from '@/lib/api';
+import { modelsApi, githubApi, preferencesApi, executorsApi } from '@/lib/api';
 import type {
   Provider,
   ModelProfileCreate,
   PRCreationMode,
   CodingMode,
+  ExecutorStatus,
 } from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
@@ -23,6 +24,8 @@ import {
   TrashIcon,
   PlusIcon,
   Cog6ToothIcon,
+  CommandLineIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 
 const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
@@ -43,7 +46,7 @@ const PROVIDERS: { value: Provider; label: string; models: string[] }[] = [
   },
 ];
 
-export type SettingsTabType = 'models' | 'github' | 'defaults';
+export type SettingsTabType = 'models' | 'github' | 'defaults' | 'executors';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -55,6 +58,7 @@ export const settingsTabConfig: { id: SettingsTabType; label: string; icon: Reac
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
+  { id: 'executors', label: 'Executors', icon: <CommandLineIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
@@ -103,6 +107,7 @@ export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsM
         {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
+        {activeTab === 'executors' && <ExecutorsTab />}
       </ModalBody>
     </Modal>
   );
@@ -1039,6 +1044,208 @@ export function DefaultsTab() {
           >
             Clear
           </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const EXECUTOR_INFO: {
+  key: 'claude_code' | 'codex_cli' | 'gemini_cli';
+  label: string;
+  description: string;
+  envVar: string;
+}[] = [
+  {
+    key: 'claude_code',
+    label: 'Claude Code',
+    description: 'Anthropic Claude Code CLI for code generation',
+    envVar: 'ZLOTH_CLAUDE_CLI_PATH',
+  },
+  {
+    key: 'codex_cli',
+    label: 'Codex CLI',
+    description: 'OpenAI Codex CLI for code generation',
+    envVar: 'ZLOTH_CODEX_CLI_PATH',
+  },
+  {
+    key: 'gemini_cli',
+    label: 'Gemini CLI',
+    description: 'Google Gemini CLI for code generation',
+    envVar: 'ZLOTH_GEMINI_CLI_PATH',
+  },
+];
+
+function ExecutorStatusCard({ label, description, status }: {
+  label: string;
+  description: string;
+  status: ExecutorStatus | undefined;
+}) {
+  if (!status) {
+    return (
+      <div className="p-4 bg-gray-800/30 rounded-lg border border-gray-700">
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 rounded-full bg-gray-600 animate-pulse" />
+          <div className="flex-1">
+            <div className="font-medium text-gray-300">{label}</div>
+            <div className="text-sm text-gray-500">{description}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(
+      'p-4 rounded-lg border',
+      status.available
+        ? 'bg-green-900/10 border-green-800/50'
+        : 'bg-red-900/10 border-red-800/50'
+    )}>
+      <div className="flex items-start gap-3">
+        {status.available ? (
+          <CheckCircleIcon className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+        ) : (
+          <ExclamationTriangleIcon className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              'font-medium',
+              status.available ? 'text-green-300' : 'text-red-300'
+            )}>
+              {label}
+            </span>
+            {status.available ? (
+              <span className="text-xs bg-green-800/50 text-green-400 px-2 py-0.5 rounded">
+                Available
+              </span>
+            ) : (
+              <span className="text-xs bg-red-800/50 text-red-400 px-2 py-0.5 rounded">
+                Not Available
+              </span>
+            )}
+          </div>
+          <div className="text-sm text-gray-500 mt-1">{description}</div>
+
+          <div className="mt-3 space-y-1 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500">Path:</span>
+              <code className="font-mono text-gray-300 bg-gray-800/50 px-2 py-0.5 rounded text-xs">
+                {status.path}
+              </code>
+            </div>
+            {status.available && status.version && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500">Version:</span>
+                <span className="text-gray-300 text-xs">{status.version}</span>
+              </div>
+            )}
+            {!status.available && status.error && (
+              <div className="mt-2 p-2 bg-red-900/20 rounded text-xs text-red-400">
+                {status.error}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ExecutorsTab() {
+  const { data: status, error, isLoading, mutate: refreshStatus } = useSWR(
+    'executors-status',
+    executorsApi.getStatus
+  );
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshStatus();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-100">CLI Executors</h3>
+          <p className="text-sm text-gray-400 mt-1">
+            Check availability of AI coding CLIs for parallel execution
+          </p>
+        </div>
+        <Button
+          onClick={handleRefresh}
+          variant="secondary"
+          size="sm"
+          disabled={isLoading || refreshing}
+          leftIcon={
+            <ArrowPathIcon className={cn('w-4 h-4', refreshing && 'animate-spin')} />
+          }
+        >
+          Refresh
+        </Button>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-900/20 border border-red-800/50 rounded-lg text-red-400 text-sm mb-4">
+          <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+          Failed to check executor status.
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {EXECUTOR_INFO.map((executor) => (
+          <ExecutorStatusCard
+            key={executor.key}
+            label={executor.label}
+            description={executor.description}
+            status={status?.[executor.key]}
+          />
+        ))}
+      </div>
+
+      {/* Environment variable info */}
+      <div className="mt-6 p-4 bg-gray-800/20 border border-gray-700 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-300 mb-2">Environment Variables</h4>
+        <p className="text-xs text-gray-500 mb-3">
+          Configure custom CLI paths via environment variables:
+        </p>
+        <div className="font-mono text-xs text-gray-400 space-y-1 bg-gray-800/50 p-3 rounded">
+          {EXECUTOR_INFO.map((executor) => (
+            <div key={executor.key}>
+              {executor.envVar}=&lt;path&gt;
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Installation hints */}
+      <div className="mt-4 p-4 bg-blue-900/20 border border-blue-800/50 rounded-lg">
+        <h4 className="text-sm font-medium text-blue-300 mb-3">Installation</h4>
+        <div className="space-y-3 text-xs">
+          <div>
+            <span className="text-blue-400 font-medium">Claude Code:</span>
+            <code className="ml-2 text-gray-400 bg-gray-800/50 px-2 py-0.5 rounded">
+              npm install -g @anthropic-ai/claude-code
+            </code>
+          </div>
+          <div>
+            <span className="text-blue-400 font-medium">Codex CLI:</span>
+            <code className="ml-2 text-gray-400 bg-gray-800/50 px-2 py-0.5 rounded">
+              npm install -g @openai/codex
+            </code>
+          </div>
+          <div>
+            <span className="text-blue-400 font-medium">Gemini CLI:</span>
+            <code className="ml-2 text-gray-400 bg-gray-800/50 px-2 py-0.5 rounded">
+              npm install -g @google/gemini-cli
+            </code>
+          </div>
         </div>
       </div>
     </div>
