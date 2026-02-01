@@ -55,10 +55,10 @@ interface SettingsModalProps {
 }
 
 export const settingsTabConfig: { id: SettingsTabType; label: string; icon: React.ReactNode }[] = [
+  { id: 'executors', label: 'Executors', icon: <CommandLineIcon className="w-4 h-4" /> },
   { id: 'models', label: 'Models', icon: <CpuChipIcon className="w-4 h-4" /> },
   { id: 'github', label: 'GitHub App', icon: <KeyIcon className="w-4 h-4" /> },
   { id: 'defaults', label: 'Defaults', icon: <Cog6ToothIcon className="w-4 h-4" /> },
-  { id: 'executors', label: 'Executors', icon: <CommandLineIcon className="w-4 h-4" /> },
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {

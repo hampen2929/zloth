@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 function SettingsContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab') as SettingsTabType | null;
-  const validTabs = useMemo(() => ['models', 'github', 'defaults', 'executors'], []);
+  const validTabs = useMemo(() => ['executors', 'models', 'github', 'defaults'], []);
   const [activeTab, setActiveTab] = useState<SettingsTabType>(
     tabParam && validTabs.includes(tabParam) ? tabParam : 'models'
   );
