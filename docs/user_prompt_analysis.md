@@ -1,293 +1,295 @@
-# User Prompt Analysis Feature
+# ユーザープロンプト分析機能
 
-## Overview
+## 概要
 
-The Analysis feature provides insights and recommendations based on the user's historical task execution data. By analyzing prompts, results, and patterns from past tasks, the system offers actionable advice to help users improve their workflow and get better results from AI coding agents.
+Analysis機能は、ユーザーの過去のタスク実行データに基づいてインサイトと推奨事項を提供します。過去のタスクからプロンプト、結果、パターンを分析することで、ユーザーがワークフローを改善し、AIコーディングエージェントからより良い結果を得るための実用的なアドバイスを提供します。
 
-## Data Sources
+## データソース
 
-The analysis leverages the following data from the zloth system:
+分析はzlothシステムの以下のデータを活用します：
 
-| Data Source | Key Fields | Analysis Purpose |
-|-------------|------------|------------------|
-| **Tasks** | title, coding_mode, kanban_status, created_at, updated_at | Task progression patterns |
-| **Messages** | role, content, created_at | Prompt quality and conversation patterns |
-| **Runs** | status, executor_type, instruction, summary, patch, logs, warnings, error | Success/failure patterns |
-| **PRs** | status, merge time | Outcome tracking |
-| **Reviews** | severity, category, feedbacks | Code quality patterns |
-| **CI Checks** | status, failed_jobs | Integration issues |
+| データソース | 主要フィールド | 分析目的 |
+|-------------|--------------|---------|
+| **Tasks** | title, coding_mode, kanban_status, created_at, updated_at | タスク進行パターン |
+| **Messages** | role, content, created_at | プロンプト品質と会話パターン |
+| **Runs** | status, executor_type, instruction, summary, patch, logs, warnings, error | 成功/失敗パターン |
+| **PRs** | status, merge time | アウトカム追跡 |
+| **Reviews** | severity, category, feedbacks | コード品質パターン |
+| **CI Checks** | status, failed_jobs | インテグレーション問題 |
 
-## Analysis Categories
+## 分析カテゴリ
 
-### 1. Prompt Quality Analysis
+### 1. プロンプト品質分析
 
-Analyzes the quality and effectiveness of user prompts to provide improvement suggestions.
+ユーザープロンプトの品質と効果を分析し、改善提案を提供します。
 
-**Metrics:**
-- Average prompt length
-- Use of specific technical terms
-- Presence of context/constraints
-- Clarity and specificity scores
+**メトリクス：**
+- 平均プロンプト長
+- 技術用語の使用状況
+- コンテキスト/制約の有無
+- 明確性・具体性スコア
 
-**Recommendations:**
-- Add more context when prompts are too vague
-- Include specific file paths or function names
-- Provide acceptance criteria or expected behavior
-- Break down complex requests into smaller tasks
+**推奨事項：**
+- プロンプトが曖昧な場合はコンテキストを追加
+- 具体的なファイルパスや関数名を含める
+- 受け入れ基準や期待される動作を提供
+- 複雑なリクエストを小さなタスクに分割
 
-**Example Insights:**
+**インサイト例：**
 ```
-"Your prompts averaging 15 words tend to have 40% lower success rates
-than prompts with 50+ words. Consider adding more context about the
-expected behavior and affected files."
-```
-
-### 2. Success Pattern Analysis
-
-Identifies patterns that correlate with successful task completions.
-
-**Metrics:**
-- Success rate by prompt type (feature, bugfix, refactoring)
-- Success rate by executor type
-- Success rate by time of day/week
-- Success rate by task complexity
-
-**Recommendations:**
-- Optimal executor selection based on task type
-- Best practices from successful tasks
-- Warning signs from commonly failed patterns
-
-**Example Insights:**
-```
-"Tasks related to 'authentication' have 85% success rate when using
-Claude Code executor, but only 60% with Patch Agent. Consider using
-Claude Code for security-related tasks."
+「15語程度のプロンプトは、50語以上のプロンプトと比較して
+成功率が40%低い傾向があります。期待される動作や
+影響するファイルについてより多くのコンテキストを追加することを
+検討してください。」
 ```
 
-### 3. Iteration Efficiency Analysis
+### 2. 成功パターン分析
 
-Analyzes how many iterations are needed to complete tasks.
+タスク完了の成功と相関するパターンを特定します。
 
-**Metrics:**
-- Average messages per successful task
-- Re-run frequency
-- CI fix iterations
-- Review iteration counts
+**メトリクス：**
+- プロンプトタイプ別成功率（機能追加、バグ修正、リファクタリング）
+- エグゼキュータータイプ別成功率
+- 時間帯/曜日別成功率
+- タスク複雑度別成功率
 
-**Recommendations:**
-- Reduce back-and-forth by providing clearer initial instructions
-- Include test requirements upfront
-- Specify coding standards in the first message
+**推奨事項：**
+- タスクタイプに基づく最適なエグゼキューター選択
+- 成功タスクからのベストプラクティス
+- よく失敗するパターンの警告サイン
 
-**Example Insights:**
+**インサイト例：**
 ```
-"Tasks that include test requirements in the initial prompt require
-2.3 fewer iterations on average. Try adding 'Include unit tests' to
-your prompts."
-```
-
-### 4. Error Pattern Analysis
-
-Identifies common failure patterns and their causes.
-
-**Metrics:**
-- Most common error types
-- Failure rate by file type/module
-- CI failure patterns
-- Review feedback patterns
-
-**Recommendations:**
-- Avoid known problematic patterns
-- Add safeguards for commonly failed areas
-- Suggest alternative approaches
-
-**Example Insights:**
-```
-"30% of your failures involve database migrations. Consider breaking
-these into smaller steps: 1) Create migration, 2) Test locally,
-3) Apply to staging."
+「'認証'関連のタスクは、Claude Codeエグゼキューターで85%の成功率
+ですが、Patch Agentでは60%です。セキュリティ関連のタスクには
+Claude Codeの使用を検討してください。」
 ```
 
-### 5. Time-to-Completion Analysis
+### 3. イテレーション効率分析
 
-Analyzes task completion times and identifies bottlenecks.
+タスク完了に必要なイテレーション数を分析します。
 
-**Metrics:**
-- Average time from task creation to PR merge
-- Time spent in each kanban stage
-- Queue wait times
-- CI check durations
+**メトリクス：**
+- 成功タスクあたりの平均メッセージ数
+- 再実行頻度
+- CI修正イテレーション数
+- レビューイテレーション数
 
-**Recommendations:**
-- Optimal task sizing for faster completion
-- Best times to submit tasks
-- Parallelization opportunities
+**推奨事項：**
+- より明確な初期指示で往復を削減
+- テスト要件を事前に含める
+- 最初のメッセージでコーディング規約を指定
 
-**Example Insights:**
+**インサイト例：**
 ```
-"Tasks created between 9-11 AM have 25% faster completion times.
-Your average task spends 45% of time in 'gating' status - consider
-enabling auto-merge for low-risk changes."
-```
-
-### 6. Code Quality Trend Analysis
-
-Tracks code quality improvements or degradations over time.
-
-**Metrics:**
-- Review score trends
-- Issue severity distribution over time
-- Most common review categories
-- Test coverage trends (if available)
-
-**Recommendations:**
-- Focus areas based on recurring issues
-- Prompt templates for quality improvement
-- Best practices from high-scoring tasks
-
-**Example Insights:**
-```
-"Security-related review issues have increased 40% this month.
-Consider adding 'Ensure proper input validation and error handling'
-to your security-sensitive prompts."
+「初期プロンプトにテスト要件を含むタスクは、平均で2.3回少ない
+イテレーションで済みます。プロンプトに'ユニットテストを含める'
+を追加してみてください。」
 ```
 
-### 7. Model/Executor Comparison
+### 4. エラーパターン分析
 
-Compares performance across different AI models and executors.
+一般的な失敗パターンとその原因を特定します。
 
-**Metrics:**
-- Success rate by model
-- Speed by model
-- Cost efficiency (if tracked)
-- Task type suitability
+**メトリクス：**
+- 最も一般的なエラータイプ
+- ファイルタイプ/モジュール別失敗率
+- CI失敗パターン
+- レビューフィードバックパターン
 
-**Recommendations:**
-- Optimal model selection for task types
-- Cost/quality trade-offs
-- Multi-model strategy suggestions
+**推奨事項：**
+- 既知の問題パターンを回避
+- よく失敗する領域にセーフガードを追加
+- 代替アプローチを提案
 
-**Example Insights:**
+**インサイト例：**
 ```
-"For refactoring tasks, Claude Code shows 92% success rate vs 78%
-for Codex CLI. However, Codex CLI is 3x faster for simple file
-modifications. Consider using Codex for quick fixes."
-```
-
-### 8. Repository-Specific Insights
-
-Provides insights specific to each repository.
-
-**Metrics:**
-- Success rate by repository
-- Common failure areas in codebase
-- Most modified files/modules
-- Tech stack specific patterns
-
-**Recommendations:**
-- Repository-specific prompt templates
-- High-risk areas to watch
-- Documentation gaps
-
-**Example Insights:**
-```
-"In the 'api' repository, tasks modifying 'src/auth/' have 35% higher
-failure rates. This module has complex dependencies - consider adding
-'Check auth module dependencies' to related prompts."
+「失敗の30%がデータベースマイグレーションに関連しています。
+これらを小さなステップに分割することを検討してください：
+1) マイグレーション作成、2) ローカルテスト、3) ステージング適用」
 ```
 
-## UI/UX Design
+### 5. 完了時間分析
 
-### Analysis Dashboard Layout
+タスク完了時間を分析し、ボトルネックを特定します。
+
+**メトリクス：**
+- タスク作成からPRマージまでの平均時間
+- 各カンバンステージでの滞在時間
+- キュー待機時間
+- CIチェック所要時間
+
+**推奨事項：**
+- より速い完了のための最適なタスクサイズ
+- タスク送信に最適な時間帯
+- 並列化の機会
+
+**インサイト例：**
+```
+「午前9-11時に作成されたタスクは、完了時間が25%短くなります。
+平均タスクは'gating'ステータスで45%の時間を費やしています -
+低リスクの変更には自動マージを有効にすることを検討してください。」
+```
+
+### 6. コード品質トレンド分析
+
+時間の経過に伴うコード品質の改善または低下を追跡します。
+
+**メトリクス：**
+- レビュースコアのトレンド
+- 時間経過による問題深刻度の分布
+- 最も一般的なレビューカテゴリ
+- テストカバレッジのトレンド（利用可能な場合）
+
+**推奨事項：**
+- 繰り返し発生する問題に基づくフォーカスエリア
+- 品質向上のためのプロンプトテンプレート
+- 高スコアタスクからのベストプラクティス
+
+**インサイト例：**
+```
+「セキュリティ関連のレビュー問題が今月40%増加しています。
+セキュリティに敏感なプロンプトに'適切な入力バリデーションと
+エラーハンドリングを確保する'を追加することを検討してください。」
+```
+
+### 7. モデル/エグゼキューター比較
+
+異なるAIモデルとエグゼキューター間のパフォーマンスを比較します。
+
+**メトリクス：**
+- モデル別成功率
+- モデル別速度
+- コスト効率（追跡されている場合）
+- タスクタイプ適合性
+
+**推奨事項：**
+- タスクタイプに最適なモデル選択
+- コスト/品質のトレードオフ
+- マルチモデル戦略の提案
+
+**インサイト例：**
+```
+「リファクタリングタスクでは、Claude Codeが92%の成功率を示し、
+Codex CLIは78%です。ただし、Codex CLIは単純なファイル変更では
+3倍高速です。クイックフィックスにはCodexの使用を検討してください。」
+```
+
+### 8. リポジトリ固有のインサイト
+
+各リポジトリに固有のインサイトを提供します。
+
+**メトリクス：**
+- リポジトリ別成功率
+- コードベース内の一般的な失敗領域
+- 最も変更されるファイル/モジュール
+- 技術スタック固有のパターン
+
+**推奨事項：**
+- リポジトリ固有のプロンプトテンプレート
+- 注意すべき高リスク領域
+- ドキュメントのギャップ
+
+**インサイト例：**
+```
+「'api'リポジトリでは、'src/auth/'を変更するタスクの失敗率が
+35%高くなっています。このモジュールは複雑な依存関係があります -
+関連プロンプトに'authモジュールの依存関係を確認'を追加することを
+検討してください。」
+```
+
+## UI/UXデザイン
+
+### 分析ダッシュボードレイアウト
 
 ```
 +------------------------------------------+
 |  Analysis                                 |
 +------------------------------------------+
 |                                          |
-|  [Period Selector: 7d | 30d | 90d | All] |
-|  [Repository Filter: All | repo1 | ...]  |
+|  [期間選択: 7d | 30d | 90d | All]         |
+|  [リポジトリフィルター: All | repo1 | ...] |
 |                                          |
 +------------------------------------------+
-|  Summary Cards                           |
+|  サマリーカード                           |
 |  +--------+ +--------+ +--------+        |
-|  | Prompt | | Success| | Avg    |        |
-|  | Score  | | Rate   | | Iters  |        |
+|  |プロンプト| | 成功率 | | 平均   |        |
+|  | スコア  | |        | |イテレ  |        |
 |  |  72%   | |  85%   | |  3.2   |        |
 |  +--------+ +--------+ +--------+        |
 +------------------------------------------+
-|  Top Recommendations                      |
+|  トップ推奨事項                           |
 |  +--------------------------------------+|
-|  | 1. Add test requirements to prompts  ||
-|  |    Impact: -2.3 iterations           ||
+|  | 1. プロンプトにテスト要件を追加       ||
+|  |    影響: -2.3イテレーション           ||
 |  +--------------------------------------+|
-|  | 2. Use Claude Code for auth tasks    ||
-|  |    Impact: +25% success rate         ||
+|  | 2. 認証タスクにはClaude Codeを使用    ||
+|  |    影響: +25%成功率                   ||
 |  +--------------------------------------+|
-|  | 3. Break down large migrations       ||
-|  |    Impact: -40% failure rate         ||
+|  | 3. 大規模マイグレーションを分割       ||
+|  |    影響: -40%失敗率                   ||
 |  +--------------------------------------+|
 +------------------------------------------+
-|  Detailed Analysis Sections              |
-|  [Expandable sections for each category] |
+|  詳細分析セクション                       |
+|  [各カテゴリの展開可能なセクション]        |
 +------------------------------------------+
 ```
 
-### Key UI Components
+### 主要UIコンポーネント
 
-1. **Summary Score Cards**: Quick overview of key metrics
-2. **Recommendation List**: Prioritized, actionable suggestions
-3. **Trend Charts**: Visual representation of metrics over time
-4. **Comparison Tables**: Model/executor performance comparison
-5. **Drill-down Views**: Detailed analysis for specific patterns
+1. **サマリースコアカード**: 主要メトリクスの概要
+2. **推奨事項リスト**: 優先度付きの実用的な提案
+3. **トレンドチャート**: 時間経過によるメトリクスの視覚的表現
+4. **比較テーブル**: モデル/エグゼキューターのパフォーマンス比較
+5. **ドリルダウンビュー**: 特定パターンの詳細分析
 
-## Implementation Phases
+## 実装フェーズ
 
-### Phase 1: Basic Metrics Collection
-- Aggregate task/run/PR statistics
-- Basic success/failure rates
-- Simple prompt length analysis
+### フェーズ1: 基本メトリクス収集
+- タスク/実行/PR統計の集計
+- 基本的な成功/失敗率
+- 単純なプロンプト長分析
 
-### Phase 2: Pattern Recognition
-- Prompt categorization (feature, bugfix, refactoring)
-- Error pattern clustering
-- Time-based analysis
+### フェーズ2: パターン認識
+- プロンプト分類（機能追加、バグ修正、リファクタリング）
+- エラーパターンのクラスタリング
+- 時間ベースの分析
 
-### Phase 3: AI-Powered Insights
-- LLM-based prompt quality scoring
-- Automatic recommendation generation
-- Predictive success analysis
+### フェーズ3: AI駆動インサイト
+- LLMベースのプロンプト品質スコアリング
+- 自動推奨事項生成
+- 予測的成功分析
 
-### Phase 4: Personalized Optimization
-- User-specific learning patterns
-- Adaptive recommendations
-- Custom prompt templates
+### フェーズ4: パーソナライズされた最適化
+- ユーザー固有の学習パターン
+- 適応的な推奨事項
+- カスタムプロンプトテンプレート
 
-## API Design
+## APIデザイン
 
-### Endpoints
+### エンドポイント
 
 ```
 GET  /v1/analysis
-     - Returns overall analysis summary
+     - 全体の分析サマリーを返す
 
 GET  /v1/analysis/prompts
-     - Returns prompt quality analysis
+     - プロンプト品質分析を返す
 
 GET  /v1/analysis/success-patterns
-     - Returns success pattern analysis
+     - 成功パターン分析を返す
 
 GET  /v1/analysis/errors
-     - Returns error pattern analysis
+     - エラーパターン分析を返す
 
 GET  /v1/analysis/recommendations
-     - Returns prioritized recommendations
+     - 優先度付き推奨事項を返す
 
 GET  /v1/analysis/trends
-     - Returns trend data for specified metrics
+     - 指定されたメトリクスのトレンドデータを返す
 ```
 
-### Response Example
+### レスポンス例
 
 ```json
 {
@@ -303,8 +305,8 @@ GET  /v1/analysis/trends
       "id": "rec_001",
       "priority": "high",
       "category": "prompt_quality",
-      "title": "Add test requirements to prompts",
-      "description": "Including test requirements in your initial prompt reduces iterations by 2.3 on average.",
+      "title": "プロンプトにテスト要件を追加",
+      "description": "初期プロンプトにテスト要件を含めると、平均で2.3イテレーション削減できます。",
       "impact": {
         "metric": "avg_iterations",
         "improvement": -2.3
@@ -324,24 +326,24 @@ GET  /v1/analysis/trends
 }
 ```
 
-## Privacy Considerations
+## プライバシーに関する考慮事項
 
-- All analysis is performed locally within the user's zloth instance
-- No prompt content is sent to external services for analysis
-- Users can opt-out of analysis data collection
-- Historical data retention is configurable
+- すべての分析はユーザーのzlothインスタンス内でローカルに実行
+- 分析のためにプロンプト内容が外部サービスに送信されることはない
+- ユーザーは分析データ収集をオプトアウト可能
+- 履歴データの保持期間は設定可能
 
-## Related Features
+## 関連機能
 
-- **Metrics Dashboard**: Provides quantitative metrics (existing)
-- **Breakdown Analysis**: Analyzes requirements and breaks into subtasks (existing)
-- **Review System**: Provides code quality feedback (existing)
+- **メトリクスダッシュボード**: 定量的なメトリクスを提供（既存）
+- **ブレイクダウン分析**: 要件を分析しサブタスクに分割（既存）
+- **レビューシステム**: コード品質フィードバックを提供（既存）
 
-## Diagram
+## ダイアグラム
 
 ```mermaid
 flowchart TD
-    subgraph DataSources["Data Sources"]
+    subgraph DataSources["データソース"]
         Tasks[(Tasks)]
         Messages[(Messages)]
         Runs[(Runs)]
@@ -350,19 +352,19 @@ flowchart TD
         CIChecks[(CI Checks)]
     end
 
-    subgraph AnalysisEngine["Analysis Engine"]
-        Aggregator[Data Aggregator]
-        PatternDetector[Pattern Detector]
-        Recommender[Recommendation Engine]
-        TrendAnalyzer[Trend Analyzer]
+    subgraph AnalysisEngine["分析エンジン"]
+        Aggregator[データ集計]
+        PatternDetector[パターン検出]
+        Recommender[推奨エンジン]
+        TrendAnalyzer[トレンド分析]
     end
 
-    subgraph Outputs["Analysis Outputs"]
-        PromptQuality[Prompt Quality Score]
-        SuccessPatterns[Success Patterns]
-        ErrorPatterns[Error Patterns]
-        Recommendations[Recommendations]
-        Trends[Trend Charts]
+    subgraph Outputs["分析出力"]
+        PromptQuality[プロンプト品質スコア]
+        SuccessPatterns[成功パターン]
+        ErrorPatterns[エラーパターン]
+        Recommendations[推奨事項]
+        Trends[トレンドチャート]
     end
 
     Tasks --> Aggregator
@@ -383,11 +385,11 @@ flowchart TD
     PatternDetector --> ErrorPatterns
 ```
 
-## Success Metrics
+## 成功指標
 
-The Analysis feature itself should be measured by:
+Analysis機能自体は以下で測定されるべきです：
 
-1. **Adoption Rate**: % of users who view the Analysis page
-2. **Recommendation Follow-through**: % of recommendations acted upon
-3. **Improvement Correlation**: Correlation between analysis usage and success rate improvement
-4. **User Satisfaction**: Feedback on recommendation usefulness
+1. **採用率**: Analysisページを閲覧するユーザーの割合
+2. **推奨事項のフォロースルー**: 実行された推奨事項の割合
+3. **改善相関**: 分析使用と成功率改善の相関
+4. **ユーザー満足度**: 推奨事項の有用性に関するフィードバック
