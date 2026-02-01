@@ -17,7 +17,6 @@ from zloth_api.domain.enums import (
     MessageRole,
     NotificationType,
     PRCreationMode,
-    Provider,
     ReviewCategory,
     ReviewSeverity,
     ReviewStatus,
@@ -25,23 +24,7 @@ from zloth_api.domain.enums import (
     TaskKanbanStatus,
 )
 
-# ============================================================
-# Model Profile
-# ============================================================
-
-
-class ModelProfileBase(BaseModel):
-    """Base model for ModelProfile."""
-
-    provider: Provider
-    model_name: str = Field(..., description="Model identifier (e.g., gpt-4o, claude-3-opus)")
-    display_name: str | None = Field(None, description="Human-friendly name")
-
-
-class ModelProfileCreate(ModelProfileBase):
-    """Request model for creating a ModelProfile."""
-
-    api_key: str = Field(..., description="API key for the provider")
+"""(ModelProfile removed)"""
 
 
 # ============================================================
@@ -71,14 +54,7 @@ class Job(BaseModel):
     updated_at: datetime
 
 
-class ModelProfile(ModelProfileBase):
-    """ModelProfile response (without API key)."""
-
-    id: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+"""(ModelProfile removed)"""
 
 
 # ============================================================
@@ -262,14 +238,8 @@ class RunCreate(BaseModel):
         None, description="List of model profile IDs to run (required for patch_agent)"
     )
     base_ref: str | None = Field(None, description="Base branch/commit")
-    executor_type: ExecutorType = Field(
-        default=ExecutorType.PATCH_AGENT,
-        description="Executor type: patch_agent (LLM) or claude_code (CLI)",
-    )
-    executor_types: list[ExecutorType] | None = Field(
-        None,
-        description="List of executor types to run in parallel (overrides executor_type)",
-    )
+    executor_type: ExecutorType = Field(default=ExecutorType.CLAUDE_CODE)
+    executor_types: list[ExecutorType] | None = None
     message_id: str | None = Field(None, description="ID of the triggering message")
 
 
@@ -278,9 +248,9 @@ class RunSummary(BaseModel):
 
     id: str
     message_id: str | None = None
-    model_id: str | None
-    model_name: str | None
-    provider: Provider | None
+    model_id: str | None = None
+    model_name: str | None = None
+    provider: str | None = None
     executor_type: ExecutorType
     working_branch: str | None = None
     status: RunStatus
@@ -303,10 +273,10 @@ class Run(BaseModel):
     id: str
     task_id: str
     message_id: str | None = None  # Links run to triggering message
-    model_id: str | None
-    model_name: str | None
-    provider: Provider | None
-    executor_type: ExecutorType = ExecutorType.PATCH_AGENT
+    model_id: str | None = None
+    model_name: str | None = None
+    provider: str | None = None
+    executor_type: ExecutorType = ExecutorType.CLAUDE_CODE
     working_branch: str | None = None
     worktree_path: str | None = None
     session_id: str | None = None  # CLI session ID for conversation persistence
@@ -872,11 +842,8 @@ class ReviewCreate(BaseModel):
     """Request for creating a Review."""
 
     target_run_ids: list[str] = Field(..., description="Run IDs to review")
-    executor_type: ExecutorType = Field(
-        default=ExecutorType.CLAUDE_CODE,
-        description="Executor to use for review",
-    )
-    model_id: str | None = Field(None, description="Model ID for patch_agent executor")
+    executor_type: ExecutorType = Field(default=ExecutorType.CLAUDE_CODE)
+    model_id: str | None = None
     focus_areas: list[ReviewCategory] | None = Field(None, description="Areas to focus on")
 
 

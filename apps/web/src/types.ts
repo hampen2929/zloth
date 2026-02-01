@@ -3,6 +3,7 @@
  */
 
 // Enums
+// Provider removed from UI (executor-only)
 export type Provider = 'openai' | 'anthropic' | 'google';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -12,20 +13,7 @@ export type CodingMode = 'interactive' | 'semi_auto' | 'full_auto';
 export type PRUpdateMode = 'both' | 'description' | 'title';
 
 // Model Profile
-export interface ModelProfile {
-  id: string;
-  provider: Provider;
-  model_name: string;
-  display_name: string | null;
-  created_at: string;
-}
-
-export interface ModelProfileCreate {
-  provider: Provider;
-  model_name: string;
-  display_name?: string;
-  api_key: string;
-}
+// Models removed from UI
 
 // Repository
 export interface Repo {

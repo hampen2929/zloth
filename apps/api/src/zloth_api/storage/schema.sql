@@ -1,16 +1,6 @@
 -- zloth v0.1 SQLite Schema
 
--- Model profiles (provider + model + encrypted API key)
-CREATE TABLE IF NOT EXISTS model_profiles (
-    id TEXT PRIMARY KEY,
-    provider TEXT NOT NULL,          -- openai, anthropic, google
-    model_name TEXT NOT NULL,        -- gpt-4o, claude-3-opus, etc.
-    display_name TEXT,
-    api_key_encrypted TEXT NOT NULL, -- encrypted API key
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_model_profiles_provider ON model_profiles(provider);
+-- (model_profiles table removed)
 
 -- Repositories (cloned repos)
 CREATE TABLE IF NOT EXISTS repos (
@@ -57,9 +47,9 @@ CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL REFERENCES tasks(id),
     message_id TEXT REFERENCES messages(id),  -- links run to triggering message
-    model_id TEXT,                   -- can be NULL for claude_code executor
-    model_name TEXT,                 -- denormalized for env model support
-    provider TEXT,                   -- denormalized for env model support
+    model_id TEXT,
+    model_name TEXT,
+    provider TEXT,
     executor_type TEXT NOT NULL DEFAULT 'patch_agent',  -- patch_agent, claude_code
     working_branch TEXT,             -- git branch for worktree (claude_code)
     worktree_path TEXT,              -- filesystem path to worktree (claude_code)
@@ -81,7 +71,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE INDEX IF NOT EXISTS idx_runs_task ON runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_runs_message ON runs(message_id);
-CREATE INDEX IF NOT EXISTS idx_runs_model ON runs(model_id);
+-- (idx_runs_model removed; model_id kept nullable)
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 
 -- Persistent jobs (SQLite-backed queue)

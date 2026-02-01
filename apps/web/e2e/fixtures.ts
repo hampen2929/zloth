@@ -4,13 +4,7 @@ import { test as base, Page } from '@playwright/test';
  * Mock API responses for E2E tests
  */
 export const mockResponses = {
-  models: [] as Array<{
-    id: string;
-    provider: string;
-    model_name: string;
-    display_name: string | null;
-    created_at: string;
-  }>,
+  // models removed
 
   tasks: [] as Array<{
     id: string;
@@ -68,14 +62,7 @@ export const mockResponses = {
  * Note: Frontend uses /api/* which is proxied to backend /v1/*
  */
 export async function setupApiMocks(page: Page) {
-  // Mock /api/models
-  await page.route('**/api/models', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(mockResponses.models),
-    });
-  });
+  // models endpoint removed
 
   // Mock /api/tasks
   await page.route('**/api/tasks', async (route) => {

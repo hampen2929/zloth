@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { tasksApi, runsApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType } from '@/types';
+import type { Message, ExecutorType } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -25,7 +25,7 @@ interface PendingMessage {
 interface ChatPanelProps {
   taskId: string;
   messages: Message[];
-  models: ModelProfile[];
+  models: any[];
   executorType?: ExecutorType;
   initialModelIds?: string[];
   onRunsCreated: () => void;
@@ -45,7 +45,7 @@ export function ChatPanel({
   const [selectedCLIs, setSelectedCLIs] = useState<ExecutorType[]>(
     executorType !== 'patch_agent' ? [executorType] : []
   );
-  const [usePatchAgent, setUsePatchAgent] = useState(executorType === 'patch_agent');
+  const [usePatchAgent, setUsePatchAgent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -124,9 +124,7 @@ export function ChatPanel({
 
       // Build executor_types array
       const executorTypesToRun: ExecutorType[] = [...selectedCLIs];
-      if (usePatchAgent && selectedModels.length > 0) {
-        executorTypesToRun.push('patch_agent');
-      }
+      // models removed
 
       // Create runs with executor_types for parallel execution
       await runsApi.create(taskId, {
@@ -148,9 +146,7 @@ export function ChatPanel({
       } else if (selectedCLIs.length > 1) {
         parts.push(`${selectedCLIs.length} CLIs`);
       }
-      if (usePatchAgent && selectedModels.length > 0) {
-        parts.push(`${selectedModels.length} model${selectedModels.length > 1 ? 's' : ''}`);
-      }
+      // models removed
       success(`Started ${parts.join(' + ')} run${executorTypesToRun.length > 1 ? 's' : ''}`);
 
       onRunsCreated();
@@ -352,47 +348,9 @@ export function ChatPanel({
               <CpuChipIcon className="w-3.5 h-3.5" />
               <span>Models</span>
             </button>
-            {usePatchAgent && models.length > 1 && (
-              <button
-                type="button"
-                onClick={selectAllModels}
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                {selectedModels.length === models.length ? 'Deselect all' : 'Select all'}
-              </button>
-            )}
+            {/* models removed */}
           </div>
-          {usePatchAgent && (
-            <div className="flex flex-wrap gap-2 ml-6">
-              {models.length === 0 ? (
-                <p className="text-gray-600 text-xs">
-                  No models configured. Add models in Settings.
-                </p>
-              ) : (
-                models.map((model) => {
-                  const isSelected = selectedModels.includes(model.id);
-                  return (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => toggleModel(model.id)}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all',
-                        'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:ring-offset-gray-900',
-                        isSelected
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
-                      )}
-                      aria-pressed={isSelected}
-                    >
-                      {isSelected && <CheckIcon className="w-3 h-3" />}
-                      {model.display_name || model.model_name}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
+          {/* models removed */}
         </div>
 
         {/* Info message when CLIs are selected */}
@@ -434,7 +392,7 @@ export function ChatPanel({
           />
           <Button
             type="submit"
-            disabled={loading || !input.trim() || (selectedCLIs.length === 0 && (!usePatchAgent || selectedModels.length === 0))}
+            disabled={loading || !input.trim() || selectedCLIs.length === 0}
             isLoading={loading}
             className="self-end"
           >
@@ -448,12 +406,7 @@ export function ChatPanel({
           <span className="text-xs text-gray-500">
             {(() => {
               const parts: string[] = [];
-              if (selectedCLIs.length > 0) {
-                parts.push(`${selectedCLIs.length} CLI${selectedCLIs.length > 1 ? 's' : ''}`);
-              }
-              if (usePatchAgent && selectedModels.length > 0) {
-                parts.push(`${selectedModels.length} model${selectedModels.length > 1 ? 's' : ''}`);
-              }
+              if (selectedCLIs.length > 0) parts.push(`${selectedCLIs.length} CLI${selectedCLIs.length > 1 ? 's' : ''}`);
               return parts.length > 0 ? parts.join(' + ') + ' selected' : 'Select executors';
             })()}
           </span>

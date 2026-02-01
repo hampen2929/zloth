@@ -15,7 +15,6 @@ from zloth_api.services.job_worker import JobWorker
 from zloth_api.services.kanban_service import KanbanService
 from zloth_api.services.merge_gate_service import MergeGateService
 from zloth_api.services.metrics_service import MetricsService
-from zloth_api.services.model_service import ModelService
 from zloth_api.services.notification_service import NotificationService
 from zloth_api.services.output_manager import OutputManager
 from zloth_api.services.pr_service import PRService
@@ -34,7 +33,6 @@ from zloth_api.storage.dao import (
     JobDAO,
     MessageDAO,
     MetricsDAO,
-    ModelProfileDAO,
     RepoDAO,
     ReviewDAO,
     RunDAO,
@@ -69,10 +67,6 @@ def get_crypto_service() -> CryptoService:
     return _crypto_service
 
 
-async def get_model_profile_dao() -> ModelProfileDAO:
-    """Get ModelProfile DAO."""
-    db = await get_db()
-    return ModelProfileDAO(db)
 
 
 async def get_repo_dao() -> RepoDAO:
@@ -121,11 +115,6 @@ async def get_pr_dao() -> PRDAO:
     return PRDAO(db)
 
 
-async def get_model_service() -> ModelService:
-    """Get the model service."""
-    dao = await get_model_profile_dao()
-    crypto = get_crypto_service()
-    return ModelService(dao, crypto)
 
 
 async def get_repo_service() -> RepoService:
@@ -165,7 +154,6 @@ async def get_run_service() -> RunService:
         run_dao = await get_run_dao()
         task_dao = await get_task_dao()
         job_dao = await get_job_dao()
-        model_service = await get_model_service()
         repo_service = await get_repo_service()
         git_service = get_git_service()
         workspace_service = get_workspace_service()
@@ -176,7 +164,6 @@ async def get_run_service() -> RunService:
             run_dao,
             task_dao,
             job_dao,
-            model_service,
             repo_service,
             git_service,
             workspace_service,
@@ -196,10 +183,9 @@ async def get_pr_service() -> PRService:
         run_dao = await get_run_dao()
         repo_service = await get_repo_service()
         github_service = await get_github_service()
-        model_service = await get_model_service()
         git_service = get_git_service()
         _pr_service = PRService(
-            pr_dao, task_dao, run_dao, repo_service, github_service, model_service, git_service
+            pr_dao, task_dao, run_dao, repo_service, github_service, git_service
         )
     return _pr_service
 

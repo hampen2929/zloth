@@ -3,8 +3,6 @@
  */
 
 import type {
-  ModelProfile,
-  ModelProfileCreate,
   Repo,
   RepoCloneRequest,
   RepoSelectRequest,
@@ -95,21 +93,7 @@ async function fetchApi<T>(
   return response.json();
 }
 
-// Models
-export const modelsApi = {
-  list: () => fetchApi<ModelProfile[]>('/models'),
-
-  create: (data: ModelProfileCreate) =>
-    fetchApi<ModelProfile>('/models', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  get: (id: string) => fetchApi<ModelProfile>(`/models/${id}`),
-
-  delete: (id: string) =>
-    fetchApi<void>(`/models/${id}`, { method: 'DELETE' }),
-};
+// Models removed (Executor-only)
 
 // Repos
 export const reposApi = {

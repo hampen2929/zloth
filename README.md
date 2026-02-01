@@ -196,9 +196,7 @@ zloth/
 ## API Endpoints
 
 ### Models
-- `GET /v1/models` - List model profiles
-- `POST /v1/models` - Create model profile
-- `DELETE /v1/models/{id}` - Delete model profile
+// Models API removed (Executor-only)
 
 ### Repositories
 - `POST /v1/repos/clone` - Clone a repository

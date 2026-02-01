@@ -120,7 +120,7 @@ export function getErrorDisplay(error: string | null | undefined): ErrorDisplay 
         message: 'APIキーが無効または期限切れです。設定を確認してください。',
         type: 'auth',
         actions: [
-          { label: 'モデル設定を確認', type: 'settings', href: '#settings-models' },
+          { label: 'GitHub設定を確認', type: 'settings', href: '#settings-github' },
           { label: '別のモデルで実行', type: 'switch_model' },
         ],
         retryable: false,

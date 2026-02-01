@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, modelsApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
+import { reposApi, tasksApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
 import type { GitHubRepository, ExecutorType, CodingMode } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
@@ -48,7 +48,7 @@ export default function HomePage() {
   useClickOutside(repoDropdownRef, () => setShowRepoDropdown(false), showRepoDropdown);
 
   // Data fetching
-  const { data: models } = useSWR('models', modelsApi.list);
+  const models: any[] = [];
   const { data: repos, isLoading: reposLoading } = useSWR('github-repos', githubApi.listRepos);
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
   const { data: branches } = useSWR(
@@ -248,7 +248,7 @@ export default function HomePage() {
               <ExecutorSelector
                 selectedCLIs={selectedCLIs}
                 selectedModels={selectedModels}
-                models={models || []}
+                models={[]}
                 onCLIToggle={toggleCLI}
                 onCLIsChange={setSelectedCLIs}
                 onModelToggle={toggleModel}

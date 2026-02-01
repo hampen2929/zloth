@@ -22,7 +22,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
-  const [settingsDefaultTab, setSettingsDefaultTab] = useState<'models' | 'github' | 'defaults' | undefined>(undefined);
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<'github' | 'defaults' | undefined>(undefined);
 
   // Register keyboard shortcuts
   useKeyboardShortcuts({
@@ -65,9 +65,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      if (hash === '#settings-models') {
-        router.push('/settings?tab=models');
-      } else if (hash === '#settings-github') {
+      if (hash === '#settings-github') {
         router.push('/settings?tab=github');
       } else if (hash === '#settings-defaults') {
         router.push('/settings?tab=defaults');

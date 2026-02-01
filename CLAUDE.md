@@ -55,17 +55,16 @@ zloth/
 │   │       │   ├── llm_router.py # LLM client
 │   │       │   └── patch_agent.py # Patch generation agent
 │   │       ├── domain/         # Domain models
-│   │       │   ├── enums.py    # Provider, RunStatus, etc.
+│   │       │   ├── enums.py    # RunStatus, etc.
 │   │       │   └── models.py   # Pydantic models
 │   │       ├── routes/         # API routes
-│   │       │   ├── models.py   # /v1/models
 │   │       │   ├── repos.py    # /v1/repos
 │   │       │   ├── tasks.py    # /v1/tasks
 │   │       │   ├── runs.py     # /v1/runs
 │   │       │   └── prs.py      # /v1/prs
 │   │       ├── services/       # Business logic
 │   │       │   ├── crypto_service.py
-│   │       │   ├── model_service.py
+│   │       │   ├── (model_service removed)
 │   │       │   ├── repo_service.py
 │   │       │   ├── run_service.py
 │   │       │   └── pr_service.py
@@ -105,7 +104,7 @@ zloth/
 
 | Entity | Description |
 |--------|-------------|
-| **ModelProfile** | LLM provider + model + encrypted API key |
+| (ModelProfile removed) | |
 | **Repo** | Cloned Git repository |
 | **Task** | Conversation unit (1 task = 1 goal) |
 | **Message** | Chat message within a Task |
@@ -118,9 +117,7 @@ zloth/
 
 ```
 # Models
-GET    /v1/models              # List
-POST   /v1/models              # Create
-DELETE /v1/models/{id}         # Delete
+// Models endpoints removed (Executor-only)
 
 # Repos
 POST   /v1/repos/clone         # Clone

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
 import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi, ciChecksApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
+import type { Message, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -29,7 +29,7 @@ interface ChatCodeViewProps {
   taskId: string;
   messages: Message[];
   runs: Run[];
-  models: ModelProfile[];
+  models: any[];
   executorType?: ExecutorType;
   initialModelIds?: string[];
   onRunsCreated: () => void;
@@ -109,7 +109,7 @@ export function ChatCodeView({
   const sortedRuns = useMemo(() => [...runs].reverse(), [runs]);
 
   // Check if patch_agent is used
-  const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
+  const hasPatchAgent = false;
 
 
   // Auto-scroll to bottom
@@ -118,11 +118,7 @@ export function ChatCodeView({
   }, [messages, runs, reviews]);
 
   // Select all models by default if none specified (patch_agent only)
-  useEffect(() => {
-    if (hasPatchAgent && models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
-      setSelectedModels(models.map((m) => m.id));
-    }
-  }, [models, selectedModels.length, initialModelIds, hasPatchAgent]);
+  // models removed
 
   // Get unique executor types from runs (for executor selector cards)
   const uniqueExecutorTypes = useMemo(

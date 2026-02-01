@@ -3,7 +3,7 @@
 import { use, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import useSWR, { mutate } from 'swr';
-import { tasksApi, runsApi, modelsApi } from '@/lib/api';
+import { tasksApi, runsApi } from '@/lib/api';
 import { ChatCodeView } from '@/components/ChatCodeView';
 import { MessageSkeleton } from '@/components/ui/Skeleton';
 import { ExclamationCircleIcon } from '@heroicons/react/24/outline';
@@ -32,7 +32,7 @@ function TaskPageContent({ taskId }: { taskId: string }) {
     { refreshInterval: 2000 }
   );
 
-  const { data: models } = useSWR('models', modelsApi.list);
+  const models: any[] = [];
 
   // Error state
   if (taskError) {
@@ -64,7 +64,7 @@ function TaskPageContent({ taskId }: { taskId: string }) {
         taskId={taskId}
         messages={task.messages}
         runs={runs || []}
-        models={models || []}
+        models={[]}
         executorType={executorType}
         initialModelIds={initialModelIds}
         onRunsCreated={() => {
