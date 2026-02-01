@@ -43,7 +43,6 @@ from zloth_api.executors.codex_executor import CodexExecutor, CodexOptions
 from zloth_api.executors.gemini_executor import GeminiExecutor, GeminiOptions
 from zloth_api.services.commit_message import ensure_english_commit_message
 from zloth_api.services.git_service import GitService
-from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.storage.dao import PRDAO, RunDAO, TaskDAO
 from zloth_api.utils.github_url import parse_github_owner_repo
@@ -141,7 +140,6 @@ class PRService:
         run_dao: RunDAO,
         repo_service: RepoService,
         github_service: GitHubService,
-        model_service: ModelService,
         git_service: GitService | None = None,
     ):
         self.pr_dao = pr_dao
@@ -149,7 +147,6 @@ class PRService:
         self.run_dao = run_dao
         self.repo_service = repo_service
         self.github_service = github_service
-        self.model_service = model_service
         self.git_service = git_service or GitService()
         # Job queue for async PR link generation
         self.link_job_queue = PRLinkJobQueue()

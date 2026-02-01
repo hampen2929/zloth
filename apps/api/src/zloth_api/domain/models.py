@@ -26,25 +26,6 @@ from zloth_api.domain.enums import (
 )
 
 # ============================================================
-# Model Profile
-# ============================================================
-
-
-class ModelProfileBase(BaseModel):
-    """Base model for ModelProfile."""
-
-    provider: Provider
-    model_name: str = Field(..., description="Model identifier (e.g., gpt-4o, claude-3-opus)")
-    display_name: str | None = Field(None, description="Human-friendly name")
-
-
-class ModelProfileCreate(ModelProfileBase):
-    """Request model for creating a ModelProfile."""
-
-    api_key: str = Field(..., description="API key for the provider")
-
-
-# ============================================================
 # Persistent Job Queue (SQLite-backed)
 # ============================================================
 
@@ -69,16 +50,6 @@ class Job(BaseModel):
     last_error: str | None = None
     created_at: datetime
     updated_at: datetime
-
-
-class ModelProfile(ModelProfileBase):
-    """ModelProfile response (without API key)."""
-
-    id: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # ============================================================
@@ -258,13 +229,10 @@ class RunCreate(BaseModel):
     """Request for creating Runs."""
 
     instruction: str = Field(..., description="Natural language instruction")
-    model_ids: list[str] | None = Field(
-        None, description="List of model profile IDs to run (required for patch_agent)"
-    )
     base_ref: str | None = Field(None, description="Base branch/commit")
     executor_type: ExecutorType = Field(
-        default=ExecutorType.PATCH_AGENT,
-        description="Executor type: patch_agent (LLM) or claude_code (CLI)",
+        default=ExecutorType.CLAUDE_CODE,
+        description="Executor type: claude_code, codex_cli, or gemini_cli",
     )
     executor_types: list[ExecutorType] | None = Field(
         None,

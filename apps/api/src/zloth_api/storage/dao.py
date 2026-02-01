@@ -33,7 +33,6 @@ from zloth_api.domain.models import (
     FileDiff,
     Job,
     Message,
-    ModelProfile,
     Repo,
     Review,
     ReviewFeedbackItem,
@@ -55,77 +54,6 @@ def generate_id() -> str:
 def now_iso() -> str:
     """Get current time as ISO string."""
     return datetime.utcnow().isoformat()
-
-
-class ModelProfileDAO:
-    """DAO for ModelProfile."""
-
-    def __init__(self, db: Database):
-        self.db = db
-
-    async def create(
-        self,
-        provider: Provider,
-        model_name: str,
-        api_key_encrypted: str,
-        display_name: str | None = None,
-    ) -> ModelProfile:
-        """Create a new model profile."""
-        id = generate_id()
-        created_at = now_iso()
-
-        await self.db.connection.execute(
-            """
-            INSERT INTO model_profiles
-            (id, provider, model_name, display_name, api_key_encrypted, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (id, provider.value, model_name, display_name, api_key_encrypted, created_at),
-        )
-        await self.db.connection.commit()
-
-        return ModelProfile(
-            id=id,
-            provider=provider,
-            model_name=model_name,
-            display_name=display_name,
-            created_at=datetime.fromisoformat(created_at),
-        )
-
-    async def get(self, id: str) -> ModelProfile | None:
-        """Get a model profile by ID."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM model_profiles WHERE id = ?", (id,)
-        )
-        row = await cursor.fetchone()
-        if not row:
-            return None
-        return self._row_to_model(row)
-
-    async def list(self) -> list[ModelProfile]:
-        """List all model profiles."""
-        cursor = await self.db.connection.execute(
-            "SELECT * FROM model_profiles ORDER BY created_at DESC"
-        )
-        rows = await cursor.fetchall()
-        return [self._row_to_model(row) for row in rows]
-
-    async def delete(self, id: str) -> bool:
-        """Delete a model profile."""
-        cursor = await self.db.connection.execute("DELETE FROM model_profiles WHERE id = ?", (id,))
-        await self.db.connection.commit()
-        return cursor.rowcount > 0
-
-    async def get_encrypted_key(self, id: str) -> str | None:
-        """Get the encrypted API key for a model profile."""
-        cursor = await self.db.connection.execute(
-            "SELECT api_key_encrypted FROM model_profiles WHERE id = ?", (id,)
-        )
-        row = await cursor.fetchone()
-        return row["api_key_encrypted"] if row else None
-
-    def _row_to_model(self, row: Any) -> ModelProfile:
-        return row_to_model(ModelProfile, row)
 
 
 class RepoDAO:

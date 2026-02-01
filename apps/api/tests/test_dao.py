@@ -15,103 +15,12 @@ from zloth_api.storage.dao import (
     BacklogDAO,
     CICheckDAO,
     MessageDAO,
-    ModelProfileDAO,
     RepoDAO,
     ReviewDAO,
     RunDAO,
     TaskDAO,
 )
 from zloth_api.storage.db import Database
-
-
-class TestModelProfileDAO:
-    """Test suite for ModelProfileDAO."""
-
-    @pytest.fixture
-    def dao(self, test_db: Database) -> ModelProfileDAO:
-        """Create ModelProfileDAO instance."""
-        return ModelProfileDAO(test_db)
-
-    @pytest.mark.asyncio
-    async def test_create_and_get(self, dao: ModelProfileDAO) -> None:
-        """Test creating and retrieving a model profile."""
-        profile = await dao.create(
-            provider=Provider.OPENAI,
-            model_name="gpt-4o",
-            api_key_encrypted="encrypted-key-123",
-            display_name="GPT-4o Test",
-        )
-
-        assert profile.id is not None
-        assert profile.provider == Provider.OPENAI
-        assert profile.model_name == "gpt-4o"
-        assert profile.display_name == "GPT-4o Test"
-
-        # Retrieve and verify
-        retrieved = await dao.get(profile.id)
-        assert retrieved is not None
-        assert retrieved.id == profile.id
-        assert retrieved.provider == profile.provider
-        assert retrieved.model_name == profile.model_name
-
-    @pytest.mark.asyncio
-    async def test_get_nonexistent_returns_none(self, dao: ModelProfileDAO) -> None:
-        """Test that getting a nonexistent profile returns None."""
-        result = await dao.get("nonexistent-id")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_list_profiles(self, dao: ModelProfileDAO) -> None:
-        """Test listing all model profiles."""
-        # Create multiple profiles
-        await dao.create(
-            provider=Provider.OPENAI,
-            model_name="gpt-4o",
-            api_key_encrypted="key1",
-        )
-        await dao.create(
-            provider=Provider.ANTHROPIC,
-            model_name="claude-3-opus",
-            api_key_encrypted="key2",
-        )
-
-        profiles = await dao.list()
-        assert len(profiles) >= 2
-
-    @pytest.mark.asyncio
-    async def test_delete_profile(self, dao: ModelProfileDAO) -> None:
-        """Test deleting a model profile."""
-        profile = await dao.create(
-            provider=Provider.GOOGLE,
-            model_name="gemini-pro",
-            api_key_encrypted="key",
-        )
-
-        deleted = await dao.delete(profile.id)
-        assert deleted is True
-
-        # Verify deletion
-        retrieved = await dao.get(profile.id)
-        assert retrieved is None
-
-    @pytest.mark.asyncio
-    async def test_delete_nonexistent_returns_false(self, dao: ModelProfileDAO) -> None:
-        """Test that deleting a nonexistent profile returns False."""
-        deleted = await dao.delete("nonexistent-id")
-        assert deleted is False
-
-    @pytest.mark.asyncio
-    async def test_get_encrypted_key(self, dao: ModelProfileDAO) -> None:
-        """Test retrieving encrypted API key."""
-        encrypted_key = "encrypted-api-key-secret"
-        profile = await dao.create(
-            provider=Provider.OPENAI,
-            model_name="gpt-4o",
-            api_key_encrypted=encrypted_key,
-        )
-
-        retrieved_key = await dao.get_encrypted_key(profile.id)
-        assert retrieved_key == encrypted_key
 
 
 class TestRepoDAO:

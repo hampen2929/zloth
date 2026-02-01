@@ -15,14 +15,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from zloth_api.agents.llm_router import LLMConfig, LLMRouter
-from zloth_api.agents.patch_agent import PatchAgent
 from zloth_api.config import settings
 from zloth_api.domain.enums import ExecutorType, JobKind, RoleExecutionStatus, RunStatus
 from zloth_api.domain.models import (
     SUMMARY_FILE_PATH,
     AgentConstraints,
-    AgentRequest,
     FileDiff,
     ImplementationResult,
     Job,
@@ -40,7 +37,6 @@ from zloth_api.services.commit_message import ensure_english_commit_message
 from zloth_api.services.diff_parser import parse_unified_diff
 from zloth_api.services.git_service import GitService
 from zloth_api.services.job_worker import JobWorker
-from zloth_api.services.model_service import ModelService
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.run_workspace_manager import RunWorkspaceManager
 from zloth_api.services.workspace_adapters import (
@@ -199,7 +195,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         run_dao: RunDAO,
         task_dao: TaskDAO,
         job_dao: JobDAO,
-        model_service: ModelService,
         repo_service: RepoService,
         git_service: GitService | None = None,
         workspace_service: WorkspaceService | None = None,
@@ -213,7 +208,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self.run_dao = run_dao
         self.task_dao = task_dao
         self.job_dao = job_dao
-        self.model_service = model_service
         self.repo_service = repo_service
         self.git_service = git_service or GitService()
         self.workspace_service = workspace_service or WorkspaceService()
@@ -221,7 +215,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         self.github_service = github_service
         # Note: self.output_manager is set by base class
         self.job_worker: JobWorker | None = None
-        self.llm_router = LLMRouter()
         # Note: Executors are also available via self._executors from base class
         self.claude_executor = ClaudeCodeExecutor(
             ClaudeCodeOptions(claude_cli_path=settings.claude_cli_path)
@@ -295,7 +288,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             logger.info(f"Locked base_ref '{effective_base_ref}' for task {task_id[:8]}")
 
         runs: list[Run] = []
-        existing_runs = await self.run_dao.list(task_id)
 
         # Determine executor types to use:
         # 1. If executor_types is specified, use it (new multi-CLI parallel execution)
@@ -309,13 +301,12 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         # Note: Each executor type maintains its own worktree and session
         # so we allow multiple different CLI types in the same task
 
-        # Separate CLI executors from PATCH_AGENT
+        # Filter to only CLI executors (PATCH_AGENT is no longer supported)
         cli_executor_types = [
             et
             for et in executor_types
             if et in {ExecutorType.CLAUDE_CODE, ExecutorType.CODEX_CLI, ExecutorType.GEMINI_CLI}
         ]
-        has_patch_agent = ExecutorType.PATCH_AGENT in executor_types
 
         # Create runs for each CLI executor type
         for executor_type in cli_executor_types:
@@ -329,55 +320,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                 message_id=data.message_id,
             )
             runs.append(run)
-
-        # Handle PATCH_AGENT if included
-        if has_patch_agent:
-            # Create runs for each model (PatchAgent)
-            model_ids = data.model_ids
-            if not model_ids:
-                # If the task is already locked to patch_agent, reuse the most recent
-                # model set (grouped by latest patch_agent instruction).
-                patch_runs = [
-                    r for r in existing_runs if r.executor_type == ExecutorType.PATCH_AGENT
-                ]
-                if patch_runs:
-                    latest_instruction = patch_runs[0].instruction  # newest-first
-                    model_ids = []
-                    seen: set[str] = set()
-                    for r in patch_runs:
-                        if r.instruction != latest_instruction:
-                            continue
-                        if r.model_id and r.model_id not in seen:
-                            seen.add(r.model_id)
-                            model_ids.append(r.model_id)
-                if not model_ids:
-                    raise ValueError("model_ids required for patch_agent executor")
-
-            for model_id in model_ids:
-                # Verify model exists and get model info
-                model = await self.model_service.get(model_id)
-                if not model:
-                    raise ValueError(f"Model not found: {model_id}")
-
-                # Create run record with denormalized model info
-                run = await self.run_dao.create(
-                    task_id=task_id,
-                    instruction=data.instruction,
-                    executor_type=ExecutorType.PATCH_AGENT,
-                    message_id=data.message_id,
-                    model_id=model_id,
-                    model_name=model.model_name,
-                    provider=model.provider,
-                    base_ref=effective_base_ref,
-                )
-                runs.append(run)
-
-                # Enqueue for execution (persistent job)
-                await self.job_dao.create(
-                    kind=JobKind.RUN_EXECUTE,
-                    ref_id=run.id,
-                    payload={},
-                )
 
         return runs
 
@@ -548,30 +490,27 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
         if not repo:
             raise ValueError(f"Repo not found for task: {task.repo_id}")
 
-        if run.executor_type == ExecutorType.PATCH_AGENT:
-            await self._execute_patch_agent_run(run, repo)
-        else:
-            if not run.worktree_path or not run.working_branch:
-                raise ValueError(f"Run missing workspace info: {run.id}")
+        if not run.worktree_path or not run.working_branch:
+            raise ValueError(f"Run missing workspace info: {run.id}")
 
-            workspace_info = ExecutionWorkspaceInfo(
-                path=Path(run.worktree_path),
-                branch_name=run.working_branch,
-                base_branch=run.base_ref or repo.default_branch or "main",
-                created_at=datetime.utcnow(),
-            )
+        workspace_info = ExecutionWorkspaceInfo(
+            path=Path(run.worktree_path),
+            branch_name=run.working_branch,
+            base_branch=run.base_ref or repo.default_branch or "main",
+            created_at=datetime.utcnow(),
+        )
 
-            resume_session_id = None
-            if job.payload:
-                resume_session_id = job.payload.get("resume_session_id")
+        resume_session_id = None
+        if job.payload:
+            resume_session_id = job.payload.get("resume_session_id")
 
-            await self._execute_cli_run(
-                run=run,
-                worktree_info=workspace_info,
-                executor_type=run.executor_type,
-                resume_session_id=resume_session_id,
-                repo=repo,
-            )
+        await self._execute_cli_run(
+            run=run,
+            worktree_info=workspace_info,
+            executor_type=run.executor_type,
+            resume_session_id=resume_session_id,
+            repo=repo,
+        )
 
         # Determine success based on persisted run status
         updated = await self.run_dao.get(run.id)
@@ -633,87 +572,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             True if cleanup was successful.
         """
         return await self.cleanup_workspace(run_id)
-
-    async def _execute_patch_agent_run(self, run: Run, repo: Any) -> None:
-        """Execute a PatchAgent run.
-
-        Args:
-            run: Run object.
-            repo: Repository object.
-        """
-        # Validate required fields for PatchAgent runs
-        if not run.model_id or not run.provider or not run.model_name:
-            raise ValueError(
-                f"PatchAgent run {run.id} missing required model info: "
-                f"model_id={run.model_id}, provider={run.provider}, model_name={run.model_name}"
-            )
-
-        try:
-            # Update status to running
-            await self.run_dao.update_status(run.id, RunStatus.RUNNING)
-
-            # Create working copy
-            workspace_path = self.repo_service.create_working_copy(repo, run.id)
-
-            try:
-                # Get API key
-                api_key = await self.model_service.get_decrypted_key(run.model_id)
-                if not api_key:
-                    raise ValueError("API key not found")
-
-                # Create LLM client
-                config = LLMConfig(
-                    provider=run.provider,
-                    model_name=run.model_name,
-                    api_key=api_key,
-                )
-                llm_client = self.llm_router.get_client(config)
-
-                # Create and run agent
-                agent = PatchAgent(llm_client)
-                request = AgentRequest(
-                    workspace_path=str(workspace_path),
-                    base_ref=run.base_ref or "HEAD",
-                    instruction=run.instruction,
-                    constraints=AgentConstraints(),
-                )
-
-                result = await agent.run(request)
-
-                # Update run with results
-                await self.run_dao.update_status(
-                    run.id,
-                    RunStatus.SUCCEEDED,
-                    summary=result.summary,
-                    patch=result.patch,
-                    files_changed=result.files_changed,
-                    logs=result.logs,
-                    warnings=result.warnings,
-                )
-
-            finally:
-                # Cleanup working copy
-                self.repo_service.cleanup_working_copy(run.id)
-
-        except asyncio.CancelledError:
-            # Task was cancelled (e.g., due to timeout or user cancellation)
-            logger.warning(f"[{run.id[:8]}] PatchAgent run was cancelled")
-            await self.run_dao.update_status(
-                run.id,
-                RunStatus.FAILED,
-                error="Task was cancelled (timeout or user cancellation)",
-                logs=["Execution cancelled"],
-            )
-            raise  # Re-raise to propagate cancellation
-
-        except Exception as e:
-            # Update status to failed
-            await self.run_dao.update_status(
-                run.id,
-                RunStatus.FAILED,
-                error=str(e),
-                logs=[f"Execution failed: {str(e)}"],
-            )
 
     async def _execute_cli_run(
         self,
@@ -973,7 +831,6 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
             commit_message = self._generate_commit_message(run.instruction, final_summary)
             commit_message = await ensure_english_commit_message(
                 commit_message,
-                llm_router=self.llm_router,
                 hint=final_summary or "",
             )
             commit_sha = await self.workspace_adapter.commit(
@@ -1283,8 +1140,8 @@ After resolving ALL conflicts, proceed with the original task below.
     async def _execute(self, record: Run) -> ImplementationResult:
         """Execute run-specific logic (BaseRoleService interface).
 
-        Note: RunService uses its own execution flow via _execute_cli_run
-        and _execute_patch_agent_run, so this method is not directly used.
+        Note: RunService uses its own execution flow via _execute_cli_run,
+        so this method is not directly used.
 
         Args:
             record: Run record.
@@ -1293,7 +1150,7 @@ After resolving ALL conflicts, proceed with the original task below.
             ImplementationResult.
         """
         # RunService manages execution via create_runs which enqueues
-        # _execute_cli_run or _execute_patch_agent_run directly.
+        # _execute_cli_run directly.
         # This implementation is provided for interface compliance.
         return ImplementationResult(
             success=False,

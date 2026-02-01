@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
 import { tasksApi, runsApi, prsApi, preferencesApi, reviewsApi, ciChecksApi } from '@/lib/api';
-import type { Message, ModelProfile, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
+import type { Message, ExecutorType, Run, RunStatus, Review, CICheck } from '@/types';
 import { Button } from './ui/Button';
 import { useToast } from './ui/Toast';
 import { getShortcutText, isModifierPressed } from '@/lib/platform';
@@ -29,9 +29,7 @@ interface ChatCodeViewProps {
   taskId: string;
   messages: Message[];
   runs: Run[];
-  models: ModelProfile[];
   executorType?: ExecutorType;
-  initialModelIds?: string[];
   onRunsCreated: () => void;
   onPRCreated: () => void;
 }
@@ -40,14 +38,10 @@ export function ChatCodeView({
   taskId,
   messages,
   runs,
-  models,
-  // executorType prop kept for backwards compatibility but not used
-  initialModelIds,
   onRunsCreated,
   onPRCreated,
 }: ChatCodeViewProps) {
   const [input, setInput] = useState('');
-  const [selectedModels, setSelectedModels] = useState<string[]>(initialModelIds || []);
   const [loading, setLoading] = useState(false);
   const [selectedExecutorType, setSelectedExecutorType] = useState<ExecutorType | null>(null);
   const [runTabs, setRunTabs] = useState<Record<string, RunTab>>({});
@@ -108,21 +102,10 @@ export function ChatCodeView({
   // Determine executor types used in this task
   const sortedRuns = useMemo(() => [...runs].reverse(), [runs]);
 
-  // Check if patch_agent is used
-  const hasPatchAgent = sortedRuns.some((r) => r.executor_type === 'patch_agent');
-
-
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, runs, reviews]);
-
-  // Select all models by default if none specified (patch_agent only)
-  useEffect(() => {
-    if (hasPatchAgent && models.length > 0 && selectedModels.length === 0 && !initialModelIds) {
-      setSelectedModels(models.map((m) => m.id));
-    }
-  }, [models, selectedModels.length, initialModelIds, hasPatchAgent]);
 
   // Get unique executor types from runs (for executor selector cards)
   const uniqueExecutorTypes = useMemo(
@@ -390,8 +373,8 @@ export function ChatCodeView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    // Need a selected executor type or models selected (for patch_agent)
-    if (!selectedExecutorType && selectedModels.length === 0) return;
+    // Need a selected executor type
+    if (!selectedExecutorType) return;
 
     setLoading(true);
 
@@ -399,34 +382,15 @@ export function ChatCodeView({
       // Create message and get its ID for linking to runs
       const message = await tasksApi.addMessage(taskId, { role: 'user', content: input.trim() });
 
-      // Only send to the currently selected executor type (not all executors)
-      const executorTypesToRun: ExecutorType[] = [];
-
-      // Check if selected executor is a CLI type
-      const isCLISelected = selectedExecutorType &&
-        (selectedExecutorType === 'claude_code' ||
-         selectedExecutorType === 'codex_cli' ||
-         selectedExecutorType === 'gemini_cli');
-
-      if (isCLISelected) {
-        executorTypesToRun.push(selectedExecutorType);
-      }
-
-      // If patch_agent is selected, add it with models
-      if (selectedExecutorType === 'patch_agent' && selectedModels.length > 0) {
-        executorTypesToRun.push('patch_agent');
-      }
-
       // Create run for the selected executor only, linked to the message
       await runsApi.create(taskId, {
         instruction: input.trim(),
-        executor_types: executorTypesToRun,
-        model_ids: selectedExecutorType === 'patch_agent' && selectedModels.length > 0 ? selectedModels : undefined,
+        executor_types: [selectedExecutorType],
         message_id: message.id,
       });
 
       // Show success message
-      const executorName = getExecutorDisplayName(selectedExecutorType!) || selectedExecutorType;
+      const executorName = getExecutorDisplayName(selectedExecutorType) || selectedExecutorType;
       success(`Started ${executorName} run`);
 
       setInput('');
@@ -436,20 +400,6 @@ export function ChatCodeView({
       error('Failed to create runs. Please try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const toggleModel = (modelId: string) => {
-    setSelectedModels((prev) =>
-      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
-    );
-  };
-
-  const selectAllModels = () => {
-    if (selectedModels.length === models.length) {
-      setSelectedModels([]);
-    } else {
-      setSelectedModels(models.map((m) => m.id));
     }
   };
 
@@ -722,24 +672,13 @@ export function ChatCodeView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Model Selection (only when patch_agent is selected) */}
-      {selectedExecutorType === 'patch_agent' && (
-        <ModelSelector
-          models={models}
-          selectedModels={selectedModels}
-          onToggleModel={toggleModel}
-          onSelectAll={selectAllModels}
-        />
-      )}
-
       {/* Input */}
       <ChatInput
         value={input}
         onChange={setInput}
         onSubmit={handleSubmit}
         loading={loading}
-        disabled={!selectedExecutorType || (selectedExecutorType === 'patch_agent' && selectedModels.length === 0)}
-        selectedModelCount={selectedExecutorType === 'patch_agent' ? selectedModels.length : undefined}
+        disabled={!selectedExecutorType}
       />
 
     </div>
@@ -1039,68 +978,12 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-interface ModelSelectorProps {
-  models: ModelProfile[];
-  selectedModels: string[];
-  onToggleModel: (modelId: string) => void;
-  onSelectAll: () => void;
-}
-
-function ModelSelector({ models, selectedModels, onToggleModel, onSelectAll }: ModelSelectorProps) {
-  return (
-    <div className="border-t border-gray-800 p-3 space-y-3">
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-500">Select models to run:</span>
-          {models.length > 1 && (
-            <button
-              type="button"
-              onClick={onSelectAll}
-              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              {selectedModels.length === models.length ? 'Deselect all' : 'Select all'}
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {models.length === 0 ? (
-            <p className="text-gray-600 text-xs">No models configured. Add models in Settings.</p>
-          ) : (
-            models.map((model) => {
-              const isSelected = selectedModels.includes(model.id);
-              return (
-                <button
-                  key={model.id}
-                  type="button"
-                  onClick={() => onToggleModel(model.id)}
-                  className={cn(
-                    'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:ring-offset-gray-900',
-                    isSelected
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
-                  )}
-                  aria-pressed={isSelected}
-                >
-                  {isSelected && <CheckIcon className="w-3 h-3" />}
-                  {model.display_name || model.model_name}
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   loading: boolean;
   disabled: boolean;
-  selectedModelCount?: number;
 }
 
 function ChatInput({
@@ -1109,7 +992,6 @@ function ChatInput({
   onSubmit,
   loading,
   disabled,
-  selectedModelCount,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -1158,11 +1040,6 @@ function ChatInput({
       </div>
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs text-gray-500">{getShortcutText('Enter')} to submit</span>
-        {selectedModelCount !== undefined && selectedModelCount > 0 && (
-          <span className="text-xs text-gray-500">
-            {selectedModelCount} model{selectedModelCount > 1 ? 's' : ''} selected
-          </span>
-        )}
       </div>
     </form>
   );
