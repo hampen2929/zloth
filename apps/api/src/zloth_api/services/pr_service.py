@@ -193,8 +193,35 @@ class PRService:
                     "Please ensure the GitHub App has 'Contents' permission "
                     "set to 'Read and write' and is installed on this repository."
                 )
+            # If a merge is in progress in the workspace, conclude it and retry once
+            try:
+                from zloth_api.services.workspace_service import WorkspaceService
+
+                ws = WorkspaceService()
+                if await ws.is_merge_in_progress(Path(run.worktree_path)):
+                    # If conflicts still exist, bubble up; otherwise conclude merge
+                    remaining = await ws.get_conflict_files(Path(run.worktree_path))
+                    if remaining:
+                        raise ExternalServiceError(
+                            "Merge conflicts remain after previous resolution",
+                            details={"conflicts": remaining},
+                        )
+                    await ws.complete_merge(Path(run.worktree_path), message="Conclude merge")
+                    # Retry once
+                    retry = await self.git_service.push_with_retry(
+                        Path(run.worktree_path),
+                        branch=run.working_branch,
+                        auth_url=auth_url,
+                    )
+                    if retry.success:
+                        return
+                    error_str = retry.error or error_str
+            except Exception:
+                # Fall through to raise below if anything goes wrong
+                pass
+
             raise ExternalServiceError(
-                f"Failed to push branch: {push_result.error}",
+                f"Failed to push branch: {error_str}",
                 details={"repository": f"{owner}/{repo}"},
             )
 

@@ -1002,7 +1002,68 @@ class RunService(BaseRoleService[Run, RunCreate, ImplementationResult]):
                     else:
                         logs.append(f"Pushed to branch: {worktree_info.branch_name}")
                 else:
-                    logs.append(f"Push failed (will retry on PR creation): {push_result.error}")
+                    # Push failed. If this created a merge-in-progress state, try to conclude it.
+                    err_lower = (push_result.error or "").lower()
+                    logs.append(f"Push failed: {push_result.error}")
+
+                    try:
+                        merge_in_progress = await self.workspace_service.is_merge_in_progress(
+                            worktree_info.path
+                        )
+                    except Exception:
+                        merge_in_progress = False
+
+                    if merge_in_progress:
+                        # Check for unresolved conflict files first
+                        conflict_files = await self.workspace_service.get_conflict_files(
+                            worktree_info.path
+                        )
+
+                        if conflict_files:
+                            # Use AI to resolve and then conclude the merge
+                            conflict_instruction = self._build_conflict_resolution_instruction(
+                                conflict_files
+                            )
+                            await self._log_output(
+                                run.id, "Merge in progress with conflicts. Resolving via AI..."
+                            )
+                            await self._resolve_conflicts_with_ai(
+                                run=run,
+                                worktree_path=worktree_info.path,
+                                conflict_files=conflict_files,
+                                executor=executor,
+                                executor_name=executor_name,
+                                logs=logs,
+                            )
+                        else:
+                            # No conflict markers remain but MERGE_HEAD exists -> conclude merge
+                            commit_sha = await self.workspace_service.complete_merge(
+                                worktree_info.path,
+                                message="Conclude merge after auto-resolution",
+                            )
+                            logs.append(
+                                f"Concluded in-progress merge: {commit_sha[:8]} (re-trying push)"
+                            )
+
+                        # Retry push once after concluding merge
+                        retry_result = await self.workspace_adapter.push(
+                            worktree_info.path,
+                            branch=worktree_info.branch_name,
+                            auth_url=auth_url,
+                        )
+                        if retry_result.success:
+                            logs.append(
+                                f"Pushed to branch after concluding merge: {worktree_info.branch_name}"
+                            )
+                        else:
+                            logs.append(
+                                f"Push still failing after merge conclusion: {retry_result.error}"
+                            )
+                    else:
+                        # No merge in progress. Log and allow PR creation path to retry.
+                        logs.append(
+                            "Push failed with no merge in progress (will retry on PR creation)"
+                        )
 
             # 9. Save results
             await self.run_dao.update_status(

@@ -488,6 +488,26 @@ class WorkspaceService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _get_conflicts)
 
+    async def is_merge_in_progress(self, workspace_path: Path) -> bool:
+        """Check whether a merge is in progress (MERGE_HEAD exists).
+
+        Args:
+            workspace_path: Path to the workspace.
+
+        Returns:
+            True if MERGE_HEAD exists, False otherwise.
+        """
+
+        def _check() -> bool:
+            try:
+                merge_head = workspace_path / ".git" / "MERGE_HEAD"
+                return merge_head.exists()
+            except Exception:
+                return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _check)
+
     def _get_conflict_files_sync(self, repo: git.Repo) -> list[str]:
         """Synchronous helper to get conflict files.
 
