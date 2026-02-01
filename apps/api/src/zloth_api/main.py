@@ -12,6 +12,7 @@ from zloth_api.error_handling import install_error_handling
 from zloth_api.routes import (
     backlog_router,
     breakdown_router,
+    executors_router,
     github_router,
     kanban_router,
     metrics_router,
@@ -93,6 +94,7 @@ app.add_middleware(
 # Include routers
 app.include_router(backlog_router, prefix="/v1")
 app.include_router(breakdown_router, prefix="/v1")
+app.include_router(executors_router, prefix="/v1")
 app.include_router(github_router, prefix="/v1")
 app.include_router(kanban_router, prefix="/v1")
 app.include_router(metrics_router)
