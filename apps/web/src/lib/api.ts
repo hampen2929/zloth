@@ -54,6 +54,11 @@ import type {
   MetricsSummary,
   MetricsTrend,
   RealtimeMetrics,
+  AnalysisDetail,
+  AnalysisSummary,
+  AnalysisRecommendation,
+  PromptQualityAnalysis,
+  ExecutorsStatus,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -745,6 +750,54 @@ export const metricsApi = {
     if (repoId) params.set('repo_id', repoId);
     return fetchApi<MetricsTrend[]>(`/metrics/trends?${params.toString()}`);
   },
+};
+
+// Analysis
+export const analysisApi = {
+  /**
+   * Get complete analysis detail for a period.
+   */
+  get: (period: string = '30d', repoId?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (repoId) params.set('repo_id', repoId);
+    return fetchApi<AnalysisDetail>(`/analysis?${params.toString()}`);
+  },
+
+  /**
+   * Get analysis summary.
+   */
+  getSummary: (period: string = '30d', repoId?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (repoId) params.set('repo_id', repoId);
+    return fetchApi<AnalysisSummary>(`/analysis/summary?${params.toString()}`);
+  },
+
+  /**
+   * Get prompt quality analysis.
+   */
+  getPromptAnalysis: (period: string = '30d', repoId?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (repoId) params.set('repo_id', repoId);
+    return fetchApi<PromptQualityAnalysis>(`/analysis/prompts?${params.toString()}`);
+  },
+
+  /**
+   * Get prioritized recommendations.
+   */
+  getRecommendations: (period: string = '30d', repoId?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (repoId) params.set('repo_id', repoId);
+    return fetchApi<AnalysisRecommendation[]>(`/analysis/recommendations?${params.toString()}`);
+  },
+};
+
+// Executors
+export const executorsApi = {
+  getStatus: () => fetchApi<ExecutorsStatus>('/executors/status'),
 };
 
 export { ApiError };

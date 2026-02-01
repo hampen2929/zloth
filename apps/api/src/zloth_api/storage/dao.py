@@ -2711,3 +2711,279 @@ class MetricsDAO:
         cursor = await self.db.connection.execute(query, params)
         rows = await cursor.fetchall()
         return [{"timestamp": row["period"], "value": row["value"] or 0.0} for row in rows]
+
+
+class AnalysisDAO:
+    """DAO for aggregating analysis data from various tables."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def get_prompt_analysis(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get prompt quality analysis for a period."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total_prompts,
+                AVG(LENGTH(content)) as avg_length,
+                AVG(
+                    (LENGTH(content) - LENGTH(REPLACE(content, ' ', '')) + 1)
+                ) as avg_word_count,
+                SUM(
+                    CASE WHEN content LIKE '%.py%' OR content LIKE '%.ts%'
+                         OR content LIKE '%.js%' OR content LIKE '%src/%'
+                         OR content LIKE '%/%.%'
+                    THEN 1 ELSE 0 END
+                ) as prompts_with_file_refs,
+                SUM(
+                    CASE WHEN LOWER(content) LIKE '%test%'
+                         OR LOWER(content) LIKE '%テスト%'
+                    THEN 1 ELSE 0 END
+                ) as prompts_with_test_req
+            FROM messages
+            WHERE role = 'user'
+            AND created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+
+        if row is None or row["total_prompts"] == 0:
+            return {
+                "total_prompts": 0,
+                "avg_length": 0.0,
+                "avg_word_count": 0.0,
+                "prompts_with_file_refs": 0,
+                "prompts_with_test_req": 0,
+            }
+
+        return {
+            "total_prompts": row["total_prompts"] or 0,
+            "avg_length": row["avg_length"] or 0.0,
+            "avg_word_count": row["avg_word_count"] or 0.0,
+            "prompts_with_file_refs": row["prompts_with_file_refs"] or 0,
+            "prompts_with_test_req": row["prompts_with_test_req"] or 0,
+        }
+
+    async def get_executor_success_rates(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Get success rates by executor type."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                executor_type,
+                COUNT(*) as total_runs,
+                SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) as succeeded_runs,
+                AVG(
+                    CASE WHEN completed_at IS NOT NULL AND started_at IS NOT NULL
+                    THEN (julianday(completed_at) - julianday(started_at)) * 24 * 3600
+                    END
+                ) as avg_duration_seconds
+            FROM runs
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+            GROUP BY executor_type
+        """
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+
+        return [
+            {
+                "executor_type": row["executor_type"],
+                "total_runs": row["total_runs"] or 0,
+                "succeeded_runs": row["succeeded_runs"] or 0,
+                "avg_duration_seconds": row["avg_duration_seconds"],
+            }
+            for row in rows
+        ]
+
+    async def get_error_patterns(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+        limit: int = 10,
+    ) -> builtins.list[dict[str, Any]]:
+        """Get common error patterns from failed runs."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        # Get failed runs with their instructions
+        query = f"""
+            SELECT
+                r.instruction,
+                r.error,
+                r.files_changed
+            FROM runs r
+            WHERE r.status = 'failed'
+            AND r.created_at >= ? AND r.created_at < ?{repo_filter}
+            ORDER BY r.created_at DESC
+            LIMIT 100
+        """
+        cursor = await self.db.connection.execute(query, params)
+        rows = await cursor.fetchall()
+
+        # Categorize errors by pattern
+        pattern_counts: dict[str, dict[str, Any]] = {}
+
+        for row in rows:
+            instruction = row["instruction"] or ""
+
+            # Detect pattern from instruction keywords
+            pattern = "other"
+            instruction_lower = instruction.lower()
+
+            if any(
+                kw in instruction_lower
+                for kw in ["database", "migration", "db", "sql", "マイグレーション"]
+            ):
+                pattern = "database_migration"
+            elif any(
+                kw in instruction_lower for kw in ["auth", "login", "password", "認証", "ログイン"]
+            ):
+                pattern = "authentication"
+            elif any(
+                kw in instruction_lower for kw in ["api", "endpoint", "route", "エンドポイント"]
+            ):
+                pattern = "api_changes"
+            elif any(kw in instruction_lower for kw in ["test", "spec", "テスト"]):
+                pattern = "testing"
+            elif any(
+                kw in instruction_lower
+                for kw in ["refactor", "リファクタリング", "cleanup", "整理"]
+            ):
+                pattern = "refactoring"
+
+            if pattern not in pattern_counts:
+                pattern_counts[pattern] = {"count": 0, "affected_files": set()}
+
+            pattern_counts[pattern]["count"] += 1
+
+            # Parse files_changed
+            files_changed_str = row["files_changed"]
+            if files_changed_str:
+                try:
+                    files = json.loads(files_changed_str)
+                    for f in files[:5]:  # Limit to 5 files per run
+                        if isinstance(f, dict) and "path" in f:
+                            pattern_counts[pattern]["affected_files"].add(f["path"])
+                        elif isinstance(f, str):
+                            pattern_counts[pattern]["affected_files"].add(f)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        # Get total failed runs count
+        total_query = f"""
+            SELECT COUNT(*) as count
+            FROM runs
+            WHERE status = 'failed'
+            AND created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(
+            total_query,
+            [period_start.isoformat(), period_end.isoformat()] + ([repo_id] if repo_id else []),
+        )
+        total_row = await cursor.fetchone()
+        total_failed = total_row["count"] if total_row else 0
+
+        # Convert to list and sort by count
+        results = []
+        for pattern, data in pattern_counts.items():
+            failure_rate = (data["count"] / total_failed * 100) if total_failed > 0 else 0
+            results.append(
+                {
+                    "pattern": pattern,
+                    "count": data["count"],
+                    "failure_rate": failure_rate,
+                    "affected_files": list(data["affected_files"])[:10],
+                }
+            )
+
+        results.sort(key=lambda x: x["count"], reverse=True)
+        return results[:limit]
+
+    async def get_iteration_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get iteration/conversation metrics for analysis."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        task_repo_filter = ""
+        if repo_id:
+            task_repo_filter = " AND repo_id = ?"
+            params.append(repo_id)
+
+        # Get average messages per task
+        msg_query = f"""
+            SELECT
+                t.id as task_id,
+                COUNT(m.id) as msg_count
+            FROM tasks t
+            LEFT JOIN messages m ON t.id = m.task_id
+            WHERE t.created_at >= ? AND t.created_at < ?{task_repo_filter}
+            GROUP BY t.id
+        """
+        cursor = await self.db.connection.execute(msg_query, params)
+        rows = list(await cursor.fetchall())
+
+        if not rows:
+            return {"avg_iterations": 0.0, "total_tasks": 0}
+
+        total_msgs = sum(row["msg_count"] or 0 for row in rows)
+        total_tasks = len(rows)
+        avg_iterations = total_msgs / total_tasks if total_tasks > 0 else 0
+
+        return {
+            "avg_iterations": avg_iterations,
+            "total_tasks": total_tasks,
+        }
+
+    async def get_success_rate(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        repo_id: str | None = None,
+    ) -> float:
+        """Get overall success rate for runs."""
+        params: builtins.list[Any] = [period_start.isoformat(), period_end.isoformat()]
+        repo_filter = ""
+        if repo_id:
+            repo_filter = " AND task_id IN (SELECT id FROM tasks WHERE repo_id = ?)"
+            params.append(repo_id)
+
+        query = f"""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) as succeeded
+            FROM runs
+            WHERE created_at >= ? AND created_at < ?{repo_filter}
+        """
+        cursor = await self.db.connection.execute(query, params)
+        row = await cursor.fetchone()
+
+        if row is None or row["total"] == 0:
+            return 0.0
+
+        return (row["succeeded"] / row["total"]) * 100 if row["total"] > 0 else 0.0

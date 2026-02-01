@@ -21,6 +21,7 @@ import {
   EyeIcon,
   ClockIcon,
   ChartBarIcon,
+  LightBulbIcon,
 } from '@heroicons/react/24/outline';
 
 type SortOption = 'newest' | 'oldest' | 'alphabetical';
@@ -143,6 +144,19 @@ export default function Sidebar() {
         >
           <ChartBarIcon className="w-4 h-4" />
           Metrics
+        </Link>
+        <Link
+          href="/analysis"
+          className={cn(
+            'flex items-center justify-center gap-2 w-full py-2.5 px-3',
+            'bg-gray-800 hover:bg-gray-700 rounded-lg',
+            'text-sm font-medium transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+            pathname === '/analysis' && 'bg-gray-700 ring-2 ring-gray-500'
+          )}
+        >
+          <LightBulbIcon className="w-4 h-4" />
+          Analysis
         </Link>
         <Link
           href="/backlog"

@@ -1,7 +1,9 @@
 """API routes for zloth."""
 
+from zloth_api.routes.analysis import router as analysis_router
 from zloth_api.routes.backlog import router as backlog_router
 from zloth_api.routes.breakdown import router as breakdown_router
+from zloth_api.routes.executors import router as executors_router
 from zloth_api.routes.github import router as github_router
 from zloth_api.routes.kanban import router as kanban_router
 from zloth_api.routes.metrics import router as metrics_router
@@ -16,8 +18,10 @@ from zloth_api.routes.tasks import router as tasks_router
 # Note: webhooks router removed - using CI polling instead (see ci_polling_service.py)
 
 __all__ = [
+    "analysis_router",
     "backlog_router",
     "breakdown_router",
+    "executors_router",
     "github_router",
     "kanban_router",
     "metrics_router",

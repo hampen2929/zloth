@@ -8,7 +8,7 @@ import type { GitHubRepository, ExecutorType, CodingMode } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
-import { useClickOutside } from '@/hooks';
+import { useClickOutside, useSessionStorage } from '@/hooks';
 import { ExecutorSelector } from '@/components/ExecutorSelector';
 import { BranchSelector } from '@/components/BranchSelector';
 import {
@@ -28,7 +28,7 @@ export default function HomePage() {
   const { error: toastError } = useToast();
   const submitShortcut = useShortcutText('Enter');
 
-  const [instruction, setInstruction] = useState('');
+  const [instruction, setInstruction, clearInstruction] = useSessionStorage('new-task-instruction', '');
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -147,6 +147,9 @@ export default function HomePage() {
         executor_types: executorTypesToRun,
         message_id: message.id,
       });
+
+      // Clear the instruction from sessionStorage on successful submission
+      clearInstruction();
 
       // Navigate to the task page with executor info
       const params = new URLSearchParams();

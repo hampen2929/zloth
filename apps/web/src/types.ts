@@ -721,3 +721,73 @@ export interface MetricsDetail {
   productivity_metrics: ProductivityMetrics;
   realtime: RealtimeMetrics;
 }
+
+// Prompt Analysis
+
+export interface PromptQualityAnalysis {
+  avg_length: number;
+  avg_word_count: number;
+  specificity_score: number;
+  context_score: number;
+  prompts_with_file_refs: number;
+  prompts_with_test_req: number;
+  total_prompts_analyzed: number;
+  common_missing_elements: string[];
+}
+
+export interface ExecutorSuccessRate {
+  executor_type: ExecutorType;
+  total_runs: number;
+  succeeded_runs: number;
+  success_rate: number;
+  avg_duration_seconds: number | null;
+}
+
+export interface ErrorPattern {
+  pattern: string;
+  count: number;
+  failure_rate: number;
+  affected_files: string[];
+}
+
+export interface AnalysisRecommendation {
+  id: string;
+  priority: 'high' | 'medium' | 'low';
+  category: string;
+  title: string;
+  description: string;
+  impact: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface AnalysisSummary {
+  period: string;
+  period_start: string;
+  period_end: string;
+  prompt_quality_score: number;
+  overall_success_rate: number;
+  avg_iterations: number;
+  total_tasks_analyzed: number;
+}
+
+export interface AnalysisDetail {
+  summary: AnalysisSummary;
+  prompt_analysis: PromptQualityAnalysis;
+  executor_success_rates: ExecutorSuccessRate[];
+  error_patterns: ErrorPattern[];
+  recommendations: AnalysisRecommendation[];
+}
+
+// Executor Status (for Settings > Executors tab)
+export interface ExecutorStatus {
+  available: boolean;
+  path: string;
+  version: string | null;
+  error: string | null;
+}
+
+export interface ExecutorsStatus {
+  claude_code: ExecutorStatus;
+  codex_cli: ExecutorStatus;
+  gemini_cli: ExecutorStatus;
+}

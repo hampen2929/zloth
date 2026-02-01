@@ -1310,3 +1310,74 @@ class MetricsDetail(BaseModel):
     agentic_metrics: AgenticMetrics
     productivity_metrics: ProductivityMetrics
     realtime: RealtimeMetrics
+
+
+# ============================================================
+# Analysis
+# ============================================================
+
+
+class PromptQualityAnalysis(BaseModel):
+    """Analysis of user prompt quality."""
+
+    avg_length: float = 0.0
+    avg_word_count: float = 0.0
+    specificity_score: float = 0.0
+    context_score: float = 0.0
+    prompts_with_file_refs: int = 0
+    prompts_with_test_req: int = 0
+    total_prompts_analyzed: int = 0
+    common_missing_elements: list[str] = Field(default_factory=list)
+
+
+class ExecutorSuccessRate(BaseModel):
+    """Success rate by executor type."""
+
+    executor_type: ExecutorType
+    total_runs: int = 0
+    succeeded_runs: int = 0
+    success_rate: float = 0.0
+    avg_duration_seconds: float | None = None
+
+
+class ErrorPattern(BaseModel):
+    """Common error pattern."""
+
+    pattern: str
+    count: int
+    failure_rate: float
+    affected_files: list[str] = Field(default_factory=list)
+
+
+class AnalysisRecommendation(BaseModel):
+    """Analysis-based recommendation."""
+
+    id: str
+    priority: str  # "high", "medium", "low"
+    category: str  # "prompt_quality", "executor_selection", "error_pattern", etc.
+    title: str
+    description: str
+    impact: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnalysisSummary(BaseModel):
+    """Summary of analysis metrics."""
+
+    period: str
+    period_start: datetime
+    period_end: datetime
+    prompt_quality_score: float = 0.0
+    overall_success_rate: float = 0.0
+    avg_iterations: float = 0.0
+    total_tasks_analyzed: int = 0
+
+
+class AnalysisDetail(BaseModel):
+    """Complete analysis detail response."""
+
+    summary: AnalysisSummary
+    prompt_analysis: PromptQualityAnalysis
+    executor_success_rates: list[ExecutorSuccessRate] = Field(default_factory=list)
+    error_patterns: list[ErrorPattern] = Field(default_factory=list)
+    recommendations: list[AnalysisRecommendation] = Field(default_factory=list)

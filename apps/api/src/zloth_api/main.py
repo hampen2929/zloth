@@ -10,8 +10,10 @@ from zloth_api.config import settings
 from zloth_api.dependencies import get_job_worker, get_pr_status_poller
 from zloth_api.error_handling import install_error_handling
 from zloth_api.routes import (
+    analysis_router,
     backlog_router,
     breakdown_router,
+    executors_router,
     github_router,
     kanban_router,
     metrics_router,
@@ -91,8 +93,10 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(analysis_router)
 app.include_router(backlog_router, prefix="/v1")
 app.include_router(breakdown_router, prefix="/v1")
+app.include_router(executors_router, prefix="/v1")
 app.include_router(github_router, prefix="/v1")
 app.include_router(kanban_router, prefix="/v1")
 app.include_router(metrics_router)
