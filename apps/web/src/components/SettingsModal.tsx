@@ -62,7 +62,7 @@ export const settingsTabConfig: { id: SettingsTabType; label: string; icon: Reac
 ];
 
 export default function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTabType>(defaultTab || 'models');
+  const [activeTab, setActiveTab] = useState<SettingsTabType>(defaultTab || 'executors');
 
   // Update active tab when defaultTab changes
   // This is intentional: we want to switch tabs when externally triggered

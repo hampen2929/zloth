@@ -17,7 +17,7 @@ function SettingsContent() {
   const tabParam = searchParams.get('tab') as SettingsTabType | null;
   const validTabs = useMemo(() => ['executors', 'models', 'github', 'defaults'], []);
   const [activeTab, setActiveTab] = useState<SettingsTabType>(
-    tabParam && validTabs.includes(tabParam) ? tabParam : 'models'
+    tabParam && validTabs.includes(tabParam) ? tabParam : 'executors'
   );
 
   // Update active tab when URL param changes
