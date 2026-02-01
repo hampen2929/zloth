@@ -280,7 +280,9 @@ A:
 
 A:
 1. Configure GitHub App in Settings or via environment variables
-2. Verify the GitHub App has `Contents` (read & write) and `Pull requests` (read & write) permissions
+2. Verify the GitHub App has the required permissions:
+   - Read access to: checks, metadata
+   - Read and write access to: code (contents), pull requests, workflows
 3. Check push permission to repository
 
 ## Performance

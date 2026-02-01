@@ -497,8 +497,29 @@ export function GitHubAppTab() {
         </form>
       )}
 
+      {/* Required Permissions info */}
+      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-800/50 rounded-lg">
+        <h4 className="text-sm font-medium text-blue-300 mb-2">Required Permissions</h4>
+        <p className="text-xs text-gray-400 mb-3">
+          Your GitHub App must have the following permissions:
+        </p>
+        <div className="text-xs space-y-2">
+          <div className="flex items-start gap-2">
+            <span className="text-gray-500 w-20 flex-shrink-0">Read:</span>
+            <span className="text-gray-300">Checks, Metadata</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="text-gray-500 w-20 flex-shrink-0">Read & Write:</span>
+            <span className="text-gray-300">Contents (code), Pull requests, Workflows</span>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-3">
+          These permissions are required for cloning repos, creating PRs, monitoring CI status, and triggering workflows.
+        </p>
+      </div>
+
       {/* Environment variable info */}
-      <div className="mt-6 p-4 bg-gray-800/20 border border-gray-700 rounded-lg">
+      <div className="mt-4 p-4 bg-gray-800/20 border border-gray-700 rounded-lg">
         <h4 className="text-sm font-medium text-gray-300 mb-2">Environment Variables</h4>
         <p className="text-xs text-gray-500 mb-3">
           You can also configure the GitHub App via environment variables:
