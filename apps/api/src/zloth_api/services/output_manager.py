@@ -52,7 +52,7 @@ class OutputManager:
         cleanup_after: float = 3600.0,
         max_queue_size: int = 5000,
         *,
-        db: Optional[Database] = None,
+        db: Database | None = None,
     ):
         """Initialize OutputManager.
 
@@ -199,10 +199,11 @@ class OutputManager:
             if self._db is not None:
                 try:
                     await self._db.execute(
-                        """
-                        INSERT INTO output_streams (id, stream_id, line_number, content, ts, created_at)
-                        VALUES (?, ?, ?, ?, ?, datetime('now'))
-                        """,
+                        (
+                            "INSERT INTO output_streams "
+                            "(id, stream_id, line_number, content, ts, created_at) "
+                            "VALUES (?, ?, ?, ?, ?, datetime('now'))"
+                        ),
                         (
                             f"out_{uuid.uuid4().hex[:16]}",
                             run_id,
@@ -386,7 +387,7 @@ class OutputManager:
                 return result
             except Exception as e:
                 logger.warning("Failed to read persisted output for %s: %s", run_id, e)
-                
+
         # Fallback to in-memory history
         run_lock = await self._get_run_lock(run_id)
         async with run_lock:

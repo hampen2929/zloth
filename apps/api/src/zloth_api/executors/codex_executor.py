@@ -91,10 +91,10 @@ class CodexExecutor:
 
             try:
                 await asyncio.wait_for(read_output(), timeout=self.options.timeout_seconds)
-            except asyncio.TimeoutError as te:
+            except TimeoutError as te:
                 process.kill()
                 await process.wait()
-                raise asyncio.TimeoutError(
+                raise TimeoutError(
                     f"Execution timed out after {self.options.timeout_seconds} seconds"
                 ) from te
 
@@ -248,6 +248,6 @@ class CodexExecutor:
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 await process.wait()
