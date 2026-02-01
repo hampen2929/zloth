@@ -1,15 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { metricsApi } from '@/lib/api';
-import type { MetricsDetail, ExecutorType } from '@/types';
-import { MetricCard } from './components/MetricCard';
+import Link from 'next/link';
+import { metricsApi, kanbanApi } from '@/lib/api';
+import type { MetricsDetail, ExecutorType, RepoSummary, TaskKanbanStatus } from '@/types';
 import { ProgressBar } from './components/ProgressBar';
 import { MetricsSection } from './components/MetricsSection';
 import {
   ArrowPathIcon,
   ChartBarIcon,
-  ChatBubbleLeftRightIcon,
   CommandLineIcon,
   CheckCircleIcon,
   ClockIcon,
@@ -19,6 +18,11 @@ import {
   ChevronRightIcon,
   StarIcon,
   ExclamationTriangleIcon,
+  FolderIcon,
+  PlayIcon,
+  InboxIcon,
+  DocumentCheckIcon,
+  ArchiveBoxIcon,
 } from '@heroicons/react/24/outline';
 
 type PeriodOption = '1d' | '7d' | '30d' | '90d' | 'all';
@@ -37,6 +41,144 @@ const EXECUTOR_LABELS: Record<ExecutorType, string> = {
   codex_cli: 'Codex CLI',
   gemini_cli: 'Gemini CLI',
 };
+
+// Repository status configuration
+const STATUS_CONFIG: Record<
+  TaskKanbanStatus,
+  { label: string; color: string; bgColor: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  backlog: {
+    label: 'Backlog',
+    color: 'text-gray-400',
+    bgColor: 'bg-gray-700',
+    icon: InboxIcon,
+  },
+  todo: {
+    label: 'To Do',
+    color: 'text-blue-400',
+    bgColor: 'bg-blue-900/50',
+    icon: DocumentCheckIcon,
+  },
+  in_progress: {
+    label: 'In Progress',
+    color: 'text-yellow-400',
+    bgColor: 'bg-yellow-900/50',
+    icon: PlayIcon,
+  },
+  gating: {
+    label: 'Gating',
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-900/50',
+    icon: ClockIcon,
+  },
+  in_review: {
+    label: 'In Review',
+    color: 'text-purple-400',
+    bgColor: 'bg-purple-900/50',
+    icon: ExclamationTriangleIcon,
+  },
+  done: {
+    label: 'Done',
+    color: 'text-green-400',
+    bgColor: 'bg-green-900/50',
+    icon: CheckCircleIcon,
+  },
+  archived: {
+    label: 'Archived',
+    color: 'text-gray-500',
+    bgColor: 'bg-gray-800',
+    icon: ArchiveBoxIcon,
+  },
+};
+
+function formatRepoRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return 'No activity';
+
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+
+function StatusBadge({
+  status,
+  count,
+}: {
+  status: TaskKanbanStatus;
+  count: number;
+}) {
+  if (count === 0) return null;
+
+  const config = STATUS_CONFIG[status];
+  const Icon = config.icon;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.bgColor} ${config.color}`}
+    >
+      <Icon className="w-3 h-3" />
+      {count}
+    </span>
+  );
+}
+
+function RepoCard({ repo }: { repo: RepoSummary }) {
+  const { task_counts } = repo;
+
+  return (
+    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 hover:border-gray-600 transition-colors">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <FolderIcon className="w-5 h-5 text-gray-400 flex-shrink-0" />
+          <div className="min-w-0">
+            <h3 className="font-medium text-white truncate">
+              {repo.repo_name || 'Unknown Repository'}
+            </h3>
+            <p className="text-xs text-gray-500 truncate">{repo.default_branch}</p>
+          </div>
+        </div>
+        <div className="text-right flex-shrink-0 ml-2">
+          <div className="text-lg font-semibold text-white">{repo.total_tasks}</div>
+          <div className="text-xs text-gray-500">tasks</div>
+        </div>
+      </div>
+
+      {/* Status badges */}
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        <StatusBadge status="in_progress" count={task_counts.in_progress} />
+        <StatusBadge status="gating" count={task_counts.gating} />
+        <StatusBadge status="in_review" count={task_counts.in_review} />
+        <StatusBadge status="todo" count={task_counts.todo} />
+        <StatusBadge status="done" count={task_counts.done} />
+        {task_counts.backlog > 0 && (
+          <StatusBadge status="backlog" count={task_counts.backlog} />
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+        <span className="text-xs text-gray-500">
+          {formatRepoRelativeTime(repo.latest_activity)}
+        </span>
+        <Link
+          href={`/kanban?repo_id=${repo.id}`}
+          className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+        >
+          View Kanban
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 // Alert thresholds
 const THRESHOLDS = {
@@ -84,6 +226,9 @@ export default function MetricsPage() {
   const [period, setPeriod] = useState<PeriodOption>('7d');
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [showExploratory, setShowExploratory] = useState(false);
+  const [showRepositories, setShowRepositories] = useState(true);
+  const [repos, setRepos] = useState<RepoSummary[]>([]);
+  const [reposLoading, setReposLoading] = useState(true);
 
   const fetchMetrics = useCallback(async () => {
     setLoading(true);
@@ -98,9 +243,29 @@ export default function MetricsPage() {
     }
   }, [period]);
 
+  const fetchRepos = useCallback(async () => {
+    try {
+      setReposLoading(true);
+      const data = await kanbanApi.getRepoSummaries();
+      setRepos(data);
+    } catch (err) {
+      // Silently fail for repos, metrics is the main content
+      console.error('Failed to fetch repositories:', err);
+    } finally {
+      setReposLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
+
+  useEffect(() => {
+    fetchRepos();
+    // Auto-refresh repos every 30 seconds
+    const interval = setInterval(fetchRepos, 30000);
+    return () => clearInterval(interval);
+  }, [fetchRepos]);
 
   const formatDuration = (hours: number | null) => {
     if (hours === null) return '-';
@@ -634,6 +799,96 @@ export default function MetricsPage() {
                   </div>
                 </div>
               </MetricsSection>
+            </div>
+          )}
+        </div>
+
+        {/* ============================================ */}
+        {/* REPOSITORIES */}
+        {/* ============================================ */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowRepositories(!showRepositories)}
+            className="flex items-center gap-2 mb-3 hover:opacity-80 transition-opacity"
+          >
+            {showRepositories ? (
+              <ChevronDownIcon className="h-5 w-5 text-purple-400" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-purple-400" />
+            )}
+            <FolderIcon className="h-5 w-5 text-purple-400" />
+            <span className="text-sm font-medium text-purple-400">REPOSITORIES</span>
+            <span className="text-xs text-gray-500">- リポジトリ一覧</span>
+            {repos.length > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">
+                {repos.length}
+              </span>
+            )}
+          </button>
+
+          {showRepositories && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* Repository summary stats */}
+              {repos.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                  <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                    <div className="text-xl font-bold text-white">{repos.length}</div>
+                    <div className="text-xs text-gray-400">Repositories</div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                    <div className="text-xl font-bold text-yellow-400">
+                      {repos.reduce((sum, r) => sum + r.task_counts.in_progress, 0)}
+                    </div>
+                    <div className="text-xs text-gray-400">In Progress</div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                    <div className="text-xl font-bold text-purple-400">
+                      {repos.reduce((sum, r) => sum + r.task_counts.in_review, 0)}
+                    </div>
+                    <div className="text-xs text-gray-400">In Review</div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                    <div className="text-xl font-bold text-green-400">
+                      {repos.reduce((sum, r) => sum + r.task_counts.done, 0)}
+                    </div>
+                    <div className="text-xs text-gray-400">Done</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loading state */}
+              {reposLoading && repos.length === 0 && (
+                <div className="text-center py-8">
+                  <ArrowPathIcon className="w-6 h-6 text-gray-500 animate-spin mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">Loading repositories...</p>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!reposLoading && repos.length === 0 && (
+                <div className="text-center py-8 bg-gray-800/30 rounded-lg border border-gray-700">
+                  <FolderIcon className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+                  <h3 className="text-sm font-medium text-gray-400 mb-1">No repositories yet</h3>
+                  <p className="text-gray-500 text-xs mb-3">
+                    Create a new task to add a repository
+                  </p>
+                  <Link
+                    href="/"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-colors"
+                  >
+                    New Task
+                  </Link>
+                </div>
+              )}
+
+              {/* Repository grid */}
+              {repos.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {repos.map((repo) => (
+                    <RepoCard key={repo.id} repo={repo} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
