@@ -249,7 +249,74 @@ ALTER TABLE runs ADD COLUMN new_column TEXT;
 | `ZLOTH_WORKSPACES_DIR` | Workspaces path | `./workspaces` |
 | `ZLOTH_DATA_DIR` | Data directory | `./data` |
 
-*GitHub App configuration can also be set via the Settings UI.
+*GitHub App configuration can also be set via the Settings UI. See [GitHub App Setup](#github-app-setup) for required permissions.
+
+## GitHub App Setup
+
+zloth uses a GitHub App for repository access and PR operations. Follow these steps to configure it.
+
+### Required Permissions
+
+Your GitHub App must have the following permissions:
+
+| Permission | Access Level | Purpose |
+|------------|--------------|---------|
+| **Contents** | Read & Write | Clone repositories, push commits, create branches |
+| **Pull requests** | Read & Write | Create and update pull requests |
+| **Metadata** | Read-only | Access repository metadata (automatically granted) |
+
+### Optional Permissions
+
+These permissions enable additional features:
+
+| Permission | Access Level | Purpose |
+|------------|--------------|---------|
+| **Checks** | Read-only | Monitor CI/CD status on pull requests (enables "Gating" feature) |
+| **Workflows** | Read & Write | Trigger and manage GitHub Actions workflows |
+
+### Setup Steps
+
+1. **Create a GitHub App**
+   - Go to https://github.com/settings/apps/new (or your organization's settings)
+   - Set a name (e.g., "zloth-app")
+   - Set Homepage URL (can be any URL)
+   - Uncheck "Webhook" (not required)
+
+2. **Configure Permissions**
+   - Repository permissions:
+     - Contents: **Read and write**
+     - Pull requests: **Read and write**
+     - Metadata: **Read-only** (auto-selected)
+   - Optional (for CI integration):
+     - Checks: **Read-only**
+     - Workflows: **Read and write**
+
+3. **Generate Private Key**
+   - After creating the app, scroll to "Private keys" section
+   - Click "Generate a private key"
+   - Save the downloaded `.pem` file securely
+
+4. **Install the App**
+   - Go to your app's settings page
+   - Click "Install App" in the sidebar
+   - Choose your organization or account
+   - Select repositories to grant access
+
+5. **Configure zloth**
+   - Via Settings UI: Go to Settings > GitHub App and enter the credentials
+   - Via environment variables:
+     ```bash
+     ZLOTH_GITHUB_APP_ID=123456
+     ZLOTH_GITHUB_APP_PRIVATE_KEY=$(base64 -w0 /path/to/private-key.pem)
+     ZLOTH_GITHUB_APP_INSTALLATION_ID=12345678  # Optional
+     ```
+
+### Finding Your Installation ID
+
+If you need to specify a specific installation:
+1. Go to https://github.com/settings/installations
+2. Click "Configure" on your app
+3. The installation ID is in the URL: `https://github.com/settings/installations/{INSTALLATION_ID}`
 
 ## Troubleshooting
 
@@ -280,8 +347,10 @@ A:
 
 A:
 1. Configure GitHub App in Settings or via environment variables
-2. Verify the GitHub App has `Contents` (read & write) and `Pull requests` (read & write) permissions
-3. Check push permission to repository
+2. Verify the GitHub App has the required permissions (see [GitHub App Setup](#github-app-setup)):
+   - Contents: Read & Write
+   - Pull requests: Read & Write
+3. Ensure the app is installed on the target repository
 
 ## Performance
 

@@ -229,7 +229,7 @@ docker compose down
 | `ZLOTH_CODEX_CLI_PATH` | Path to Codex CLI | No (default: `codex`) |
 | `ZLOTH_GEMINI_CLI_PATH` | Path to Gemini CLI | No (default: `gemini`) |
 
-*GitHub App can be configured via environment variables or through the Settings UI.
+*GitHub App can be configured via environment variables or through the Settings UI. See [GitHub App Permissions](#github-app-permissions) for required permissions.
 
 ## Coding Conventions
 
@@ -320,7 +320,42 @@ if not run.model_id or not run.provider:
 ### v0.1 Scope Limitations
 1. **No command execution**: Shell commands disabled for security in v0.1
 2. **Patch output only**: Agents output only Unified diff format patches
-3. **GitHub App auth**: Uses GitHub App for authentication (requires Contents and Pull requests permissions)
+3. **GitHub App auth**: Uses GitHub App for authentication (see [GitHub App Permissions](#github-app-permissions))
+
+### GitHub App Permissions
+
+zloth requires a GitHub App with the following permissions to function properly:
+
+#### Required Permissions
+
+| Permission | Access Level | Purpose |
+|------------|--------------|---------|
+| **Contents** | Read & Write | Clone repositories, push commits, create branches |
+| **Pull requests** | Read & Write | Create and update pull requests |
+| **Metadata** | Read-only | Access repository metadata (automatically granted) |
+
+#### Optional Permissions (for CI integration)
+
+| Permission | Access Level | Purpose |
+|------------|--------------|---------|
+| **Checks** | Read-only | Monitor CI/CD status on pull requests |
+| **Workflows** | Read & Write | Trigger and manage GitHub Actions workflows |
+
+#### How to Configure
+
+1. **Create a GitHub App** at https://github.com/settings/apps/new
+2. **Set permissions** as listed above
+3. **Generate a private key** from the App settings
+4. **Install the App** on your organization or repositories
+5. **Configure zloth** via Settings UI or environment variables
+
+#### Permission Details
+
+- **Contents (Read & Write)**: Essential for cloning repositories, creating new branches, and pushing commits with generated code changes.
+- **Pull requests (Read & Write)**: Required to create new pull requests and update existing ones with AI-generated descriptions.
+- **Metadata (Read-only)**: Automatically included; allows access to basic repository information.
+- **Checks (Read-only)**: Optional; enables the "Gating" feature to track CI status before merging.
+- **Workflows (Read & Write)**: Optional; allows triggering workflow runs and re-running failed checks.
 
 ### Security
 - API keys encrypted at rest using Fernet (AES-128)
@@ -351,7 +386,7 @@ A: Try `docker compose build --no-cache`
 A: Check that `ZLOTH_ENCRYPTION_KEY` is set
 
 **Q: Cannot create PR**
-A: Configure GitHub App in Settings. Ensure the app has `Contents` and `Pull requests` permissions.
+A: Configure GitHub App in Settings. Ensure the app has the required permissions (see [GitHub App Permissions](#github-app-permissions)).
 
 ## Claude Code Guidelines
 
