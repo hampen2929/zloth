@@ -1,11 +1,12 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   ModelsTab,
   GitHubAppTab,
   DefaultsTab,
+  ExecutorsTab,
   settingsTabConfig,
   SettingsTabType,
 } from '@/components/SettingsModal';
@@ -14,18 +15,19 @@ import { cn } from '@/lib/utils';
 function SettingsContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab') as SettingsTabType | null;
+  const validTabs = useMemo(() => ['executors', 'models', 'github', 'defaults'], []);
   const [activeTab, setActiveTab] = useState<SettingsTabType>(
-    tabParam && ['models', 'github', 'defaults'].includes(tabParam) ? tabParam : 'models'
+    tabParam && validTabs.includes(tabParam) ? tabParam : 'executors'
   );
 
   // Update active tab when URL param changes
   // This is intentional: we want to switch tabs when URL param changes
   useEffect(() => {
-    if (tabParam && ['models', 'github', 'defaults'].includes(tabParam)) {
+    if (tabParam && validTabs.includes(tabParam)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveTab(tabParam);
     }
-  }, [tabParam]);
+  }, [tabParam, validTabs]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -58,6 +60,7 @@ function SettingsContent() {
         {activeTab === 'models' && <ModelsTab />}
         {activeTab === 'github' && <GitHubAppTab />}
         {activeTab === 'defaults' && <DefaultsTab />}
+        {activeTab === 'executors' && <ExecutorsTab />}
       </div>
     </div>
   );
