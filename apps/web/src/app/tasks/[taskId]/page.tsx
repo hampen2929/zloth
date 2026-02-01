@@ -3,7 +3,7 @@
 import { use, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import useSWR, { mutate } from 'swr';
-import { tasksApi, runsApi, modelsApi } from '@/lib/api';
+import { tasksApi, runsApi } from '@/lib/api';
 import { ChatCodeView } from '@/components/ChatCodeView';
 import { MessageSkeleton } from '@/components/ui/Skeleton';
 import { ExclamationCircleIcon } from '@heroicons/react/24/outline';
@@ -16,9 +16,8 @@ interface PageProps {
 function TaskPageContent({ taskId }: { taskId: string }) {
   const searchParams = useSearchParams();
 
-  // Parse query params for executor type and model IDs
-  const executorType = (searchParams.get('executor') || 'patch_agent') as ExecutorType;
-  const initialModelIds = searchParams.get('models')?.split(',').filter(Boolean);
+  // Parse query params for executor type
+  const executorType = (searchParams.get('executor') || 'claude_code') as ExecutorType;
 
   const { data: task, error: taskError, isLoading: taskLoading } = useSWR(
     `task-${taskId}`,
@@ -31,8 +30,6 @@ function TaskPageContent({ taskId }: { taskId: string }) {
     () => runsApi.list(taskId),
     { refreshInterval: 2000 }
   );
-
-  const { data: models } = useSWR('models', modelsApi.list);
 
   // Error state
   if (taskError) {
@@ -64,9 +61,7 @@ function TaskPageContent({ taskId }: { taskId: string }) {
         taskId={taskId}
         messages={task.messages}
         runs={runs || []}
-        models={models || []}
         executorType={executorType}
-        initialModelIds={initialModelIds}
         onRunsCreated={() => {
           mutate(`runs-${taskId}`);
         }}

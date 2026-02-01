@@ -17,7 +17,6 @@ from zloth_api.routes import (
     github_router,
     kanban_router,
     metrics_router,
-    models_router,
     preferences_router,
     prs_router,
     repos_router,
@@ -100,7 +99,6 @@ app.include_router(executors_router, prefix="/v1")
 app.include_router(github_router, prefix="/v1")
 app.include_router(kanban_router, prefix="/v1")
 app.include_router(metrics_router)
-app.include_router(models_router, prefix="/v1")
 app.include_router(preferences_router, prefix="/v1")
 app.include_router(repos_router, prefix="/v1")
 app.include_router(reviews_router, prefix="/v1")

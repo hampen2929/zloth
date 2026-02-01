@@ -1,17 +1,5 @@
 -- zloth v0.1 SQLite Schema
 
--- Model profiles (provider + model + encrypted API key)
-CREATE TABLE IF NOT EXISTS model_profiles (
-    id TEXT PRIMARY KEY,
-    provider TEXT NOT NULL,          -- openai, anthropic, google
-    model_name TEXT NOT NULL,        -- gpt-4o, claude-3-opus, etc.
-    display_name TEXT,
-    api_key_encrypted TEXT NOT NULL, -- encrypted API key
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_model_profiles_provider ON model_profiles(provider);
-
 -- Repositories (cloned repos)
 CREATE TABLE IF NOT EXISTS repos (
     id TEXT PRIMARY KEY,
