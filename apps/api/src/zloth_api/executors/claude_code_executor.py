@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from zloth_api.domain.models import FileDiff
+import asyncio as _asyncio  # alias to avoid accidental TimeoutError mixups
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ class ClaudeCodeExecutor:
                             process.stdout.readline(),
                             timeout=300.0,  # 5 min timeout per line
                         )
-                    except TimeoutError:
+                    except asyncio.TimeoutError:
                         logger.warning("No output for 5 minutes, checking if process is alive...")
                         if process.returncode is None:
                             logger.warning(
@@ -242,7 +243,7 @@ class ClaudeCodeExecutor:
                     timeout=self.options.timeout_seconds,
                 )
                 logger.info("Output reading completed")
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 logger.error(f"Execution timed out after {self.options.timeout_seconds} seconds")
                 process.kill()
                 await process.wait()
@@ -369,6 +370,6 @@ class ClaudeCodeExecutor:
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()

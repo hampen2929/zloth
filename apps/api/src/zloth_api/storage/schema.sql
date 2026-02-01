@@ -105,6 +105,19 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_available ON jobs(status, available_a
 CREATE INDEX IF NOT EXISTS idx_jobs_kind_ref ON jobs(kind, ref_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_locked ON jobs(locked_by, locked_at);
 
+-- Output streams (persisted streaming logs for cross-process delivery)
+CREATE TABLE IF NOT EXISTS output_streams (
+    id TEXT PRIMARY KEY,
+    stream_id TEXT NOT NULL,           -- run_id or review_id
+    line_number INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    ts REAL,                           -- unix timestamp (seconds)
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_output_streams_stream_ln
+    ON output_streams(stream_id, line_number);
+
 -- Pull Requests
 CREATE TABLE IF NOT EXISTS prs (
     id TEXT PRIMARY KEY,

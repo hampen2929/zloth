@@ -91,10 +91,10 @@ class CodexExecutor:
 
             try:
                 await asyncio.wait_for(read_output(), timeout=self.options.timeout_seconds)
-            except TimeoutError as te:
+            except asyncio.TimeoutError as te:
                 process.kill()
                 await process.wait()
-                raise TimeoutError(
+                raise asyncio.TimeoutError(
                     f"Execution timed out after {self.options.timeout_seconds} seconds"
                 ) from te
 
@@ -182,7 +182,7 @@ class CodexExecutor:
                 logs=logs,
                 error=f"Codex CLI not found at: {self.options.codex_cli_path}",
             )
-        except TimeoutError as e:
+        except asyncio.TimeoutError as e:
             return ExecutorResult(
                 success=False,
                 summary="",
@@ -248,6 +248,6 @@ class CodexExecutor:
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()

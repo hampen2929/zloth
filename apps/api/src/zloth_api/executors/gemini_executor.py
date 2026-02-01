@@ -124,7 +124,7 @@ class GeminiExecutor:
                     read_output(),
                     timeout=self.options.timeout_seconds,
                 )
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
                 return ExecutorResult(
@@ -190,6 +190,6 @@ class GeminiExecutor:
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()

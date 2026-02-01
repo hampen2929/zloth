@@ -2,6 +2,11 @@
 
 This module provides a pub/sub mechanism for streaming CLI tool output
 (Claude Code, Codex, Gemini) in real-time to connected clients via SSE.
+
+Additionally, it can persist output lines to the shared SQLite database so
+that API and Worker processes can exchange logs across process boundaries.
+When persistence is enabled, the API can serve live logs via REST polling
+even if the Worker produced the logs in a different process.
 """
 
 from __future__ import annotations
@@ -9,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
@@ -42,6 +48,8 @@ class OutputManager:
         max_history: int = 10000,
         cleanup_after: float = 3600.0,
         max_queue_size: int = 5000,
+        *,
+        db: "Database | None" = None,
     ):
         """Initialize OutputManager.
 
@@ -49,10 +57,12 @@ class OutputManager:
             max_history: Maximum number of lines to retain per run.
             cleanup_after: Seconds after completion to cleanup stream.
             max_queue_size: Maximum size of subscriber queues.
+            db: Optional Database for persistence across processes.
         """
         self.max_history = max_history
         self.cleanup_after = cleanup_after
         self.max_queue_size = max_queue_size
+        self._db = db
 
         # run_id -> list of OutputLine (history)
         self._streams: dict[str, list[OutputLine]] = {}
@@ -68,6 +78,9 @@ class OutputManager:
 
         # Per-run locks to minimize contention during concurrent execution
         self._run_locks: dict[str, asyncio.Lock] = {}
+
+        # Persisted line counters (next line number per stream when DB is used)
+        self._counters: dict[str, int] = {}
 
     async def _get_run_lock(self, run_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific run.
@@ -98,6 +111,26 @@ class OutputManager:
             self._subscribers[run_id] = []
             self._completed[run_id] = None
             logger.debug(f"Initialized stream for run {run_id}")
+
+    async def _ensure_counter(self, run_id: str) -> None:
+        """Ensure persisted line counter is initialized from DB when available."""
+        if self._db is None:
+            return
+        if run_id in self._counters:
+            return
+        # Read max line_number from DB for this stream
+        try:
+            conn = self._db.connection
+            cursor = await conn.execute(
+                "SELECT MAX(line_number) AS max_ln FROM output_streams WHERE stream_id = ?",
+                (run_id,),
+            )
+            row = await cursor.fetchone()
+            max_ln = int(row["max_ln"]) if row and row["max_ln"] is not None else -1
+            self._counters[run_id] = max_ln + 1
+        except Exception:
+            # If anything goes wrong, start from 0 (better to stream than to fail)
+            self._counters[run_id] = 0
 
     def publish(self, run_id: str, line: str) -> None:
         """Publish an output line for a run (sync version).
@@ -139,9 +172,15 @@ class OutputManager:
         async with run_lock:
             # Initialize stream if needed
             await self._ensure_initialized(run_id)
+            await self._ensure_counter(run_id)
 
             # Create output line
-            line_number = len(self._streams[run_id])
+            if self._db is not None:
+                # Use persisted counter for cross-process consistency
+                line_number = self._counters.get(run_id, 0)
+                self._counters[run_id] = line_number + 1
+            else:
+                line_number = len(self._streams[run_id])
             output_line = OutputLine(
                 line_number=line_number,
                 content=line,
@@ -152,6 +191,25 @@ class OutputManager:
             if len(self._streams[run_id]) > self.max_history:
                 # Remove oldest lines
                 self._streams[run_id] = self._streams[run_id][-self.max_history :]
+
+            # Persist to DB if available
+            if self._db is not None:
+                try:
+                    await self._db.execute(
+                        """
+                        INSERT INTO output_streams (id, stream_id, line_number, content, ts, created_at)
+                        VALUES (?, ?, ?, ?, ?, datetime('now'))
+                        """,
+                        (
+                            f"out_{uuid.uuid4().hex[:16]}",
+                            run_id,
+                            output_line.line_number,
+                            output_line.content,
+                            float(output_line.timestamp),
+                        ),
+                    )
+                except Exception as e:
+                    logger.warning("Failed to persist output line for %s: %s", run_id, e)
 
             # Notify all subscribers (copy list to avoid modification during iteration)
             subscribers = list(self._subscribers[run_id])
@@ -298,6 +356,32 @@ class OutputManager:
         Returns:
             List of OutputLine objects.
         """
+        # If DB is available, read from persisted storage for cross-process support
+        if self._db is not None:
+            try:
+                conn = self._db.connection
+                cursor = await conn.execute(
+                    """
+                    SELECT line_number, content, ts
+                    FROM output_streams
+                    WHERE stream_id = ? AND line_number >= ?
+                    ORDER BY line_number ASC
+                    """,
+                    (run_id, from_line),
+                )
+                rows = await cursor.fetchall()
+                return [
+                    OutputLine(
+                        line_number=int(r["line_number"]),
+                        content=r["content"],
+                        timestamp=float(r["ts"]) if r["ts"] is not None else time.time(),
+                    )
+                    for r in rows
+                ]
+            except Exception as e:
+                logger.warning("Failed to read persisted output for %s: %s", run_id, e)
+
+        # Fallback to in-memory history
         run_lock = await self._get_run_lock(run_id)
         async with run_lock:
             if run_id not in self._streams:
