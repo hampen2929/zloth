@@ -182,7 +182,7 @@ class CodexExecutor:
                 logs=logs,
                 error=f"Codex CLI not found at: {self.options.codex_cli_path}",
             )
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             return ExecutorResult(
                 success=False,
                 summary="",

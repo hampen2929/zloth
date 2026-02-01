@@ -17,6 +17,9 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from typing import Optional
+
+from zloth_api.storage.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +52,7 @@ class OutputManager:
         cleanup_after: float = 3600.0,
         max_queue_size: int = 5000,
         *,
-        db: "Database | None" = None,
+        db: Optional[Database] = None,
     ):
         """Initialize OutputManager.
 
@@ -361,26 +364,29 @@ class OutputManager:
             try:
                 conn = self._db.connection
                 cursor = await conn.execute(
-                    """
-                    SELECT line_number, content, ts
-                    FROM output_streams
-                    WHERE stream_id = ? AND line_number >= ?
-                    ORDER BY line_number ASC
-                    """,
+                    (
+                        "SELECT line_number, content, ts "
+                        "FROM output_streams "
+                        "WHERE stream_id = ? AND line_number >= ? "
+                        "ORDER BY line_number ASC"
+                    ),
                     (run_id, from_line),
                 )
                 rows = await cursor.fetchall()
-                return [
-                    OutputLine(
-                        line_number=int(r["line_number"]),
-                        content=r["content"],
-                        timestamp=float(r["ts"]) if r["ts"] is not None else time.time(),
+                result: list[OutputLine] = []
+                for r in rows:
+                    ts = float(r["ts"]) if r["ts"] is not None else time.time()
+                    result.append(
+                        OutputLine(
+                            line_number=int(r["line_number"]),
+                            content=r["content"],
+                            timestamp=ts,
+                        )
                     )
-                    for r in rows
-                ]
+                return result
             except Exception as e:
                 logger.warning("Failed to read persisted output for %s: %s", run_id, e)
-
+                
         # Fallback to in-memory history
         run_lock = await self._get_run_lock(run_id)
         async with run_lock:
