@@ -777,3 +777,17 @@ export interface AnalysisDetail {
   error_patterns: ErrorPattern[];
   recommendations: AnalysisRecommendation[];
 }
+
+// Executor Status (for Settings > Executors tab)
+export interface ExecutorStatus {
+  available: boolean;
+  path: string;
+  version: string | null;
+  error: string | null;
+}
+
+export interface ExecutorsStatus {
+  claude_code: ExecutorStatus;
+  codex_cli: ExecutorStatus;
+  gemini_cli: ExecutorStatus;
+}
