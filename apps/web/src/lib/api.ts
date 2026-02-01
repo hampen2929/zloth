@@ -54,6 +54,7 @@ import type {
   MetricsSummary,
   MetricsTrend,
   RealtimeMetrics,
+  CLIStatusResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -745,6 +746,14 @@ export const metricsApi = {
     if (repoId) params.set('repo_id', repoId);
     return fetchApi<MetricsTrend[]>(`/metrics/trends?${params.toString()}`);
   },
+};
+
+// Executors
+export const executorsApi = {
+  /**
+   * Get availability status of all CLI executors.
+   */
+  getStatus: () => fetchApi<CLIStatusResponse>('/executors/status'),
 };
 
 export { ApiError };

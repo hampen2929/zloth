@@ -721,3 +721,18 @@ export interface MetricsDetail {
   productivity_metrics: ProductivityMetrics;
   realtime: RealtimeMetrics;
 }
+
+// CLI Executor Status
+export interface CLIStatus {
+  name: string;
+  display_name: string;
+  available: boolean;
+  configured_path: string;
+  resolved_path: string | null;
+  version: string | null;
+  error: string | null;
+}
+
+export interface CLIStatusResponse {
+  executors: CLIStatus[];
+}
