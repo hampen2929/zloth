@@ -4,6 +4,7 @@ from zloth_api.config import settings
 from zloth_api.domain.enums import JobKind
 from zloth_api.queue.sqlite import SQLiteQueue
 from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
+from zloth_api.services.analysis_service import AnalysisService
 from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
 from zloth_api.services.ci_polling_service import CIPollingService
@@ -27,6 +28,7 @@ from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import (
     PRDAO,
     AgenticRunDAO,
+    AnalysisDAO,
     BacklogDAO,
     CICheckDAO,
     JobDAO,
@@ -407,3 +409,15 @@ async def get_metrics_service() -> MetricsService:
     """Get the metrics service."""
     metrics_dao = await get_metrics_dao()
     return MetricsService(metrics_dao)
+
+
+async def get_analysis_dao() -> AnalysisDAO:
+    """Get Analysis DAO."""
+    db = await get_db()
+    return AnalysisDAO(db)
+
+
+async def get_analysis_service() -> AnalysisService:
+    """Get the analysis service."""
+    analysis_dao = await get_analysis_dao()
+    return AnalysisService(analysis_dao)

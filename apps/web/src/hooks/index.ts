@@ -15,3 +15,6 @@ export { useClipboard, type UseClipboardOptions, type UseClipboardResult } from 
 
 // Keyboard shortcuts
 export { useKeyboardShortcuts, getShortcutsList } from './useKeyboardShortcuts';
+
+// Session storage for form state persistence
+export { useSessionStorage } from './useSessionStorage';
