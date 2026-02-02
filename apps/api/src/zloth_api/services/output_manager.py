@@ -17,8 +17,6 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Optional
-
 from zloth_api.storage.db import Database
 
 logger = logging.getLogger(__name__)
