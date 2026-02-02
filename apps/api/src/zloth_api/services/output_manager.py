@@ -8,7 +8,6 @@ that API and Worker processes can exchange logs across process boundaries.
 When persistence is enabled, the API can serve live logs via REST polling
 even if the Worker produced the logs in a different process.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -17,6 +16,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+
 from zloth_api.storage.db import Database
 
 logger = logging.getLogger(__name__)
