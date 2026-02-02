@@ -15,6 +15,9 @@ Usage:
     # Show detailed list of pending items
     python scripts/reset_pending.py --details
 
+    # Show breakdown by task (which tasks have pending items)
+    python scripts/reset_pending.py --breakdown
+
     # Reset all pending items (with confirmation)
     python scripts/reset_pending.py
 
@@ -53,6 +56,25 @@ Examples:
 
     Reset complete:
       - ci_checks: 490 items reset
+
+    # Show breakdown by task (pending CI grouped by kanban status)
+    $ python scripts/reset_pending.py --breakdown
+    Database: /home/user/.zloth/data/zloth.db
+
+    === Pending CI Checks by Task ===
+
+    Status       Task ID    Pending CI  Title
+    --------------------------------------------------------------------------------
+
+    [gating] (30 pending)
+                 abc12345           20  Fix login bug
+                 def67890           10  Add new feature
+
+    [done] (5 pending)
+                 ghi11111            5  Refactor auth module
+
+    --------------------------------------------------------------------------------
+    Total: 3 tasks, 35 pending CI checks
 """
 
 import argparse
@@ -198,6 +220,77 @@ def show_pending_details(conn: sqlite3.Connection) -> None:
         print("No pending CI checks.")
 
 
+def show_pending_breakdown(conn: sqlite3.Connection) -> None:
+    """Print pending CI checks grouped by task with kanban status.
+
+    Args:
+        conn: SQLite database connection.
+    """
+    cursor = conn.cursor()
+
+    # Get tasks with pending CI checks, grouped by kanban_status
+    cursor.execute(
+        """
+        SELECT
+            t.id,
+            t.title,
+            t.kanban_status,
+            COUNT(ci.id) as pending_ci_count
+        FROM tasks t
+        INNER JOIN ci_checks ci ON t.id = ci.task_id
+        WHERE ci.status = 'pending'
+        GROUP BY t.id, t.title, t.kanban_status
+        ORDER BY
+            CASE t.kanban_status
+                WHEN 'in_progress' THEN 1
+                WHEN 'gating' THEN 2
+                WHEN 'in_review' THEN 3
+                WHEN 'todo' THEN 4
+                WHEN 'done' THEN 5
+                WHEN 'backlog' THEN 6
+                WHEN 'archived' THEN 7
+                ELSE 8
+            END,
+            pending_ci_count DESC
+        """
+    )
+    rows = cursor.fetchall()
+
+    if not rows:
+        print("\n=== Pending CI Checks by Task ===")
+        print("No tasks with pending CI checks.")
+        return
+
+    print("\n=== Pending CI Checks by Task ===")
+
+    # Group by kanban_status
+    status_groups: dict[str, list[tuple[str, str, int]]] = {}
+    total_ci = 0
+
+    for row in rows:
+        task_id, title, kanban_status, ci_count = row
+        status = kanban_status or "unknown"
+        if status not in status_groups:
+            status_groups[status] = []
+        status_groups[status].append((task_id, title, ci_count))
+        total_ci += ci_count
+
+    # Print table header
+    print(f"\n{'Status':<12} {'Task ID':<10} {'Pending CI':>10}  Title")
+    print("-" * 80)
+
+    for status, tasks in status_groups.items():
+        status_total = sum(t[2] for t in tasks)
+        print(f"\n[{status}] ({status_total} pending)")
+        for task_id, title, ci_count in tasks:
+            short_id = task_id[:8]
+            display_title = title[:45] + "..." if len(title) > 45 else title
+            print(f"  {'':<10} {short_id:<10} {ci_count:>10}  {display_title}")
+
+    print("\n" + "-" * 80)
+    print(f"Total: {len(rows)} tasks, {total_ci} pending CI checks")
+
+
 def reset_pending(
     conn: sqlite3.Connection, dry_run: bool = False, table: str | None = None
 ) -> dict[str, int]:
@@ -298,6 +391,7 @@ def main() -> None:
 Examples:
   %(prog)s --dry-run              Show pending counts without making changes
   %(prog)s --details              Show detailed list of pending items
+  %(prog)s --breakdown            Show pending items grouped by task
   %(prog)s -y                     Reset all pending items (skip confirmation)
   %(prog)s --table ci_checks -y   Reset only pending CI checks
   %(prog)s --table runs -y        Reset only pending runs
@@ -318,6 +412,11 @@ Examples:
         "--details",
         action="store_true",
         help="Show detailed list of pending items",
+    )
+    parser.add_argument(
+        "--breakdown",
+        action="store_true",
+        help="Show pending items grouped by task",
     )
     parser.add_argument(
         "--table",
@@ -352,6 +451,9 @@ Examples:
 
         if args.details:
             show_pending_details(conn)
+
+        if args.breakdown:
+            show_pending_breakdown(conn)
 
         total_pending = sum(counts.values())
         if total_pending == 0:

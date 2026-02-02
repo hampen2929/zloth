@@ -1,5 +1,7 @@
 """Kanban board service for task status management."""
 
+import logging
+
 from zloth_api.domain.enums import ExecutorType, RunStatus, TaskBaseKanbanStatus, TaskKanbanStatus
 from zloth_api.domain.models import (
     PR,
@@ -12,7 +14,17 @@ from zloth_api.domain.models import (
     TaskWithKanbanStatus,
 )
 from zloth_api.services.github_service import GitHubService
-from zloth_api.storage.dao import PRDAO, RepoDAO, ReviewDAO, RunDAO, TaskDAO, UserPreferencesDAO
+from zloth_api.storage.dao import (
+    PRDAO,
+    CICheckDAO,
+    RepoDAO,
+    ReviewDAO,
+    RunDAO,
+    TaskDAO,
+    UserPreferencesDAO,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class KanbanService:
@@ -36,6 +48,7 @@ class KanbanService:
         github_service: GitHubService,
         user_preferences_dao: UserPreferencesDAO,
         repo_dao: RepoDAO | None = None,
+        ci_check_dao: CICheckDAO | None = None,
     ):
         self.task_dao = task_dao
         self.run_dao = run_dao
@@ -44,6 +57,7 @@ class KanbanService:
         self.github_service = github_service
         self.user_preferences_dao = user_preferences_dao
         self.repo_dao = repo_dao
+        self.ci_check_dao = ci_check_dao
 
     def _compute_kanban_status(
         self,
@@ -214,6 +228,13 @@ class KanbanService:
             )
 
         await self.task_dao.update_kanban_status(task_id, TaskBaseKanbanStatus.BACKLOG)
+
+        # Cleanup pending CI checks to prevent unnecessary polling
+        if self.ci_check_dao:
+            deleted_count = await self.ci_check_dao.delete_pending_by_task_id(task_id)
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} pending CI checks for task {task_id}")
+
         updated_task = await self.task_dao.get(task_id)
         if not updated_task:
             raise ValueError(f"Task not found after update: {task_id}")
@@ -226,6 +247,13 @@ class KanbanService:
             raise ValueError(f"Task not found: {task_id}")
 
         await self.task_dao.update_kanban_status(task_id, TaskBaseKanbanStatus.ARCHIVED)
+
+        # Cleanup pending CI checks to prevent unnecessary polling
+        if self.ci_check_dao:
+            deleted_count = await self.ci_check_dao.delete_pending_by_task_id(task_id)
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} pending CI checks for task {task_id}")
+
         updated_task = await self.task_dao.get(task_id)
         if not updated_task:
             raise ValueError(f"Task not found after update: {task_id}")

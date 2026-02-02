@@ -2073,6 +2073,25 @@ class CICheckDAO:
 
         return await self.get(id)
 
+    async def delete_pending_by_task_id(self, task_id: str) -> int:
+        """Delete all pending CI checks for a task.
+
+        This is used when a task is archived or moved to backlog to prevent
+        unnecessary CI polling for tasks that are no longer active.
+
+        Args:
+            task_id: Task ID.
+
+        Returns:
+            Number of deleted records.
+        """
+        cursor = await self.db.connection.execute(
+            "DELETE FROM ci_checks WHERE task_id = ? AND status = 'pending'",
+            (task_id,),
+        )
+        await self.db.connection.commit()
+        return cursor.rowcount
+
     def _row_to_model(self, row: Any) -> CICheck:
         """Convert database row to CICheck model."""
         return row_to_model(
