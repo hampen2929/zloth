@@ -57,17 +57,24 @@ Examples:
     Reset complete:
       - ci_checks: 490 items reset
 
-    # Show breakdown by task
+    # Show breakdown by task (pending CI grouped by kanban status)
     $ python scripts/reset_pending.py --breakdown
     Database: /home/user/.zloth/data/zloth.db
 
-    === Pending Items by Task ===
-    Task: Fix login bug (abc123...)
-      - runs: 2
-      - ci_checks: 10
+    === Pending CI Checks by Task ===
 
-    Task: Add feature X (def456...)
-      - ci_checks: 5
+    Status       Task ID    Pending CI  Title
+    --------------------------------------------------------------------------------
+
+    [gating] (30 pending)
+                 abc12345           20  Fix login bug
+                 def67890           10  Add new feature
+
+    [done] (5 pending)
+                 ghi11111            5  Refactor auth module
+
+    --------------------------------------------------------------------------------
+    Total: 3 tasks, 35 pending CI checks
 """
 
 import argparse
@@ -214,111 +221,74 @@ def show_pending_details(conn: sqlite3.Connection) -> None:
 
 
 def show_pending_breakdown(conn: sqlite3.Connection) -> None:
-    """Print pending items grouped by task.
+    """Print pending CI checks grouped by task with kanban status.
 
     Args:
         conn: SQLite database connection.
     """
     cursor = conn.cursor()
 
-    # Get all tasks with pending items
+    # Get tasks with pending CI checks, grouped by kanban_status
     cursor.execute(
         """
         SELECT
             t.id,
             t.title,
-            t.created_at,
-            COALESCE(r.run_count, 0) as pending_runs,
-            COALESCE(rv.review_count, 0) as pending_reviews,
-            COALESCE(ar.agentic_count, 0) as active_agentic_runs,
-            COALESCE(ci.ci_count, 0) as pending_ci_checks
+            t.kanban_status,
+            COUNT(ci.id) as pending_ci_count
         FROM tasks t
-        LEFT JOIN (
-            SELECT task_id, COUNT(*) as run_count
-            FROM runs
-            WHERE status IN ('queued', 'running')
-            GROUP BY task_id
-        ) r ON t.id = r.task_id
-        LEFT JOIN (
-            SELECT task_id, COUNT(*) as review_count
-            FROM reviews
-            WHERE status IN ('queued', 'running')
-            GROUP BY task_id
-        ) rv ON t.id = rv.task_id
-        LEFT JOIN (
-            SELECT task_id, COUNT(*) as agentic_count
-            FROM agentic_runs
-            WHERE phase NOT IN ('completed', 'failed')
-            GROUP BY task_id
-        ) ar ON t.id = ar.task_id
-        LEFT JOIN (
-            SELECT task_id, COUNT(*) as ci_count
-            FROM ci_checks
-            WHERE status = 'pending'
-            GROUP BY task_id
-        ) ci ON t.id = ci.task_id
-        WHERE COALESCE(r.run_count, 0) > 0
-           OR COALESCE(rv.review_count, 0) > 0
-           OR COALESCE(ar.agentic_count, 0) > 0
-           OR COALESCE(ci.ci_count, 0) > 0
+        INNER JOIN ci_checks ci ON t.id = ci.task_id
+        WHERE ci.status = 'pending'
+        GROUP BY t.id, t.title, t.kanban_status
         ORDER BY
-            COALESCE(ci.ci_count, 0) DESC,
-            COALESCE(r.run_count, 0) DESC,
-            t.created_at DESC
+            CASE t.kanban_status
+                WHEN 'in_progress' THEN 1
+                WHEN 'gating' THEN 2
+                WHEN 'in_review' THEN 3
+                WHEN 'todo' THEN 4
+                WHEN 'done' THEN 5
+                WHEN 'backlog' THEN 6
+                WHEN 'archived' THEN 7
+                ELSE 8
+            END,
+            pending_ci_count DESC
         """
     )
     rows = cursor.fetchall()
 
     if not rows:
-        print("\n=== Pending Items by Task ===")
-        print("No tasks with pending items.")
+        print("\n=== Pending CI Checks by Task ===")
+        print("No tasks with pending CI checks.")
         return
 
-    print("\n=== Pending Items by Task ===")
-    print(f"Found {len(rows)} task(s) with pending items:\n")
+    print("\n=== Pending CI Checks by Task ===")
 
-    total_runs = 0
-    total_reviews = 0
-    total_agentic = 0
+    # Group by kanban_status
+    status_groups: dict[str, list[tuple[str, str, int]]] = {}
     total_ci = 0
 
     for row in rows:
-        task_id, title, created_at, runs, reviews, agentic, ci = row
-        short_id = task_id[:8] + "..."
-        display_title = title[:50] + "..." if len(title) > 50 else title
+        task_id, title, kanban_status, ci_count = row
+        status = kanban_status or "unknown"
+        if status not in status_groups:
+            status_groups[status] = []
+        status_groups[status].append((task_id, title, ci_count))
+        total_ci += ci_count
 
-        print(f"Task: {display_title} ({short_id})")
-        print(f"  Created: {created_at}")
+    # Print table header
+    print(f"\n{'Status':<12} {'Task ID':<10} {'Pending CI':>10}  Title")
+    print("-" * 80)
 
-        items = []
-        if runs > 0:
-            items.append(f"runs: {runs}")
-            total_runs += runs
-        if reviews > 0:
-            items.append(f"reviews: {reviews}")
-            total_reviews += reviews
-        if agentic > 0:
-            items.append(f"agentic_runs: {agentic}")
-            total_agentic += agentic
-        if ci > 0:
-            items.append(f"ci_checks: {ci}")
-            total_ci += ci
+    for status, tasks in status_groups.items():
+        status_total = sum(t[2] for t in tasks)
+        print(f"\n[{status}] ({status_total} pending)")
+        for task_id, title, ci_count in tasks:
+            short_id = task_id[:8]
+            display_title = title[:45] + "..." if len(title) > 45 else title
+            print(f"  {'':<10} {short_id:<10} {ci_count:>10}  {display_title}")
 
-        for item in items:
-            print(f"    - {item}")
-        print()
-
-    print("-" * 60)
-    print("Summary:")
-    print(f"  Total tasks with pending items: {len(rows)}")
-    if total_runs > 0:
-        print(f"  Total pending runs: {total_runs}")
-    if total_reviews > 0:
-        print(f"  Total pending reviews: {total_reviews}")
-    if total_agentic > 0:
-        print(f"  Total active agentic_runs: {total_agentic}")
-    if total_ci > 0:
-        print(f"  Total pending ci_checks: {total_ci}")
+    print("\n" + "-" * 80)
+    print(f"Total: {len(rows)} tasks, {total_ci} pending CI checks")
 
 
 def reset_pending(
