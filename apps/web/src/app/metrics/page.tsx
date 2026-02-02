@@ -268,7 +268,7 @@ export default function MetricsPage() {
   const [period, setPeriod] = useState<PeriodOption>('7d');
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [showExploratory, setShowExploratory] = useState(false);
-  const [showRepositories, setShowRepositories] = useState(true);
+  const [showRepositories, setShowRepositories] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [repos, setRepos] = useState<RepoSummary[]>([]);
   const [reposLoading, setReposLoading] = useState(true);
