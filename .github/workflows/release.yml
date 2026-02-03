@@ -60,28 +60,31 @@ jobs:
           # Write to file for multiline support
           echo "$CHANGELOG" > release_notes.md
 
-      - name: Delete existing release if exists
+      - name: Create or Update GitHub Release
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          # Check if release exists and delete it
+          PRERELEASE_FLAG=""
+          if [[ "$VERSION" == *"-"* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          # Check if release already exists
           if gh release view "$VERSION" &>/dev/null; then
-            echo "Deleting existing release $VERSION..."
-            gh release delete "$VERSION" --yes
+            echo "Updating existing release $VERSION..."
+            gh release edit "$VERSION" \
+              --title "$VERSION" \
+              --notes-file release_notes.md \
+              $PRERELEASE_FLAG
+          else
+            echo "Creating new release $VERSION..."
+            gh release create "$VERSION" \
+              --title "$VERSION" \
+              --notes-file release_notes.md \
+              --generate-notes \
+              $PRERELEASE_FLAG
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: ${{ steps.version.outputs.VERSION }}
-          body_path: release_notes.md
-          draft: false
-          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-docker:
     name: Build and Push Docker Images
