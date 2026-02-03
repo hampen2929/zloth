@@ -39,9 +39,11 @@ jobs:
         id: changelog
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
+          # Remove 'v' prefix for CHANGELOG lookup (CHANGELOG uses 0.1.0 format, not v0.1.0)
+          VERSION_NO_V="${VERSION#v}"
           # Extract the section for this version from CHANGELOG.md
-          # Assumes format: ## [vX.X.X] or ## vX.X.X
-          CHANGELOG=$(awk -v ver="$VERSION" '
+          # Assumes format: ## [X.X.X] or ## X.X.X (without 'v' prefix)
+          CHANGELOG=$(awk -v ver="$VERSION_NO_V" '
             /^## / {
               if (found) exit
               if ($0 ~ ver) found=1
@@ -57,6 +59,17 @@ jobs:
 
           # Write to file for multiline support
           echo "$CHANGELOG" > release_notes.md
+
+      - name: Delete existing release if exists
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          # Check if release exists and delete it
+          if gh release view "$VERSION" &>/dev/null; then
+            echo "Deleting existing release $VERSION..."
+            gh release delete "$VERSION" --yes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
