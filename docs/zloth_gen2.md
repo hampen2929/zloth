@@ -23,16 +23,14 @@ zlothは、AIへの責任移譲を段階的に実現するため、以下の4つ
 
 ```mermaid
 graph TD
-    A[<b>Phase 1: Decision Visibility</b><br>判断の可視化] --> B[<b>Phase 2: Decision Reuse & Automation</b><br>判断の再利用・定型化]
-    B --> C[<b>Phase 3: Delegated Responsibility</b><br>責任の委譲]
-    C --> D[<b>Phase 4: Autonomous Development<br>under Governance</b><br>Self-directed improvement within human-defined constraints]
+    A["Phase 1: Decision Visibility<br>判断の可視化<br>← 現状"] --> B["Phase 2: Decision Reuse & Automation<br>判断の再利用・定型化"]
+    B --> C["Phase 3: Delegated Responsibility<br>責任の委譲"]
+    C --> D["Phase 4: Autonomous Development<br>under Governance"]
 
     style A fill:#D6EAF8,stroke:#333,stroke-width:2px
     style B fill:#D1F2EB,stroke:#333,stroke-width:2px
     style C fill:#FDEDEC,stroke:#333,stroke-width:2px
     style D fill:#FDEBD0,stroke:#333,stroke-width:2px
-
-    note right of A: 現状のzlothはこのフェーズ
 ```
 
 - **1) 短期：Decision Visibility（判断の可視化）**
