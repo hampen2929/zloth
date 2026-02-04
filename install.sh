@@ -292,7 +292,7 @@ check_ports() {
         echo "  [2] Cancel and specify ports manually"
         echo ""
 
-        read -p "Choose option [1/2]: " -n 1 -r
+        read -p "Choose option [1/2]: " -n 1 -r < /dev/tty
         echo
 
         case $REPLY in
@@ -365,7 +365,7 @@ setup_repository() {
         if [ -d "$INSTALL_DIR" ]; then
             if [ -d "$INSTALL_DIR/.git" ]; then
                 print_warning "Directory $INSTALL_DIR already exists."
-                read -p "Update existing installation? [y/N] " -n 1 -r
+                read -p "Update existing installation? [y/N] " -n 1 -r < /dev/tty
                 echo
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
                     cd "$INSTALL_DIR"
