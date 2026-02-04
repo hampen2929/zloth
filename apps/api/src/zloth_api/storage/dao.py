@@ -1217,6 +1217,7 @@ class UserPreferencesDAO:
         notify_on_warning: bool | None = None,
         merge_method: str | None = None,
         review_min_score: float | None = None,
+        language: str | None = None,
     ) -> UserPreferences:
         """Save user preferences (upsert)."""
         now = now_iso()
@@ -1251,6 +1252,7 @@ class UserPreferencesDAO:
                     notify_on_warning = ?,
                     merge_method = ?,
                     review_min_score = ?,
+                    language = ?,
                     updated_at = ?
                 WHERE id = 1
                 """,
@@ -1269,6 +1271,7 @@ class UserPreferencesDAO:
                     notify_warning,
                     merge_method,
                     review_min_score,
+                    language,
                     now,
                 ),
             )
@@ -1291,10 +1294,11 @@ class UserPreferencesDAO:
                     notify_on_warning,
                     merge_method,
                     review_min_score,
+                    language,
                     created_at,
                     updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     default_repo_owner,
@@ -1311,6 +1315,7 @@ class UserPreferencesDAO:
                     notify_warning,
                     merge_method,
                     review_min_score,
+                    language,
                     now,
                     now,
                 ),
@@ -1333,6 +1338,7 @@ class UserPreferencesDAO:
             notify_on_warning=True if notify_on_warning is None else notify_on_warning,
             merge_method=merge_method or "squash",
             review_min_score=review_min_score if review_min_score is not None else 0.75,
+            language=language or "en",
         )
 
     def _row_to_model(self, row: Any) -> UserPreferences:
@@ -1353,6 +1359,7 @@ class UserPreferencesDAO:
                 "notify_on_warning": 1,
                 "merge_method": "squash",
                 "review_min_score": 0.75,
+                "language": "en",
             },
         )
 

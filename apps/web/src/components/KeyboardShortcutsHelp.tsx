@@ -2,6 +2,7 @@
 
 import { Modal, ModalBody } from './ui/Modal';
 import { getShortcutsList } from '@/hooks/useKeyboardShortcuts';
+import { useLanguage } from '@/lib/i18n';
 import { CommandLineIcon } from '@heroicons/react/24/outline';
 
 interface KeyboardShortcutsHelpProps {
@@ -10,10 +11,11 @@ interface KeyboardShortcutsHelpProps {
 }
 
 export function KeyboardShortcutsHelp({ isOpen, onClose }: KeyboardShortcutsHelpProps) {
-  const shortcuts = getShortcutsList();
+  const { language, t } = useLanguage();
+  const shortcuts = getShortcutsList(language);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="キーボードショートカット" size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title={t.keyboard.title} size="sm">
       <ModalBody>
         <div className="space-y-1">
           {shortcuts.map((shortcut, idx) => (
@@ -32,7 +34,7 @@ export function KeyboardShortcutsHelp({ isOpen, onClose }: KeyboardShortcutsHelp
         <div className="mt-6 pt-4 border-t border-gray-800">
           <div className="flex items-center gap-2 text-gray-500 text-xs">
             <CommandLineIcon className="w-4 h-4" />
-            <span>ヒント: ほとんどのショートカットはどこからでも使えます</span>
+            <span>{t.keyboard.hint}</span>
           </div>
         </div>
       </ModalBody>

@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     notify_on_warning INTEGER DEFAULT 1,    -- Notify on warning
     merge_method TEXT DEFAULT 'squash',     -- Merge method preference
     review_min_score REAL DEFAULT 0.75,     -- Minimum review score for merge gate
+    language TEXT DEFAULT 'en',             -- UI language preference: en|ja
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

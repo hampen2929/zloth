@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { useLanguage } from '@/lib/i18n';
 
 interface LiveAnnouncerContextType {
   announce: (message: string, politeness?: 'polite' | 'assertive') => void;
@@ -79,18 +80,19 @@ export function LiveAnnouncerProvider({ children }: LiveAnnouncerProviderProps) 
  */
 export function useRunStatusAnnouncer() {
   const { announce } = useLiveAnnouncer();
+  const { t } = useLanguage();
 
   const announceRunStatus = useCallback(
     (modelName: string, status: 'running' | 'succeeded' | 'failed' | 'cancelled') => {
       const statusMessages = {
-        running: `${modelName} の実行を開始しました`,
-        succeeded: `${modelName} の実行が完了しました`,
-        failed: `${modelName} の実行が失敗しました`,
-        cancelled: `${modelName} の実行がキャンセルされました`,
+        running: t.announcements.runStarted.replace('{model}', modelName),
+        succeeded: t.announcements.runCompleted.replace('{model}', modelName),
+        failed: t.announcements.runFailed.replace('{model}', modelName),
+        cancelled: t.announcements.runCancelled.replace('{model}', modelName),
       };
       announce(statusMessages[status], status === 'failed' ? 'assertive' : 'polite');
     },
-    [announce]
+    [announce, t]
   );
 
   return { announceRunStatus };

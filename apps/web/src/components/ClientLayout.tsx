@@ -2,14 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import useSWR from 'swr';
 import Sidebar from './Sidebar';
 import SettingsModal from './SettingsModal';
 import BreakdownModal from './BreakdownModal';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 import { ToastProvider } from './ui/Toast';
+import { LanguageProvider } from '@/lib/i18n';
+import { preferencesApi } from '@/lib/api';
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 import { useKeyboardShortcuts } from '@/hooks';
+import type { Language } from '@/types';
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -23,6 +27,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'executors' | 'github' | 'defaults' | undefined>(undefined);
+
+  // Fetch user preferences to get language setting
+  const { data: preferences } = useSWR('preferences', preferencesApi.get);
+  const language: Language = (preferences?.language as Language) || 'en';
 
   // Register keyboard shortcuts
   useKeyboardShortcuts({
@@ -97,69 +105,71 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   };
 
   return (
-    <ToastProvider>
-      <div className="flex h-screen bg-gray-950">
-        {/* Mobile header bar */}
-        <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-gray-900 border-b border-gray-800 flex items-center px-4">
-          <button
-            className="p-2 -ml-2 rounded-lg hover:bg-gray-800 transition-colors"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label={sidebarOpen ? 'メニューを閉じる' : 'メニューを開く'}
-            aria-expanded={sidebarOpen}
-          >
-            {sidebarOpen ? (
-              <XMarkIcon className="w-6 h-6 text-gray-300" />
-            ) : (
-              <Bars3Icon className="w-6 h-6 text-gray-300" />
+    <LanguageProvider initialLanguage={language}>
+      <ToastProvider>
+        <div className="flex h-screen bg-gray-950">
+          {/* Mobile header bar */}
+          <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-gray-900 border-b border-gray-800 flex items-center px-4">
+            <button
+              className="p-2 -ml-2 rounded-lg hover:bg-gray-800 transition-colors"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={sidebarOpen}
+            >
+              {sidebarOpen ? (
+                <XMarkIcon className="w-6 h-6 text-gray-300" />
+              ) : (
+                <Bars3Icon className="w-6 h-6 text-gray-300" />
+              )}
+            </button>
+            <span className="ml-3 text-lg font-bold text-white">
+              <span className="text-blue-500">z</span>loth
+            </span>
+          </div>
+
+          {/* Mobile sidebar overlay */}
+          <div
+            className={cn(
+              'lg:hidden fixed inset-0 bg-black/60 z-30 transition-opacity duration-300',
+              sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}
-          </button>
-          <span className="ml-3 text-lg font-bold text-white">
-            <span className="text-blue-500">z</span>loth
-          </span>
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+
+          {/* Sidebar - hidden on mobile, shown on desktop */}
+          <div
+            className={cn(
+              'fixed lg:relative z-40 h-full',
+              'transform transition-transform duration-300 ease-out',
+              sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+            )}
+          >
+            <Sidebar />
+          </div>
+
+          {/* Main content */}
+          <main className="flex-1 overflow-y-auto">
+            <div className="p-4 lg:p-6 pt-16 lg:pt-6">{children}</div>
+          </main>
+
+          <SettingsModal
+            isOpen={settingsOpen}
+            onClose={handleSettingsClose}
+            defaultTab={settingsDefaultTab}
+          />
+
+          <KeyboardShortcutsHelp
+            isOpen={shortcutsHelpOpen}
+            onClose={() => setShortcutsHelpOpen(false)}
+          />
+
+          <BreakdownModal
+            isOpen={breakdownOpen}
+            onClose={() => setBreakdownOpen(false)}
+          />
         </div>
-
-        {/* Mobile sidebar overlay */}
-        <div
-          className={cn(
-            'lg:hidden fixed inset-0 bg-black/60 z-30 transition-opacity duration-300',
-            sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          )}
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
-
-        {/* Sidebar - hidden on mobile, shown on desktop */}
-        <div
-          className={cn(
-            'fixed lg:relative z-40 h-full',
-            'transform transition-transform duration-300 ease-out',
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          )}
-        >
-          <Sidebar />
-        </div>
-
-        {/* Main content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-4 lg:p-6 pt-16 lg:pt-6">{children}</div>
-        </main>
-
-        <SettingsModal
-          isOpen={settingsOpen}
-          onClose={handleSettingsClose}
-          defaultTab={settingsDefaultTab}
-        />
-
-        <KeyboardShortcutsHelp
-          isOpen={shortcutsHelpOpen}
-          onClose={() => setShortcutsHelpOpen(false)}
-        />
-
-        <BreakdownModal
-          isOpen={breakdownOpen}
-          onClose={() => setBreakdownOpen(false)}
-        />
-      </div>
-    </ToastProvider>
+      </ToastProvider>
+    </LanguageProvider>
   );
 }

@@ -26,6 +26,51 @@ export interface ErrorDisplay {
   retryable: boolean;
 }
 
+export interface ErrorTranslations {
+  unknownError: string;
+  connectionError: string;
+  connectionErrorDesc: string;
+  authError: string;
+  authErrorDesc: string;
+  checkModelSettings: string;
+  tryDifferentModel: string;
+  permissionError: string;
+  permissionErrorDesc: string;
+  checkGitHubSettings: string;
+  rateLimitError: string;
+  rateLimitErrorDesc: string;
+  retryInOneMinute: string;
+  conflictError: string;
+  conflictErrorDesc: string;
+  executionError: string;
+  genericError: string;
+  retry: string;
+  viewLogs: string;
+}
+
+// Default English translations
+const defaultTranslations: ErrorTranslations = {
+  unknownError: 'An unknown error occurred',
+  connectionError: 'Connection Error',
+  connectionErrorDesc: 'Failed to connect to the server. Please check your internet connection.',
+  authError: 'Authentication Error',
+  authErrorDesc: 'Your API key is invalid or expired. Please check your settings.',
+  checkModelSettings: 'Check model settings',
+  tryDifferentModel: 'Try different model',
+  permissionError: 'Permission Error',
+  permissionErrorDesc: 'You do not have permission to access this resource.',
+  checkGitHubSettings: 'Check GitHub settings',
+  rateLimitError: 'API Rate Limit Reached',
+  rateLimitErrorDesc: 'You have reached the API rate limit. Please wait and try again.',
+  retryInOneMinute: 'Retry in 1 minute',
+  conflictError: 'Conflict Error',
+  conflictErrorDesc: 'There is a conflict in the branch. Manual resolution is required.',
+  executionError: 'Execution Error',
+  genericError: 'An error occurred',
+  retry: 'Retry',
+  viewLogs: 'View logs',
+};
+
 /**
  * Classify error type based on error message
  */
@@ -100,84 +145,87 @@ export function classifyError(error: string | null | undefined): ErrorType {
 /**
  * Get display information for an error
  */
-export function getErrorDisplay(error: string | null | undefined): ErrorDisplay {
+export function getErrorDisplay(
+  error: string | null | undefined,
+  translations: ErrorTranslations = defaultTranslations
+): ErrorDisplay {
   const errorType = classifyError(error);
-  const errorMessage = error || '不明なエラーが発生しました';
+  const errorMessage = error || translations.unknownError;
 
   switch (errorType) {
     case 'network':
       return {
-        title: '接続エラー',
-        message: 'サーバーに接続できませんでした。インターネット接続を確認してください。',
+        title: translations.connectionError,
+        message: translations.connectionErrorDesc,
         type: 'network',
-        actions: [{ label: '再試行', type: 'retry' }],
+        actions: [{ label: translations.retry, type: 'retry' }],
         retryable: true,
       };
 
     case 'auth':
       return {
-        title: '認証エラー',
-        message: 'APIキーが無効または期限切れです。設定を確認してください。',
+        title: translations.authError,
+        message: translations.authErrorDesc,
         type: 'auth',
         actions: [
-          { label: 'モデル設定を確認', type: 'settings', href: '#settings-models' },
-          { label: '別のモデルで実行', type: 'switch_model' },
+          { label: translations.checkModelSettings, type: 'settings', href: '#settings-models' },
+          { label: translations.tryDifferentModel, type: 'switch_model' },
         ],
         retryable: false,
       };
 
     case 'permission':
       return {
-        title: '権限エラー',
-        message: 'このリソースへのアクセス権限がありません。',
+        title: translations.permissionError,
+        message: translations.permissionErrorDesc,
         type: 'permission',
         actions: [
-          { label: 'GitHub設定を確認', type: 'settings', href: '#settings-github' },
+          { label: translations.checkGitHubSettings, type: 'settings', href: '#settings-github' },
         ],
         retryable: false,
       };
 
     case 'rate_limit':
       return {
-        title: 'API制限に達しました',
-        message: 'APIのレート制限に達しました。しばらく待ってから再試行してください。',
+        title: translations.rateLimitError,
+        message: translations.rateLimitErrorDesc,
         type: 'rate_limit',
         actions: [
-          { label: '1分後に再試行', type: 'retry_delayed', delayMs: 60000 },
-          { label: '別のモデルで実行', type: 'switch_model' },
+          { label: translations.retryInOneMinute, type: 'retry_delayed', delayMs: 60000 },
+          { label: translations.tryDifferentModel, type: 'switch_model' },
         ],
         retryable: true,
       };
 
     case 'conflict':
       return {
-        title: 'コンフリクトエラー',
-        message: 'ブランチにコンフリクトが発生しています。手動で解決が必要です。',
+        title: translations.conflictError,
+        message: translations.conflictErrorDesc,
         type: 'conflict',
-        actions: [{ label: 'ログを確認', type: 'view_logs' }],
+        actions: [{ label: translations.viewLogs, type: 'view_logs' }],
         retryable: false,
       };
 
     case 'execution':
       return {
-        title: '実行エラー',
+        title: translations.executionError,
         message: errorMessage,
         type: 'execution',
         actions: [
-          { label: '再試行', type: 'retry' },
-          { label: 'ログを確認', type: 'view_logs' },
+          { label: translations.retry, type: 'retry' },
+          { label: translations.viewLogs, type: 'view_logs' },
         ],
         retryable: true,
       };
 
     default:
       return {
-        title: 'エラーが発生しました',
+        title: translations.genericError,
         message: errorMessage,
         type: 'unknown',
         actions: [
-          { label: '再試行', type: 'retry' },
-          { label: 'ログを確認', type: 'view_logs' },
+          { label: translations.retry, type: 'retry' },
+          { label: translations.viewLogs, type: 'view_logs' },
         ],
         retryable: true,
       };

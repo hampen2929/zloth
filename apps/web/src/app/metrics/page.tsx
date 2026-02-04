@@ -28,6 +28,7 @@ import {
   ChatBubbleLeftRightIcon,
   ArrowTrendingUpIcon,
 } from '@heroicons/react/24/outline';
+import { useLanguage } from '@/lib/i18n';
 
 type PeriodOption = '1d' | '7d' | '30d' | '90d' | 'all';
 
@@ -262,6 +263,7 @@ function getCategoryIcon(category: string) {
 }
 
 export default function MetricsPage() {
+  const { t } = useLanguage();
   const [metrics, setMetrics] = useState<MetricsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -384,7 +386,7 @@ export default function MetricsPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <ChartBarIcon className="h-6 w-6 text-blue-400" />
-              <h1 className="text-xl font-semibold">Metrics & Analysis</h1>
+              <h1 className="text-xl font-semibold">{t.metrics.pageTitle}</h1>
               {hasAlerts && (
                 <span className="flex items-center gap-1 px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs rounded">
                   <ExclamationTriangleIcon className="h-3.5 w-3.5" />
@@ -394,7 +396,7 @@ export default function MetricsPage() {
             </div>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">Period:</span>
+                <span className="text-sm text-gray-400">{t.metrics.period}:</span>
                 <select
                   value={period}
                   onChange={(e) => setPeriod(e.target.value as PeriodOption)}
@@ -413,7 +415,7 @@ export default function MetricsPage() {
                 className="flex items-center gap-2 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50"
               >
                 <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                <span className="text-sm">Refresh</span>
+                <span className="text-sm">{t.metrics.refresh}</span>
               </button>
             </div>
           </div>
@@ -434,8 +436,8 @@ export default function MetricsPage() {
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <StarIcon className="h-5 w-5 text-yellow-400" />
-            <span className="text-sm font-medium text-yellow-400">NORTH STAR</span>
-            <span className="text-xs text-gray-500">- 価値の定義</span>
+            <span className="text-sm font-medium text-yellow-400">{t.metrics.northStar}</span>
+            <span className="text-xs text-gray-500">{t.metrics.northStarDesc}</span>
           </div>
           <div className="bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-700/50 rounded-xl p-6">
             <div className="flex items-center justify-between">
@@ -490,8 +492,8 @@ export default function MetricsPage() {
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <ChartBarIcon className="h-5 w-5 text-blue-400" />
-            <span className="text-sm font-medium text-blue-400">CORE KPI</span>
-            <span className="text-xs text-gray-500">- 改善の意思決定（6指標）</span>
+            <span className="text-sm font-medium text-blue-400">{t.metrics.coreKpi}</span>
+            <span className="text-xs text-gray-500">{t.metrics.coreKpiDesc}</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {/* 1. Merge Rate */}
@@ -655,8 +657,8 @@ export default function MetricsPage() {
             ) : (
               <ChevronRightIcon className="h-5 w-5 text-orange-400" />
             )}
-            <span className="text-sm font-medium text-orange-400">DIAGNOSTIC KPI</span>
-            <span className="text-xs text-gray-500">- 原因分析（7指標）</span>
+            <span className="text-sm font-medium text-orange-400">{t.metrics.diagnosticKpi}</span>
+            <span className="text-xs text-gray-500">{t.metrics.diagnosticKpiDesc}</span>
           </button>
 
           {showDiagnostic && metrics && (
@@ -756,8 +758,8 @@ export default function MetricsPage() {
             ) : (
               <ChevronRightIcon className="h-5 w-5 text-gray-400" />
             )}
-            <span className="text-sm font-medium text-gray-400">EXPLORATORY</span>
-            <span className="text-xs text-gray-500">- 仮説検証（必要時）</span>
+            <span className="text-sm font-medium text-gray-400">{t.metrics.exploratory}</span>
+            <span className="text-xs text-gray-500">{t.metrics.exploratoryDesc}</span>
           </button>
 
           {showExploratory && metrics && (
@@ -888,8 +890,8 @@ export default function MetricsPage() {
               <ChevronRightIcon className="h-5 w-5 text-purple-400" />
             )}
             <FolderIcon className="h-5 w-5 text-purple-400" />
-            <span className="text-sm font-medium text-purple-400">REPOSITORIES</span>
-            <span className="text-xs text-gray-500">- リポジトリ一覧</span>
+            <span className="text-sm font-medium text-purple-400">{t.metrics.repositories}</span>
+            <span className="text-xs text-gray-500">{t.metrics.repositoriesDesc}</span>
             {repos.length > 0 && (
               <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">
                 {repos.length}
@@ -978,8 +980,8 @@ export default function MetricsPage() {
               <ChevronRightIcon className="h-5 w-5 text-yellow-400" />
             )}
             <LightBulbIcon className="h-5 w-5 text-yellow-400" />
-            <span className="text-sm font-medium text-yellow-400">ANALYSIS</span>
-            <span className="text-xs text-gray-500">- プロンプト分析</span>
+            <span className="text-sm font-medium text-yellow-400">{t.metrics.analysis}</span>
+            <span className="text-xs text-gray-500">{t.metrics.analysisDesc}</span>
           </button>
 
           {showAnalysis && (

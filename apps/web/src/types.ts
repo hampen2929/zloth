@@ -270,6 +270,9 @@ export interface RepoSelectRequest {
   branch?: string;
 }
 
+// Language type for UI
+export type Language = 'en' | 'ja';
+
 // User Preferences
 export interface UserPreferences {
   default_repo_owner: string | null;
@@ -286,6 +289,7 @@ export interface UserPreferences {
   notify_on_warning: boolean;
   merge_method: string;
   review_min_score: number;
+  language: Language;
 }
 
 export interface UserPreferencesSave {
@@ -303,6 +307,7 @@ export interface UserPreferencesSave {
   notify_on_warning?: boolean | null;
   merge_method?: string | null;
   review_min_score?: number | null;
+  language?: Language | null;
 }
 
 // Task Breakdown

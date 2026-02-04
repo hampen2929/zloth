@@ -85,7 +85,7 @@ describe('getErrorDisplay', () => {
   it('should return correct display for network errors', () => {
     const display = getErrorDisplay('Connection timeout');
     expect(display.type).toBe('network');
-    expect(display.title).toBe('接続エラー');
+    expect(display.title).toBe('Connection Error');
     expect(display.retryable).toBe(true);
     expect(display.actions).toHaveLength(1);
     expect(display.actions[0].type).toBe('retry');
@@ -94,7 +94,7 @@ describe('getErrorDisplay', () => {
   it('should return correct display for auth errors', () => {
     const display = getErrorDisplay('Invalid API key');
     expect(display.type).toBe('auth');
-    expect(display.title).toBe('認証エラー');
+    expect(display.title).toBe('Authentication Error');
     expect(display.retryable).toBe(false);
     expect(display.actions.some((a) => a.type === 'settings')).toBe(true);
     expect(display.actions.some((a) => a.type === 'switch_model')).toBe(true);
@@ -103,7 +103,7 @@ describe('getErrorDisplay', () => {
   it('should return correct display for permission errors', () => {
     const display = getErrorDisplay('403 Forbidden');
     expect(display.type).toBe('permission');
-    expect(display.title).toBe('権限エラー');
+    expect(display.title).toBe('Permission Error');
     expect(display.retryable).toBe(false);
     expect(display.actions.some((a) => a.href === '#settings-github')).toBe(true);
   });
@@ -111,7 +111,7 @@ describe('getErrorDisplay', () => {
   it('should return correct display for rate limit errors', () => {
     const display = getErrorDisplay('Rate limit exceeded');
     expect(display.type).toBe('rate_limit');
-    expect(display.title).toBe('API制限に達しました');
+    expect(display.title).toBe('API Rate Limit Reached');
     expect(display.retryable).toBe(true);
     expect(display.actions.some((a) => a.type === 'retry_delayed')).toBe(true);
     expect(display.actions.find((a) => a.type === 'retry_delayed')?.delayMs).toBe(60000);
@@ -120,7 +120,7 @@ describe('getErrorDisplay', () => {
   it('should return correct display for conflict errors', () => {
     const display = getErrorDisplay('Merge conflict');
     expect(display.type).toBe('conflict');
-    expect(display.title).toBe('コンフリクトエラー');
+    expect(display.title).toBe('Conflict Error');
     expect(display.retryable).toBe(false);
     expect(display.actions.some((a) => a.type === 'view_logs')).toBe(true);
   });
@@ -128,7 +128,7 @@ describe('getErrorDisplay', () => {
   it('should return correct display for execution errors', () => {
     const display = getErrorDisplay('Script execution failed');
     expect(display.type).toBe('execution');
-    expect(display.title).toBe('実行エラー');
+    expect(display.title).toBe('Execution Error');
     expect(display.retryable).toBe(true);
     expect(display.actions.some((a) => a.type === 'retry')).toBe(true);
   });
@@ -136,7 +136,7 @@ describe('getErrorDisplay', () => {
   it('should return correct display for unknown errors', () => {
     const display = getErrorDisplay(null);
     expect(display.type).toBe('unknown');
-    expect(display.title).toBe('エラーが発生しました');
+    expect(display.title).toBe('An error occurred');
     expect(display.retryable).toBe(true);
   });
 

@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
 import { useClickOutside, useSessionStorage } from '@/hooks';
+import { useLanguage } from '@/lib/i18n';
 import { ExecutorSelector } from '@/components/ExecutorSelector';
 import { BranchSelector } from '@/components/BranchSelector';
 import {
@@ -26,6 +27,7 @@ export default function HomePage() {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { error: toastError } = useToast();
+  const { t } = useLanguage();
   const submitShortcut = useShortcutText('Enter');
 
   const [instruction, setInstruction, clearInstruction] = useSessionStorage('new-task-instruction', '');
@@ -190,18 +192,18 @@ export default function HomePage() {
     // Only show GitHub App error after loading completes
     if (!reposLoading && !repos) {
       errors.push({
-        message: 'GitHub Appが未設定です',
-        action: { label: '設定する', href: '#settings-github' },
+        message: t.home.githubNotConfigured,
+        action: { label: t.home.configureGithub, href: '#settings-github' },
       });
     } else if (!reposLoading && repos && !selectedRepo) {
-      errors.push({ message: 'リポジトリを選択してください' });
+      errors.push({ message: t.home.selectRepository });
     }
     if (selectedRepo && !selectedBranch) {
-      errors.push({ message: 'ブランチを選択してください' });
+      errors.push({ message: t.home.selectBranch });
     }
     // Show executor selection error if no CLI is selected
     if (selectedCLIs.length === 0) {
-      errors.push({ message: 'CLIを選択してください' });
+      errors.push({ message: t.home.selectCLI });
     }
     return errors;
   };
@@ -351,7 +353,7 @@ export default function HomePage() {
         {loading && (
           <div className="mt-4 flex items-center justify-center gap-2 text-gray-400">
             <div className="w-4 h-4 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
-            <span>Setting up workspace...</span>
+            <span>{t.home.settingUpWorkspace}</span>
           </div>
         )}
       </div>
@@ -384,6 +386,8 @@ function RepoSelector({
   onSearchChange,
   onSelect,
 }: RepoSelectorProps) {
+  const { t } = useLanguage();
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
@@ -395,7 +399,7 @@ function RepoSelector({
         )}
       >
         <FolderIcon className="w-4 h-4" />
-        <span>{selectedRepo ? selectedRepo.full_name : 'Select repository'}</span>
+        <span>{selectedRepo ? selectedRepo.full_name : t.settings.defaults.selectRepository}</span>
         <ChevronDownIcon
           className={cn('w-4 h-4 transition-transform', showDropdown && 'rotate-180')}
         />
@@ -408,7 +412,7 @@ function RepoSelector({
               type="text"
               value={repoSearch}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search repositories..."
+              placeholder={t.aria.search}
               className={cn(
                 'w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded',
                 'text-white text-sm placeholder:text-gray-500',
@@ -421,12 +425,12 @@ function RepoSelector({
             {!repos ? (
               <div className="p-4 text-center">
                 <div className="w-5 h-5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto" />
-                <p className="text-gray-500 text-sm mt-2">Loading repositories...</p>
+                <p className="text-gray-500 text-sm mt-2">{t.home.loadingRepositories}</p>
               </div>
             ) : filteredRepos && filteredRepos.length === 0 ? (
               <div className="p-4 text-center">
                 <FolderIcon className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                <p className="text-gray-500 text-sm">No repositories found</p>
+                <p className="text-gray-500 text-sm">{t.home.noRepositoriesFound}</p>
               </div>
             ) : (
               filteredRepos?.slice(0, 20).map((repo) => (

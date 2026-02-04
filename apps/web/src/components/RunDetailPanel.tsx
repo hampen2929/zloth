@@ -42,6 +42,7 @@ import { deriveStructuredSummary, getSummaryTypeStyles } from '@/lib/summary-uti
 import type { SummaryType } from '@/types';
 import { getErrorDisplay, type ErrorAction } from '@/lib/error-handling';
 import { getExecutorDisplayName, isCLIExecutor } from '@/hooks';
+import { useLanguage } from '@/lib/i18n';
 
 interface RunDetailPanelProps {
   run: Run;
@@ -518,8 +519,9 @@ function FailedStatusDisplay({
   onRetry,
   onSwitchModel,
 }: FailedStatusDisplayProps) {
+  const { t } = useLanguage();
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
-  const errorDisplay = getErrorDisplay(error);
+  const errorDisplay = getErrorDisplay(error, t.errors);
 
   // Handle delayed retry countdown
   useEffect(() => {
@@ -576,7 +578,7 @@ function FailedStatusDisplay({
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-amber-400 text-sm">
             <LightBulbIcon className="w-4 h-4" />
-            <span className="font-medium">推奨アクション</span>
+            <span className="font-medium">{t.runDetail.recommendedActions}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {errorDisplay.actions.map((action, idx) => (
@@ -604,7 +606,7 @@ function FailedStatusDisplay({
           onClick={() => onTabChange('logs')}
           className="mt-3 text-blue-400 hover:text-blue-300 text-sm underline"
         >
-          ログを確認 ({logs.length} lines)
+          {t.runDetail.viewLogs} ({logs.length} lines)
         </button>
       )}
     </div>
@@ -642,6 +644,8 @@ interface ActionButtonProps {
 }
 
 function ActionButton({ action, onClick, disabled, countdown, hasHandler }: ActionButtonProps) {
+  const { t } = useLanguage();
+
   // Don't render if no handler available for retry/switch_model
   if (!hasHandler && (action.type === 'retry' || action.type === 'switch_model')) {
     return null;
@@ -659,7 +663,7 @@ function ActionButton({ action, onClick, disabled, countdown, hasHandler }: Acti
     }
   };
 
-  const buttonLabel = countdown !== null ? `${countdown}秒後に再試行` : action.label;
+  const buttonLabel = countdown !== null ? t.runDetail.retryInSeconds.replace('{seconds}', String(countdown)) : action.label;
 
   return (
     <button
