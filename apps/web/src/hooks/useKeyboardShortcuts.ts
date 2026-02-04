@@ -1,6 +1,8 @@
 import { useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { isMac } from '@/lib/platform';
+import { keyboardShortcuts, keyboardShortcutsJa } from '@/lib/terminology';
+import type { Language } from '@/types';
 
 export interface KeyboardShortcut {
   key: string;
@@ -78,15 +80,16 @@ export function useKeyboardShortcuts({
 /**
  * Get list of all available shortcuts for display
  */
-export function getShortcutsList(): { key: string; description: string }[] {
+export function getShortcutsList(language: Language = 'en'): { key: string; description: string }[] {
   const mod = isMac() ? '⌘' : 'Ctrl';
+  const labels = language === 'ja' ? keyboardShortcutsJa : keyboardShortcuts;
 
   return [
-    { key: `${mod} + ,`, description: '設定を開く' },
-    { key: `${mod} + /`, description: 'ショートカット一覧を表示' },
-    { key: `${mod} + N`, description: '新規タスク' },
-    { key: `${mod} + Enter`, description: 'タスクを送信' },
-    { key: '/', description: '入力欄にフォーカス' },
-    { key: 'Escape', description: 'モーダルを閉じる' },
+    { key: `${mod} + ,`, description: labels.openSettings },
+    { key: `${mod} + /`, description: labels.showShortcuts },
+    { key: `${mod} + N`, description: labels.newTask },
+    { key: `${mod} + Enter`, description: labels.submitTask },
+    { key: '/', description: labels.focusInput },
+    { key: 'Escape', description: labels.closeModal },
   ];
 }

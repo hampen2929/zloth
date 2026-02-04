@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
 import { useClickOutside, useSessionStorage } from '@/hooks';
+import { useLanguage } from '@/lib/i18n';
 import { ExecutorSelector } from '@/components/ExecutorSelector';
 import { BranchSelector } from '@/components/BranchSelector';
 import {
@@ -26,6 +27,7 @@ export default function HomePage() {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { error: toastError } = useToast();
+  const { t } = useLanguage();
   const submitShortcut = useShortcutText('Enter');
 
   const [instruction, setInstruction, clearInstruction] = useSessionStorage('new-task-instruction', '');

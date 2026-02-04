@@ -23,6 +23,20 @@ import {
   executorTypeLabelsJa,
   ariaLabels,
   ariaLabelsJa,
+  keyboardShortcuts,
+  keyboardShortcutsJa,
+  homeLabels,
+  homeLabelsJa,
+  metricsLabels,
+  metricsLabelsJa,
+  runDetailLabels,
+  runDetailLabelsJa,
+  runsPanelLabels,
+  runsPanelLabelsJa,
+  announcements,
+  announcementsJa,
+  errorMessages,
+  errorMessagesJa,
 } from './terminology';
 
 /**
@@ -40,6 +54,13 @@ export interface Translations {
   filters: typeof filterLabels;
   executorTypes: typeof executorTypeLabels;
   aria: typeof ariaLabels;
+  keyboard: typeof keyboardShortcuts;
+  home: typeof homeLabels;
+  metrics: typeof metricsLabels;
+  runDetail: typeof runDetailLabels;
+  runsPanel: typeof runsPanelLabels;
+  announcements: typeof announcements;
+  errors: typeof errorMessages;
 }
 
 /**
@@ -59,6 +80,13 @@ function getTranslations(lang: Language): Translations {
       filters: filterLabelsJa as unknown as typeof filterLabels,
       executorTypes: executorTypeLabelsJa as unknown as typeof executorTypeLabels,
       aria: ariaLabelsJa as unknown as typeof ariaLabels,
+      keyboard: keyboardShortcutsJa as unknown as typeof keyboardShortcuts,
+      home: homeLabelsJa as unknown as typeof homeLabels,
+      metrics: metricsLabelsJa as unknown as typeof metricsLabels,
+      runDetail: runDetailLabelsJa as unknown as typeof runDetailLabels,
+      runsPanel: runsPanelLabelsJa as unknown as typeof runsPanelLabels,
+      announcements: announcementsJa as unknown as typeof announcements,
+      errors: errorMessagesJa as unknown as typeof errorMessages,
     };
   }
   return {
@@ -72,6 +100,13 @@ function getTranslations(lang: Language): Translations {
     filters: filterLabels,
     executorTypes: executorTypeLabels,
     aria: ariaLabels,
+    keyboard: keyboardShortcuts,
+    home: homeLabels,
+    metrics: metricsLabels,
+    runDetail: runDetailLabels,
+    runsPanel: runsPanelLabels,
+    announcements,
+    errors: errorMessages,
   };
 }
 

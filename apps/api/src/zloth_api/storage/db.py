@@ -161,9 +161,7 @@ class Database:
 
         # Migration: Add language column if it doesn't exist
         if "language" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN language TEXT DEFAULT 'en'"
-            )
+            await conn.execute("ALTER TABLE user_preferences ADD COLUMN language TEXT DEFAULT 'en'")
             await conn.commit()
 
         # Migration: Add base_ref column to tasks table if it doesn't exist

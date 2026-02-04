@@ -385,6 +385,195 @@ export const settingsLabels = {
   },
 } as const;
 
+/**
+ * Keyboard shortcuts labels
+ */
+export const keyboardShortcuts = {
+  title: 'Keyboard Shortcuts',
+  hint: 'Tip: Most shortcuts work from anywhere',
+  openSettings: 'Open settings',
+  showShortcuts: 'Show shortcuts list',
+  newTask: 'New task',
+  submitTask: 'Submit task',
+  focusInput: 'Focus input field',
+  closeModal: 'Close modal',
+} as const;
+
+export const keyboardShortcutsJa = {
+  title: 'キーボードショートカット',
+  hint: 'ヒント: ほとんどのショートカットはどこからでも使えます',
+  openSettings: '設定を開く',
+  showShortcuts: 'ショートカット一覧を表示',
+  newTask: '新規タスク',
+  submitTask: 'タスクを送信',
+  focusInput: '入力欄にフォーカス',
+  closeModal: 'モーダルを閉じる',
+} as const;
+
+/**
+ * Home page labels
+ */
+export const homeLabels = {
+  githubNotConfigured: 'GitHub App is not configured',
+  configureGithub: 'Configure',
+  selectRepository: 'Please select a repository',
+  selectBranch: 'Please select a branch',
+  selectCLI: 'Please select a CLI',
+  settingUpWorkspace: 'Setting up workspace...',
+  loadingRepositories: 'Loading repositories...',
+  noRepositoriesFound: 'No repositories found',
+} as const;
+
+export const homeLabelsJa = {
+  githubNotConfigured: 'GitHub Appが未設定です',
+  configureGithub: '設定する',
+  selectRepository: 'リポジトリを選択してください',
+  selectBranch: 'ブランチを選択してください',
+  selectCLI: 'CLIを選択してください',
+  settingUpWorkspace: 'ワークスペースを設定中...',
+  loadingRepositories: 'リポジトリを読み込み中...',
+  noRepositoriesFound: 'リポジトリが見つかりません',
+} as const;
+
+/**
+ * Metrics page labels
+ */
+export const metricsLabels = {
+  pageTitle: 'Metrics & Analysis',
+  northStar: 'NORTH STAR',
+  northStarDesc: '- Value Definition',
+  coreKpi: 'CORE KPI',
+  coreKpiDesc: '- Decision Making Metrics (6)',
+  diagnosticKpi: 'DIAGNOSTIC KPI',
+  diagnosticKpiDesc: '- Root Cause Analysis (7)',
+  exploratory: 'EXPLORATORY',
+  exploratoryDesc: '- Hypothesis Testing (as needed)',
+  repositories: 'REPOSITORIES',
+  repositoriesDesc: '- Repository List',
+  analysis: 'ANALYSIS',
+  analysisDesc: '- Prompt Analysis',
+  period: 'Period',
+  refresh: 'Refresh',
+} as const;
+
+export const metricsLabelsJa = {
+  pageTitle: 'メトリクス & 分析',
+  northStar: 'NORTH STAR',
+  northStarDesc: '- 価値の定義',
+  coreKpi: 'CORE KPI',
+  coreKpiDesc: '- 改善の意思決定（6指標）',
+  diagnosticKpi: 'DIAGNOSTIC KPI',
+  diagnosticKpiDesc: '- 原因分析（7指標）',
+  exploratory: 'EXPLORATORY',
+  exploratoryDesc: '- 仮説検証（必要時）',
+  repositories: 'REPOSITORIES',
+  repositoriesDesc: '- リポジトリ一覧',
+  analysis: 'ANALYSIS',
+  analysisDesc: '- プロンプト分析',
+  period: '期間',
+  refresh: '更新',
+} as const;
+
+/**
+ * Run detail panel labels
+ */
+export const runDetailLabels = {
+  recommendedActions: 'Recommended Actions',
+  retryInSeconds: 'Retry in {seconds}s',
+  viewLogs: 'View logs',
+} as const;
+
+export const runDetailLabelsJa = {
+  recommendedActions: '推奨アクション',
+  retryInSeconds: '{seconds}秒後に再試行',
+  viewLogs: 'ログを確認',
+} as const;
+
+/**
+ * Runs panel labels
+ */
+export const runsPanelLabels = {
+  noRunsYet: 'No runs yet',
+  enterInstructionsToStart: 'Enter instructions to start',
+  noSucceededRuns: 'No succeeded runs',
+  noFailedRuns: 'No failed runs',
+  noRunningRuns: 'No running tasks',
+  showAll: 'Show all',
+} as const;
+
+export const runsPanelLabelsJa = {
+  noRunsYet: '実行履歴がありません',
+  enterInstructionsToStart: '指示を入力して開始してください',
+  noSucceededRuns: '成功した実行はありません',
+  noFailedRuns: '失敗した実行はありません',
+  noRunningRuns: '実行中のタスクはありません',
+  showAll: 'すべて表示',
+} as const;
+
+/**
+ * Accessibility announcements for screen readers
+ */
+export const announcements = {
+  runStarted: '{model} run started',
+  runCompleted: '{model} run completed',
+  runFailed: '{model} run failed',
+  runCancelled: '{model} run cancelled',
+} as const;
+
+export const announcementsJa = {
+  runStarted: '{model} の実行を開始しました',
+  runCompleted: '{model} の実行が完了しました',
+  runFailed: '{model} の実行が失敗しました',
+  runCancelled: '{model} の実行がキャンセルされました',
+} as const;
+
+/**
+ * Error messages
+ */
+export const errorMessages = {
+  unknownError: 'An unknown error occurred',
+  connectionError: 'Connection Error',
+  connectionErrorDesc: 'Failed to connect to the server. Please check your internet connection.',
+  authError: 'Authentication Error',
+  authErrorDesc: 'Your API key is invalid or expired. Please check your settings.',
+  checkModelSettings: 'Check model settings',
+  tryDifferentModel: 'Try different model',
+  permissionError: 'Permission Error',
+  permissionErrorDesc: 'You do not have permission to access this resource.',
+  checkGitHubSettings: 'Check GitHub settings',
+  rateLimitError: 'API Rate Limit Reached',
+  rateLimitErrorDesc: 'You have reached the API rate limit. Please wait and try again.',
+  retryInOneMinute: 'Retry in 1 minute',
+  conflictError: 'Conflict Error',
+  conflictErrorDesc: 'There is a conflict in the branch. Manual resolution is required.',
+  executionError: 'Execution Error',
+  genericError: 'An error occurred',
+  retry: 'Retry',
+  viewLogs: 'View logs',
+} as const;
+
+export const errorMessagesJa = {
+  unknownError: '不明なエラーが発生しました',
+  connectionError: '接続エラー',
+  connectionErrorDesc: 'サーバーに接続できませんでした。インターネット接続を確認してください。',
+  authError: '認証エラー',
+  authErrorDesc: 'APIキーが無効または期限切れです。設定を確認してください。',
+  checkModelSettings: 'モデル設定を確認',
+  tryDifferentModel: '別のモデルで実行',
+  permissionError: '権限エラー',
+  permissionErrorDesc: 'このリソースへのアクセス権限がありません。',
+  checkGitHubSettings: 'GitHub設定を確認',
+  rateLimitError: 'API制限に達しました',
+  rateLimitErrorDesc: 'APIのレート制限に達しました。しばらく待ってから再試行してください。',
+  retryInOneMinute: '1分後に再試行',
+  conflictError: 'コンフリクトエラー',
+  conflictErrorDesc: 'ブランチにコンフリクトが発生しています。手動で解決が必要です。',
+  executionError: '実行エラー',
+  genericError: 'エラーが発生しました',
+  retry: '再試行',
+  viewLogs: 'ログを確認',
+} as const;
+
 export const settingsLabelsJa = {
   title: '設定',
   tabs: {
