@@ -127,6 +127,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./apps/api
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/api:${{ steps.version.outputs.VERSION }}
@@ -138,6 +139,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./apps/web
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/web:${{ steps.version.outputs.VERSION }}
