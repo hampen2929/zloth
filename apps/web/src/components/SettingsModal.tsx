@@ -493,14 +493,14 @@ export function DefaultsTab() {
     return (
       <div>
         <div className="mb-6">
-          <h3 className="text-lg font-semibold text-gray-100">Default Repository & Branch</h3>
+          <h3 className="text-lg font-semibold text-gray-100">{labels.title}</h3>
           <p className="text-sm text-gray-400 mt-1">
-            Set default repository and branch to use when creating new tasks.
+            {labels.description}
           </p>
         </div>
         <div className="flex items-center gap-2 p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg text-yellow-400 text-sm">
           <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
-          <span>Configure GitHub App first to select default repository.</span>
+          <span>{labels.configureGithubFirst}</span>
         </div>
       </div>
     );
@@ -509,9 +509,9 @@ export function DefaultsTab() {
   return (
     <div>
       <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-100">Default Repository & Branch</h3>
+        <h3 className="text-lg font-semibold text-gray-100">{labels.title}</h3>
         <p className="text-sm text-gray-400 mt-1">
-          Set default repository and branch to use when creating new tasks.
+          {labels.description}
         </p>
       </div>
 
@@ -520,7 +520,7 @@ export function DefaultsTab() {
         <div className="mb-4 p-3 bg-green-900/20 border border-green-800/50 rounded-lg flex items-center gap-2 text-green-400">
           <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
           <span className="text-sm">
-            Default: <span className="font-medium">{preferences.default_repo_owner}/{preferences.default_repo_name}</span>
+            {labels.currentDefault}: <span className="font-medium">{preferences.default_repo_owner}/{preferences.default_repo_name}</span>
             {preferences.default_branch && (
               <span className="text-green-500"> ({preferences.default_branch})</span>
             )}
@@ -532,7 +532,7 @@ export function DefaultsTab() {
         {/* Repository selection */}
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-300">
-            Repository
+            {labels.repository}
           </label>
           <select
             value={selectedRepo}
@@ -544,7 +544,7 @@ export function DefaultsTab() {
               'text-gray-100 transition-colors disabled:opacity-50'
             )}
           >
-            <option value="">Select a repository</option>
+            <option value="">{labels.selectRepository}</option>
             {repos?.map((repo) => (
               <option key={repo.id} value={repo.full_name}>
                 {repo.full_name}
@@ -552,14 +552,14 @@ export function DefaultsTab() {
             ))}
           </select>
           <p className="text-xs text-gray-500">
-            Select the repository that will be pre-selected when creating new tasks.
+            {labels.repositoryHint}
           </p>
         </div>
 
         {/* Branch selection */}
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-300">
-            Branch
+            {labels.branch}
           </label>
           <select
             value={selectedBranch}
@@ -572,7 +572,7 @@ export function DefaultsTab() {
             )}
           >
             <option value="">
-              {branchesLoading ? 'Loading branches...' : 'Select a branch'}
+              {branchesLoading ? labels.loadingBranches : labels.selectBranch}
             </option>
             {branchOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -581,23 +581,23 @@ export function DefaultsTab() {
             ))}
           </select>
           <p className="text-xs text-gray-500">
-            Select the branch that will be pre-selected when creating new tasks.
+            {labels.branchHint}
           </p>
         </div>
 
         {/* Branch prefix */}
         <Input
-          label="Branch Prefix"
+          label={labels.branchPrefix}
           value={branchPrefix}
           onChange={(e) => setBranchPrefix(e.target.value)}
           placeholder="zloth"
-          hint="Prefix used for new work branches (e.g., zloth/abcd1234). Leave blank to use the default."
+          hint={labels.branchPrefixHint}
         />
 
         {/* Default coding mode */}
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-300">
-            Default Coding Mode
+            {labels.codingMode}
           </label>
           <select
             value={codingMode}
@@ -608,19 +608,19 @@ export function DefaultsTab() {
               'text-gray-100 transition-colors'
             )}
           >
-            <option value="interactive">Interactive - Manual control</option>
-            <option value="semi_auto">Semi Auto - Autonomous with human approval for merge</option>
-            <option value="full_auto">Full Auto - Fully autonomous including merge</option>
+            <option value="interactive">{labels.codingModeOptions.interactive}</option>
+            <option value="semi_auto">{labels.codingModeOptions.semiAuto}</option>
+            <option value="full_auto">{labels.codingModeOptions.fullAuto}</option>
           </select>
           <p className="text-xs text-gray-500">
-            Choose the default coding mode for new tasks.
+            {labels.codingModeHint}
           </p>
         </div>
 
         {/* PR creation behavior */}
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-300">
-            Create PR behavior
+            {labels.prCreationMode}
           </label>
           <select
             value={prCreationMode}
@@ -631,11 +631,11 @@ export function DefaultsTab() {
               'text-gray-100 transition-colors'
             )}
           >
-            <option value="create">Create PR automatically</option>
-            <option value="link">Open PR link (manual creation)</option>
+            <option value="create">{labels.prCreationModeOptions.create}</option>
+            <option value="link">{labels.prCreationModeOptions.link}</option>
           </select>
           <p className="text-xs text-gray-500">
-            Choose whether &ldquo;Create PR&rdquo; creates the PR immediately or opens the GitHub PR creation page.
+            {labels.prCreationModeHint}
           </p>
         </div>
 
@@ -652,12 +652,11 @@ export function DefaultsTab() {
               )}
             />
             <span className="text-sm font-medium text-gray-300">
-              Auto-generate PR description
+              {labels.autoGeneratePrDescription}
             </span>
           </label>
           <p className="text-xs text-gray-500 ml-7">
-            If enabled, AI will generate the PR description when creating a PR (slower).
-            If disabled, a simple description is used and you can generate it later with &ldquo;Update PR&rdquo;.
+            {labels.autoGeneratePrDescriptionHint}
           </p>
         </div>
 
@@ -674,19 +673,18 @@ export function DefaultsTab() {
               )}
             />
             <span className="text-sm font-medium text-gray-300">
-              Enable Gating status
+              {labels.enableGating}
             </span>
           </label>
           <p className="text-xs text-gray-500 ml-7">
-            If enabled, tasks with open PRs and pending CI will show in &ldquo;Gating&rdquo; column.
-            When CI completes, they move to &ldquo;In Review&rdquo;.
+            {labels.enableGatingHint}
           </p>
         </div>
 
         {/* Merge method */}
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-300">
-            Merge Method
+            {labels.mergeMethod}
           </label>
           <select
             value={mergeMethod}
@@ -697,30 +695,30 @@ export function DefaultsTab() {
               'text-gray-100 transition-colors'
             )}
           >
-            <option value="merge">Merge commit</option>
-            <option value="squash">Squash and merge</option>
-            <option value="rebase">Rebase and merge</option>
+            <option value="merge">{labels.mergeMethodOptions.merge}</option>
+            <option value="squash">{labels.mergeMethodOptions.squash}</option>
+            <option value="rebase">{labels.mergeMethodOptions.rebase}</option>
           </select>
           <p className="text-xs text-gray-500">
-            Choose the default merge strategy for full auto mode.
+            {labels.mergeMethodHint}
           </p>
         </div>
 
         {/* Review minimum score */}
         <Input
-          label="Review minimum score"
+          label={labels.reviewMinScore}
           type="number"
           min={0}
           max={1}
           step={0.05}
           value={reviewMinScore}
           onChange={(e) => setReviewMinScore(Number(e.target.value))}
-          hint="Minimum review score required before auto-merge (0.0 - 1.0)."
+          hint={labels.reviewMinScoreHint}
         />
 
         {/* Notification preferences */}
         <div className="space-y-2">
-          <p className="text-sm font-medium text-gray-300">Notification preferences</p>
+          <p className="text-sm font-medium text-gray-300">{labels.notifications}</p>
           <div className="space-y-2">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -733,7 +731,7 @@ export function DefaultsTab() {
                 )}
               />
               <span className="text-sm font-medium text-gray-300">
-                Notify when PR is ready
+                {labels.notifyOnReady}
               </span>
             </label>
             <label className="flex items-center gap-3 cursor-pointer">
@@ -747,7 +745,7 @@ export function DefaultsTab() {
                 )}
               />
               <span className="text-sm font-medium text-gray-300">
-                Notify when run completes
+                {labels.notifyOnComplete}
               </span>
             </label>
             <label className="flex items-center gap-3 cursor-pointer">
@@ -761,7 +759,7 @@ export function DefaultsTab() {
                 )}
               />
               <span className="text-sm font-medium text-gray-300">
-                Notify on failures
+                {labels.notifyOnFailure}
               </span>
             </label>
             <label className="flex items-center gap-3 cursor-pointer">
