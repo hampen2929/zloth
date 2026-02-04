@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo_small.png" alt="zloth logo" />
+</p>
+
 # zloth
 
 [![CI](https://github.com/hampen2929/zloth/actions/workflows/ci.yml/badge.svg)](https://github.com/hampen2929/zloth/actions/workflows/ci.yml)
