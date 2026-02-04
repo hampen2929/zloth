@@ -48,12 +48,14 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
+          # Configure git to use GitHub App token for authentication
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository }}.git"
           git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "$VERSION"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Extract changelog for this version
         id: changelog
