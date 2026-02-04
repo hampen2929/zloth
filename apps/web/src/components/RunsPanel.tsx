@@ -15,6 +15,7 @@ import {
   CommandLineIcon,
   FunnelIcon,
 } from '@heroicons/react/24/outline';
+import { useLanguage } from '@/lib/i18n';
 
 interface RunsPanelProps {
   runs: Run[];
@@ -69,6 +70,7 @@ export function RunsPanel({
   onSelectRun,
   isLoading = false,
 }: RunsPanelProps) {
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<FilterType>('all');
 
   // Filter runs based on selected filter
@@ -191,24 +193,24 @@ export function RunsPanel({
             {filter === 'all' ? (
               <>
                 <InboxIcon className="w-10 h-10 text-gray-700 mb-3" />
-                <p className="text-gray-500 text-sm">No runs yet</p>
+                <p className="text-gray-500 text-sm">{t.runsPanel.noRunsYet}</p>
                 <p className="text-gray-600 text-xs mt-1">
-                  Enter instructions to start
+                  {t.runsPanel.enterInstructionsToStart}
                 </p>
               </>
             ) : (
               <>
                 <FunnelIcon className="w-10 h-10 text-gray-700 mb-3" />
                 <p className="text-gray-500 text-sm">
-                  {filter === 'succeeded' && '成功した実行はありません'}
-                  {filter === 'failed' && '失敗した実行はありません'}
-                  {filter === 'running' && '実行中のタスクはありません'}
+                  {filter === 'succeeded' && t.runsPanel.noSucceededRuns}
+                  {filter === 'failed' && t.runsPanel.noFailedRuns}
+                  {filter === 'running' && t.runsPanel.noRunningRuns}
                 </p>
                 <button
                   onClick={() => setFilter('all')}
                   className="mt-2 text-blue-400 hover:text-blue-300 text-xs underline"
                 >
-                  すべて表示
+                  {t.runsPanel.showAll}
                 </button>
               </>
             )}
