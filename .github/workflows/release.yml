@@ -44,6 +44,16 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
+      - name: Verify GitHub App token (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Verifying GitHub App token..."
+          gh auth status
+          echo "App installation info:"
+          gh api /installation/repositories --jq '.repositories[].full_name' || echo "Could not list repositories"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
       - name: Create and push tag (workflow_dispatch only)
         if: github.event_name == 'workflow_dispatch'
         run: |
