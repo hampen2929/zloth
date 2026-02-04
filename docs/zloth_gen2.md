@@ -48,12 +48,12 @@ graph TD
 - **3) 長期：Delegated Responsibility（責任の委譲）**
   - 人間が事前に委譲範囲（ポリシー）を定義する。
   - AIはその範囲内で計画→実装→CI通過までを自動遂行し、**責任を形式化し、委譲可能にする**。
-  - **責任の所在**: ポリシー（人が事前に委譲）
+  - **責任の所在**: 人間（事前定義ポリシーにより委譲）
 - **4) 理想：Autonomous Development under Governance**
   - **Self-directed improvement within human-defined constraints**
   - AIは自ら課題を発見し改善を継続する。
   - ただし自由に暴れるのではなく、**人間が設計したガバナンスの中で自律する**（自律 = 制約下での最適化）。
-  - **責任の所在**: ガバナンス + AI（制約下で自律）
+  - **責任の所在**: 人間（ガバナンス設計） + AI（制約下の裁量）
 
 ---
 
@@ -215,10 +215,10 @@ zlothの設計・実装における不変の原則。
 
 | Phase | 責任の所在 | 説明 |
 |-------|-----------|------|
-| Phase 1: Decision Visibility | **人間** | 人間が全ての判断を行う。ただし証跡が残る。 |
-| Phase 2: Decision Reuse & Automation | **人間** | 人間が責任者のまま。判断の再利用で認知負荷だけ減る。 |
-| Phase 3: Delegated Responsibility | **ポリシー** | 人が事前にポリシーとして責任を委譲。AIはポリシー範囲内で自律。 |
-| Phase 4: Autonomous under Governance | **ガバナンス + AI** | 制約下でAIが自律。ガバナンスが責任の枠組みを提供。 |
+| Phase 1: Decision Visibility | **人間** | 人間が全て判断。ただし証跡が残る。 |
+| Phase 2: Decision Reuse & Automation | **人間** | 人間が責任者のまま。判断の再利用で負荷だけ減る。 |
+| Phase 3: Delegated Responsibility | **人間（事前定義ポリシーにより委譲）** | 人間が委譲範囲をポリシー化。判断方式はpolicy-drivenになる。 |
+| Phase 4: Autonomous under Governance | **人間（ガバナンス設計） + AI（制約下の裁量）** | ガバナンス下でAIが裁量判断。枠組みの責任は人間が持つ。 |
 
 ### 責任移譲の記録
 
@@ -228,9 +228,15 @@ DBレベルで責任の所在を記録するため、判断記録に `decider_ty
 decider_type: 'human' | 'policy' | 'ai'
 ```
 
-- `human`: 人間が直接判断
-- `policy`: ポリシーに基づく自動判断（人間が事前に委譲）
-- `ai`: AIによる自律判断（ガバナンス制約下）
+- `human`: 人間が直接判断（責任主体：人間）
+- `policy`: 人間が事前に定義したポリシーに基づく自動判断（責任主体：人間）
+- `ai`: ガバナンス下でAIが裁量判断（責任枠組みは人間が設計）
+
+> **補足**: 「責任主体」と「決定方式」は分離して考える。
+> - **責任主体** = 誰が最終的に説明責任を負うか
+> - **決定方式** = 誰が（何が）判断を下したか
+>
+> Phase 3/4 でも責任主体は人間（または人間が設計した枠組み）であり、AIが勝手に責任を持つことはない。
 
 ---
 
@@ -245,3 +251,104 @@ decider_type: 'human' | 'policy' | 'ai'
 | `merge_decision` | マージするか（自動/人手） | CI通過 + レビューOK → 自動マージ |
 
 この分類により、各判断の責任者（`decider_type`）を明確に記録できる。
+
+### Decision スキーマ
+
+監査・納得を成立させるには「理由」だけでなく **根拠（Evidence）** が必要。
+各Decisionには以下の3要素を記録する。
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| `reason` | string | 人間による説明（なぜこの判断をしたか） |
+| `evidence` | JSON | 機械的に検証可能な根拠 |
+| `alternatives` | JSON | 比較対象（却下案と却下理由/根拠） |
+
+#### evidence の構造
+
+```json
+{
+  "ci_results": {
+    "status": "passed",
+    "checks": [
+      {"name": "lint", "status": "passed"},
+      {"name": "test", "status": "passed", "coverage": 85.2}
+    ]
+  },
+  "static_analysis": {
+    "complexity": {"avg": 3.2, "max": 12},
+    "type_errors": 0,
+    "lint_warnings": 2
+  },
+  "metrics": {
+    "lines_changed": 42,
+    "files_changed": 3
+  },
+  "review_summary": {
+    "approved_by": ["reviewer_id"],
+    "comments_resolved": true
+  }
+}
+```
+
+#### alternatives の構造
+
+```json
+{
+  "rejected_runs": [
+    {
+      "run_id": "run_b",
+      "reason": "テストが1件失敗",
+      "evidence": {
+        "ci_results": {"status": "failed", "checks": [{"name": "test", "status": "failed"}]}
+      }
+    },
+    {
+      "run_id": "run_c",
+      "reason": "複雑度が高すぎる",
+      "evidence": {
+        "static_analysis": {"complexity": {"avg": 8.5, "max": 25}}
+      }
+    }
+  ],
+  "comparison_axes": ["ci_status", "complexity", "lines_changed"]
+}
+```
+
+> **ポイント**: 「理由」だけだと後から弱い。「根拠」があると、Phase2の自動化が自然に生まれる（条件判定ができるため）。
+
+---
+
+## 10. Trust Ladder（信頼の梯子）
+
+自動化を進める条件を明文化する。「今この自動化を入れていいか？」の即決基準。
+
+| Level | 名称 | 説明 | 対応Phase |
+|-------|------|------|-----------|
+| **L0** | 追跡不可 | 判断の記録がない状態（**禁止**） | - |
+| **L1** | Trace あり | Decision が記録され、後から参照可能 | Phase 1 |
+| **L2** | Evidence あり | CI/metrics/review で判断を説明可能 | Phase 1 完了条件 |
+| **L3** | 再現可能 | 同条件なら同判断が導かれる | Phase 2 前半 |
+| **L4** | 委譲可能 | ポリシーとして明文化され、人間の介入なしで実行可能 | Phase 3 |
+| **L5** | 自律可能 | ポリシー内でAIが自己改善サイクルを回せる | Phase 4 |
+
+```mermaid
+graph LR
+    L0[L0: 追跡不可<br>禁止] --> L1[L1: Trace あり]
+    L1 --> L2[L2: Evidence あり]
+    L2 --> L3[L3: 再現可能]
+    L3 --> L4[L4: 委譲可能]
+    L4 --> L5[L5: 自律可能]
+
+    style L0 fill:#ffcccc,stroke:#333
+    style L1 fill:#D6EAF8,stroke:#333
+    style L2 fill:#D6EAF8,stroke:#333
+    style L3 fill:#D1F2EB,stroke:#333
+    style L4 fill:#FDEDEC,stroke:#333
+    style L5 fill:#FDEBD0,stroke:#333
+```
+
+### 活用例
+
+- 「この自動マージ機能を入れていいか？」→ L4 以上が必要 → ポリシーが定義されているか確認
+- 「この lint 自動修正を入れていいか？」→ L3 以上が必要 → 再現可能な判断基準があるか確認
+- 「この判断ログは十分か？」→ L2 以上が必要 → Evidence が記録されているか確認
