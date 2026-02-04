@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo_small.png" alt="zloth logo" />
+  <img src="docs/assets/header.png" alt="zloth header" />
 </p>
 
 # zloth
