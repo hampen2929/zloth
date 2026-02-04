@@ -21,10 +21,18 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == github.repository_owner
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Get version
         id: version
@@ -84,7 +92,7 @@ jobs:
               $PRERELEASE_FLAG
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
   build-docker:
     name: Build and Push Docker Images
