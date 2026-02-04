@@ -1,0 +1,227 @@
+# zloth Gen2：判断ガバナンス設計（2026-02-04 現在）
+
+## 1行の定義
+- 英語: zloth is a system that turns human judgment into reusable governance for autonomous AI development.
+- 日本語: zloth は、人間の判断を“再利用可能なガバナンス”に変換し、AIが自律的に開発を進められる状態を作るシステム。
+
+## 背景となる思想（要約）
+- コア問題: 詰まるのは賢さではなく責任。採用の説明可能性がないと本番投入できない。
+- 本質価値: 不確かなAI出力 → 納得可能な意思決定（判断・合意形成・監査可能性）。
+- ビジョン軸: Human→Process(ガバナンス)→AI へ段階的に責任を移譲。自律=制約下の最適化。
+
+
+## 現状（As-Is, 2026-02-04）
+- プロダクト基盤
+  - マルチモデル並列実行（OpenAI/Anthropic/Google）、パッチ生成エージェント、差分ビューア、Runs/Tasks/PRs の概念とAPI。
+  - GitHub App 認証（実装済）。SQLite + aiosqlite。API鍵はFernetで暗号化。単一ユーザー前提。
+  - スコープ制限 v0.1: コマンド実行なし、パッチ出力のみ、GitHub連携前提。
+  - UI: Next.js 14、チャット駆動でPR作成まで。Runログ/差分は可視化済み。
+- 判断ガバナンス面
+  - Decision Visibility: 部分的に達成。差分・モデル・Runログ・PRは紐づくが、選択理由の構造化・CI結果の一元トレース・レビューメタ情報の自動集約は未整備。
+  - Decision Compression: 過去判断の学習/再利用の仕組みは未導入。
+  - Delegated Responsibility: ポリシーに基づく自動承認/自動マージは未実装。Checkベースのゲーティングは構想段階。
+- 運用・安全性
+  - ワークスペース分離と禁則パスは導入済。コスト/予算管理は未実装。監査ログ/証跡の耐改ざん化は未実装。
+
+
+## あるべき姿（To-Be, Gen2の目標）
+- Decision Visibility（完成度を高める）
+  - 代替案比較（モデル/プロンプト別）と採否理由の構造化（エビデンスバンドル）。
+  - CI/静的解析/テスト結果/ベンチ/リスク評価をRun→PRに自動集約し、トレーサブルに永続化。
+- Decision Compression（判断の圧縮）
+  - 過去の採否記録から「再利用可能な判断単位（Policy/Rule/Heuristic）」を抽出。提案や自動ラベリングを行う。
+- Delegated Responsibility（責任の委譲）
+  - ポリシー定義（スコープ・境界・KPI）に従い、計画→実装→検証→PR更新→CI通過→条件付き自動マージまでを自走。
+  - 逸脱時は自動停止し、人間にエスカレーション（説明資料付き）。
+- Autonomous under Governance（理想への布石）
+  - 定常的な課題検出（依存脆弱性、リンタ逸脱、パフォーマンス劣化）と改善提案をポリシー枠内で継続実行。
+
+
+## 図1：判断ガバナンスの流れ
+```mermaid
+flowchart LR
+  subgraph Input[AI出力]
+    A1[候補パッチA/ログ] --> E
+    A2[候補パッチB/ログ] --> E
+  end
+
+  E[エビデンス収集<br/>差分・テスト・静的解析・コスト・リスク] --> G
+  G[ガバナンス評価<br/>ポリシー・ルール・しきい値] --> D{判断}
+  D -->|採用| PR[PR作成/更新]
+  D -->|差戻し| F[再提案]
+
+  PR --> CI[CI/Checks]
+  CI -->|通過| M[Merge/自動承認]
+  CI -->|失敗| F
+
+  subgraph Memory[判断の蓄積]
+    D --> P[判断記録/理由/環境]
+    CI --> P
+    PR --> P
+  end
+
+  P --> C[圧縮学習<br/>Heuristic・Policy抽出] --> G
+```
+
+
+## 図2：主要エンティティ（ER）
+```mermaid
+erDiagram
+  Task ||--o{ Message : contains
+  Task ||--o{ Run : spawns
+  Run }o--|| ModelProfile : uses
+  Task }o--|| Repo : targets
+  Task ||--o{ PR : creates
+
+  Task {
+    uuid id
+    string instruction
+    datetime created_at
+  }
+  Message {
+    uuid id
+    uuid task_id
+    string role
+    text content
+  }
+  Run {
+    uuid id
+    uuid task_id
+    enum provider
+    string model
+    json logs
+    enum status
+  }
+  ModelProfile {
+    uuid id
+    enum provider
+    string model
+    bytes enc_api_key
+  }
+  Repo {
+    uuid id
+    string url
+    string base_ref
+  }
+  PR {
+    uuid id
+    uuid task_id
+    string number
+    json evidence_bundle
+  }
+```
+
+
+## ギャップ（As-Is ↔ To-Be）
+- 可視化/トレーサビリティ
+  - 現状: 差分/Runログは閲覧可。CI連携と選択理由の構造化は弱い。
+  - あるべき: エビデンスバンドル（差分/テスト/静的解析/コスト/リスク/レビューメタ）をPRに自動添付し、恒久参照可能。
+- 圧縮/再利用
+  - 現状: 過去判断を学習せず毎回ゼロベース。
+  - あるべき: 採否特徴量の収集→ルール/ポリシー/ヒューリスティクス化→提案/自動分類。
+- 委譲/自動化
+  - 現状: 自動マージやポリシー駆動の意思決定は未実装。
+  - あるべき: ポリシーDSLと評価器、条件付き自動マージ、逸脱時の安全停止/説明。
+- 実行/検証基盤
+  - 現状: コマンド実行不可。テスト/Lintは外部CI任せ。
+  - あるべき: Dockerサンドボックスで安全に検証を自動実行し、結果を即時エビデンス化。
+- 運用/監査
+  - 現状: 単一ユーザー、コスト/予算管理なし、監査耐改ざんなし。
+  - あるべき: 役割/権限、コスト可視化、監査ログの耐改ざん（ハッシュ/署名）。
+
+
+## 優先度付きのやること（短→中期）
+
+### P0（Gen2最小完成、v0.2 目安）
+- Dockerサンドボックス実行
+  - 目的: テスト/lint/型チェック/ベンチを安全実行し、Runごとの結果を収集。
+  - 受入: `run -> evidence_bundle -> PR` にCI相当の結果が自動添付。
+- エビデンスバンドル設計と永続化
+  - スキーマ: diff, tests, lint, mypy, perf, cost, risk, rationale(選択理由)。
+  - UI: Run/PR画面で一目比較（候補間並列比較）。
+- PRゲーティング（Checks連携）
+  - 目的: エビデンスの基準未達は自動ブロック。通過で自動ラベル付与。
+  - 受入: GitHub Checks で Pass/Fail と詳細リンクを表示。
+- Review/Metaエージェント
+  - 目的: 候補パッチのリスク/影響範囲/追加テスト案を自動レビュー。
+  - 受入: エビデンスにレビュー要約と推奨度を付与。
+- PRコメントトリガー
+  - 目的: `rerun`, `update-evidence` などコメントで再実行/更新。
+
+### P1（Decision Compression 初期, v0.3 目安）
+- 判断記録→特徴量抽出→ヒューリスティクス生成
+  - 目的: 過去の採否理由/エビデンスから「再利用可能な判断単位」を作る。
+  - 受入: 新規PRで自動推奨/スコアリングを提示。
+- ポリシーDSL v1 + 評価器
+  - YAML/JSONベースでしきい値/禁止事項/必要エビデンスを定義。
+  - 受入: ポリシー不一致時に自動失敗・説明を返す。
+- コスト/予算可視化
+  - 目的: モデル実行/検証のコスト集計と予算アラート。
+
+### P2（Delegated Responsibility の実用化）
+- 条件付き自動マージ
+  - 目的: ポリシー満たす微小変更は自動マージ。範囲・影響・リスクを制限。
+- 役割/権限（Multi-user）
+  - Reviewer/Owner/Operator で許可を分離。
+- 監査強化
+  - 目的: 判断記録にハッシュ付与/署名、改ざん検出可能化。
+
+### P3（Governance下の自律）
+- 定期スキャン→改善キュー化→自動実装（ポリシー境界内）
+- 逸脱時の安全停止/説明レポート自動生成
+
+
+## 成果物/変更点（実装観点の最小差分）
+- API/DB
+  - `evidence_bundle` を PR/Run に追加（スキーマとDAO）。
+  - Checks連携のWebhook/更新エンドポイント。
+- エージェント
+  - Review/Metaエージェント（静的解析・変更影響・テスト提案）。
+  - サンドボックス実行オーケストレーション（テスト/リンタ/mypy/ベンチ）。
+- フロントエンド
+  - 候補間比較ビュー（エビデンス軸で表形式/差分強調）。
+  - ポリシー準拠/逸脱をバッジ表示。
+
+
+## リスクと緩和
+- 偽陰性/偽陽性による過剰ブロック
+  - 初期は「警告→人手承認」モードで段階導入。
+- サンドボックスのコスト
+  - キャッシュ/差分実行/並列制御で抑制。閾値超え時は要承認。
+- ポリシー過剰一般化
+  - 例外申請/一時免除フローと根拠保存を用意。
+
+
+## 成功指標（例）
+- 人手レビュー時間/PRあたりの平均を30–50%削減。
+- 逸脱によるロールバック率の低下。
+- 自動承認（条件付き）比率の増加と事故ゼロ。
+- エビデンス欠落のPR比率を5%未満に。
+
+
+## 付録：段階的ロードマップ対応表
+```mermaid
+flowchart TB
+  V1[Decision Visibility] --> V2[Decision Compression]
+  V2 --> V3[Delegated Responsibility]
+  V3 --> V4[Autonomous under Governance]
+
+  subgraph M[主な機能]
+    A[Evidence Bundle]
+    B[Review/Meta Agent]
+    C[Policy DSL + Evaluator]
+    D[Docker Sandbox Exec]
+    E[Checks Gating]
+    F[Auto-merge Scoped]
+  end
+
+  A --> V1
+  D --> V1
+  E --> V1
+  B --> V2
+  A --> V2
+  C --> V3
+  F --> V3
+  V3 --> V4
+```
+

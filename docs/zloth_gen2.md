@@ -30,9 +30,9 @@ graph TD
     style A fill:#D6EAF8,stroke:#333,stroke-width:2px
     style B fill:#D1F2EB,stroke:#333,stroke-width:2px
     style C fill:#FDEDEC,stroke:#333,stroke-width:2px
-    style D fill:#FDEBD0,stroke:#333,stroke-width:2px
-
-    note right of A: 現状のzlothはこのフェーズ
+        style D fill:#FDEBD0,stroke:#333,stroke-width:2px
+    
+        note right of A: 現状のzlothはこのフェーズ
 ```
 
 - **1) 短期：Decision Visibility（判断の可視化）**
