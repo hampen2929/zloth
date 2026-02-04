@@ -93,6 +93,10 @@ class GeminiExecutor:
         logs.append(f"Instruction length: {len(instruction)} chars")
 
         try:
+            # Send initial message immediately so frontend knows execution has started
+            if on_output:
+                await on_output("[zloth] Starting Gemini CLI...")
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent interactive input waiting
@@ -102,6 +106,10 @@ class GeminiExecutor:
                 env=env,
                 limit=self.options.stream_limit,  # Increase buffer limit for long output lines
             )
+
+            # Notify that process has started and is waiting for Gemini response
+            if on_output:
+                await on_output("[zloth] Waiting for Gemini response...")
 
             # Stream output from CLI
             async def read_output() -> None:

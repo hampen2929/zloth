@@ -177,6 +177,10 @@ class ClaudeCodeExecutor:
         logger.info(f"Instruction length: {len(instruction)} chars")
 
         try:
+            # Send initial message immediately so frontend knows execution has started
+            if on_output:
+                await on_output("[zloth] Starting Claude Code CLI...")
+
             logger.info("Creating subprocess...")
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -188,6 +192,10 @@ class ClaudeCodeExecutor:
                 limit=self.options.stream_limit,  # Increase buffer limit for long output lines
             )
             logger.info(f"Process created successfully with PID: {process.pid}")
+
+            # Notify that process has started and is waiting for Claude Code response
+            if on_output:
+                await on_output("[zloth] Waiting for Claude Code response...")
 
             # Stream output from CLI
             async def read_output() -> None:

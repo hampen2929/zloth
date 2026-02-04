@@ -60,9 +60,13 @@ class CodexExecutor:
         env = os.environ.copy()
         env.update(self.options.env_vars)
 
-        async def _run_cmd(cmd: list[str]) -> tuple[int, list[str]]:
+        async def _run_cmd(cmd: list[str], is_first_attempt: bool = False) -> tuple[int, list[str]]:
             """Run a single Codex command and capture output."""
             output_lines: list[str] = []
+
+            # Send initial message on first attempt so frontend knows execution has started
+            if is_first_attempt and on_output:
+                await on_output("[zloth] Starting Codex CLI...")
 
             logs.append(f"Executing: {' '.join(cmd)}")
             logs.append(f"Working directory: {worktree_path}")
@@ -143,7 +147,7 @@ class CodexExecutor:
 
             for idx, cmd in enumerate(cmds, start=1):
                 logs.append(f"--- codex attempt {idx}/{len(cmds)} ---")
-                code, out = await _run_cmd(cmd)
+                code, out = await _run_cmd(cmd, is_first_attempt=(idx == 1))
                 last_code = code
                 last_out = out
 
