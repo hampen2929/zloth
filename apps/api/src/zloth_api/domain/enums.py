@@ -208,3 +208,40 @@ class NotificationType(str, Enum):
     COMPLETED = "completed"  # Task successfully completed
     FAILED = "failed"  # Task failed
     WARNING = "warning"  # Warning (high iteration count, etc.)
+
+
+# ============================================================
+# Decision Visibility (P0 Phase 1)
+# ============================================================
+
+
+class DecisionType(str, Enum):
+    """Type of decision being recorded."""
+
+    SELECTION = "selection"  # Run selection decision
+    PROMOTION = "promotion"  # PR creation decision
+    MERGE = "merge"  # Merge decision
+
+
+class DeciderType(str, Enum):
+    """Who made the decision."""
+
+    HUMAN = "human"  # Human decision
+    POLICY = "policy"  # Automatic policy decision
+    AI = "ai"  # AI agent decision
+
+
+class OutcomeStatus(str, Enum):
+    """Outcome evaluation of a past decision."""
+
+    GOOD = "good"  # Decision was correct
+    BAD = "bad"  # Decision was incorrect
+    UNKNOWN = "unknown"  # Not yet evaluated
+
+
+class RiskLevel(str, Enum):
+    """Risk level for changes."""
+
+    LOW = "low"  # Minor changes (auto-merge allowed)
+    MEDIUM = "medium"  # Normal changes (policy-dependent)
+    HIGH = "high"  # Significant changes (human approval required)

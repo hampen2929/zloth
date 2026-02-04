@@ -9,6 +9,8 @@ from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
 from zloth_api.services.ci_polling_service import CIPollingService
 from zloth_api.services.crypto_service import CryptoService
+from zloth_api.services.decision_service import DecisionService
+from zloth_api.services.evidence_service import EvidenceService
 from zloth_api.services.git_service import GitService
 from zloth_api.services.github_service import GitHubService
 from zloth_api.services.job_worker import JobWorker
@@ -21,6 +23,7 @@ from zloth_api.services.pr_service import PRService
 from zloth_api.services.pr_status_poller import PRStatusPoller
 from zloth_api.services.repo_service import RepoService
 from zloth_api.services.review_service import ReviewService
+from zloth_api.services.risk_service import RiskService
 from zloth_api.services.run_service import RunService
 from zloth_api.services.settings_service import SettingsService
 from zloth_api.services.workspace_service import WorkspaceService
@@ -30,6 +33,7 @@ from zloth_api.storage.dao import (
     AnalysisDAO,
     BacklogDAO,
     CICheckDAO,
+    DecisionDAO,
     JobDAO,
     MessageDAO,
     MetricsDAO,
@@ -405,3 +409,38 @@ async def get_analysis_service() -> AnalysisService:
     """Get the analysis service."""
     analysis_dao = await get_analysis_dao()
     return AnalysisService(analysis_dao)
+
+
+async def get_decision_dao() -> DecisionDAO:
+    """Get Decision DAO."""
+    db = await get_db()
+    return DecisionDAO(db)
+
+
+def get_risk_service() -> RiskService:
+    """Get the risk service."""
+    return RiskService()
+
+
+async def get_evidence_service() -> EvidenceService:
+    """Get the evidence service."""
+    run_dao = await get_run_dao()
+    ci_check_dao = await get_ci_check_dao()
+    review_dao = await get_review_dao()
+    return EvidenceService(run_dao, ci_check_dao, review_dao)
+
+
+async def get_decision_service() -> DecisionService:
+    """Get the decision service."""
+    decision_dao = await get_decision_dao()
+    run_dao = await get_run_dao()
+    pr_dao = await get_pr_dao()
+    evidence_service = await get_evidence_service()
+    risk_service = get_risk_service()
+    return DecisionService(
+        decision_dao,
+        run_dao,
+        pr_dao,
+        evidence_service,
+        risk_service,
+    )

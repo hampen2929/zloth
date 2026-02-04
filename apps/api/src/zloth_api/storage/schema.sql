@@ -270,3 +270,30 @@ CREATE TABLE IF NOT EXISTS ci_checks (
 
 CREATE INDEX IF NOT EXISTS idx_ci_checks_task_id ON ci_checks(task_id);
 CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
+
+-- Decisions (Decision Visibility P0)
+CREATE TABLE IF NOT EXISTS decisions (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    decision_type TEXT NOT NULL,       -- selection, promotion, merge
+    decider_type TEXT NOT NULL,        -- human, policy, ai
+    reason TEXT NOT NULL,
+    evidence TEXT NOT NULL,            -- JSON
+    alternatives TEXT,                  -- JSON (for selection)
+    scope TEXT,                        -- JSON (for promotion)
+    selected_run_id TEXT,              -- Run ID (for selection)
+    pr_id TEXT,                        -- PR ID (for promotion/merge)
+    outcome TEXT,                      -- good, bad, unknown
+    outcome_reason TEXT,
+    outcome_refs TEXT,                 -- JSON array
+    risk_level TEXT,                   -- low, medium, high
+    risk_level_reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (selected_run_id) REFERENCES runs(id),
+    FOREIGN KEY (pr_id) REFERENCES prs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_task ON decisions(task_id);
+CREATE INDEX IF NOT EXISTS idx_decisions_type ON decisions(decision_type);
+CREATE INDEX IF NOT EXISTS idx_decisions_created ON decisions(created_at);

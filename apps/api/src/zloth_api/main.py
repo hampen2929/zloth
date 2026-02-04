@@ -13,6 +13,7 @@ from zloth_api.routes import (
     analysis_router,
     backlog_router,
     breakdown_router,
+    decisions_router,
     executors_router,
     github_router,
     kanban_router,
@@ -105,6 +106,7 @@ app.include_router(reviews_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(runs_router, prefix="/v1")
 app.include_router(prs_router, prefix="/v1")
+app.include_router(decisions_router)
 # Note: webhooks_router removed - using CI polling instead (see ci_polling_service.py)
 
 

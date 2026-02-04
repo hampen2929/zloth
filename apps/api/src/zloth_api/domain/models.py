@@ -10,17 +10,21 @@ from zloth_api.domain.enums import (
     BreakdownStatus,
     BrokenDownTaskType,
     CodingMode,
+    DeciderType,
+    DecisionType,
     EstimatedSize,
     ExecutorType,
     JobKind,
     JobStatus,
     MessageRole,
     NotificationType,
+    OutcomeStatus,
     PRCreationMode,
     Provider,
     ReviewCategory,
     ReviewSeverity,
     ReviewStatus,
+    RiskLevel,
     RunStatus,
     TaskKanbanStatus,
 )
@@ -1349,3 +1353,144 @@ class AnalysisDetail(BaseModel):
     executor_success_rates: list[ExecutorSuccessRate] = Field(default_factory=list)
     error_patterns: list[ErrorPattern] = Field(default_factory=list)
     recommendations: list[AnalysisRecommendation] = Field(default_factory=list)
+
+
+# ============================================================
+# Decision Visibility (P0 Phase 1)
+# ============================================================
+
+
+class CIEvidence(BaseModel):
+    """CI result evidence."""
+
+    status: str = Field(..., description="passed | failed | pending")
+    failed_checks: list[dict[str, str]] = Field(
+        default_factory=list, description="List of {name, reason}"
+    )
+    check_names: list[str] = Field(default_factory=list, description="Names of all checks")
+
+
+class MetricsEvidence(BaseModel):
+    """Metrics evidence for a run."""
+
+    lines_changed: int = Field(..., description="Total lines changed")
+    files_changed: int = Field(..., description="Number of files changed")
+
+
+class ReviewEvidence(BaseModel):
+    """Review evidence."""
+
+    approvals: int = Field(default=0, description="Number of approvals")
+    change_requests: int = Field(default=0, description="Number of change requests")
+
+
+class RefsEvidence(BaseModel):
+    """Reference URLs for evidence."""
+
+    ci_url: str | None = Field(None, description="CI workflow URL")
+    pr_url: str | None = Field(None, description="Pull request URL")
+
+
+class Evidence(BaseModel):
+    """Evidence structure (P0 version)."""
+
+    ci_results: CIEvidence | None = None
+    metrics: MetricsEvidence | None = None
+    review_summary: ReviewEvidence | None = None
+    refs: RefsEvidence | None = None
+
+
+class RejectedRun(BaseModel):
+    """A rejected run with reason."""
+
+    run_id: str
+    reason: str
+    evidence: Evidence | None = None
+
+
+class Alternative(BaseModel):
+    """Alternatives considered in a decision."""
+
+    rejected_runs: list[RejectedRun] = Field(default_factory=list)
+    comparison_axes: list[str] = Field(default_factory=list, description="Comparison criteria used")
+
+
+class ExcludedPathReason(BaseModel):
+    """Excluded path with reason."""
+
+    path: str
+    reason: str
+
+
+class PromotionScope(BaseModel):
+    """Scope of a promotion decision."""
+
+    included_paths: list[str] = Field(default_factory=list)
+    excluded_paths: list[str] = Field(default_factory=list)
+    excluded_reasons: list[ExcludedPathReason] = Field(default_factory=list)
+
+
+class Decision(BaseModel):
+    """Decision record (stored in DB)."""
+
+    id: str
+    task_id: str
+    decision_type: DecisionType
+    decider_type: DeciderType
+    reason: str
+    evidence: dict[str, Any] = Field(default_factory=dict, description="JSON evidence")
+    alternatives: dict[str, Any] | None = Field(None, description="JSON alternatives")
+    scope: dict[str, Any] | None = Field(None, description="JSON scope (for promotion)")
+    selected_run_id: str | None = Field(None, description="Selected run ID (for selection)")
+    pr_id: str | None = Field(None, description="PR ID (for promotion/merge)")
+    outcome: OutcomeStatus | None = None
+    outcome_reason: str | None = None
+    outcome_refs: list[str] | None = None
+    risk_level: RiskLevel | None = None
+    risk_level_reason: str | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DecisionCreate(BaseModel):
+    """Request for creating a Decision."""
+
+    decision_type: DecisionType
+    decider_type: DeciderType = DeciderType.HUMAN
+    reason: str
+    # Selection fields
+    selected_run_id: str | None = Field(None, description="Selected run ID (for selection)")
+    rejected_run_ids: list[str] | None = Field(None, description="Rejected run IDs (for selection)")
+    rejection_reasons: dict[str, str] | None = Field(None, description="run_id -> reason mapping")
+    comparison_axes: list[str] | None = Field(None, description="Comparison criteria used")
+    # Promotion fields
+    run_id: str | None = Field(None, description="Run ID (for promotion)")
+    pr_id: str | None = Field(None, description="PR ID (for promotion/merge)")
+    included_paths: list[str] | None = None
+    excluded_paths: list[str] | None = None
+    excluded_reasons: list[ExcludedPathReason] | None = None
+
+
+class OutcomeUpdate(BaseModel):
+    """Request for updating decision outcome."""
+
+    outcome: OutcomeStatus
+    reason: str = ""
+    refs: list[str] = Field(default_factory=list, description="Reference URLs")
+
+
+class DecisionSummary(BaseModel):
+    """Summary of a Decision for list views."""
+
+    id: str
+    task_id: str
+    decision_type: DecisionType
+    decider_type: DeciderType
+    reason: str
+    selected_run_id: str | None = None
+    pr_id: str | None = None
+    outcome: OutcomeStatus | None = None
+    risk_level: RiskLevel | None = None
+    created_at: datetime

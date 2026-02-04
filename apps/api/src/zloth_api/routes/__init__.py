@@ -3,6 +3,7 @@
 from zloth_api.routes.analysis import router as analysis_router
 from zloth_api.routes.backlog import router as backlog_router
 from zloth_api.routes.breakdown import router as breakdown_router
+from zloth_api.routes.decisions import router as decisions_router
 from zloth_api.routes.executors import router as executors_router
 from zloth_api.routes.github import router as github_router
 from zloth_api.routes.kanban import router as kanban_router
@@ -20,6 +21,7 @@ __all__ = [
     "analysis_router",
     "backlog_router",
     "breakdown_router",
+    "decisions_router",
     "executors_router",
     "github_router",
     "kanban_router",

@@ -57,6 +57,10 @@ import type {
   AnalysisRecommendation,
   PromptQualityAnalysis,
   ExecutorsStatus,
+  Decision,
+  DecisionCreate,
+  DecisionType,
+  OutcomeUpdate,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -780,6 +784,43 @@ export const analysisApi = {
 // Executors
 export const executorsApi = {
   getStatus: () => fetchApi<ExecutorsStatus>('/executors/status'),
+};
+
+// Decisions (Decision Visibility P0)
+export const decisionsApi = {
+  /**
+   * Create a decision record.
+   */
+  create: (taskId: string, data: DecisionCreate) =>
+    fetchApi<Decision>(`/tasks/${taskId}/decisions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * List decisions for a task.
+   */
+  list: (taskId: string, decisionType?: DecisionType) => {
+    const params = new URLSearchParams();
+    if (decisionType) params.set('decision_type', decisionType);
+    const query = params.toString();
+    return fetchApi<Decision[]>(`/tasks/${taskId}/decisions${query ? `?${query}` : ''}`);
+  },
+
+  /**
+   * Get a decision by ID.
+   */
+  get: (decisionId: string) =>
+    fetchApi<Decision>(`/decisions/${decisionId}`),
+
+  /**
+   * Update decision outcome.
+   */
+  updateOutcome: (decisionId: string, data: OutcomeUpdate) =>
+    fetchApi<Decision>(`/decisions/${decisionId}/outcome`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 };
 
 export { ApiError };

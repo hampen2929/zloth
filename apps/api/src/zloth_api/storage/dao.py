@@ -11,16 +11,20 @@ from typing import Any
 from zloth_api.domain.enums import (
     BrokenDownTaskType,
     CodingMode,
+    DeciderType,
+    DecisionType,
     EstimatedSize,
     ExecutorType,
     JobKind,
     JobStatus,
     MessageRole,
+    OutcomeStatus,
     PRCreationMode,
     Provider,
     ReviewCategory,
     ReviewSeverity,
     ReviewStatus,
+    RiskLevel,
     RunStatus,
     TaskBaseKanbanStatus,
 )
@@ -30,6 +34,7 @@ from zloth_api.domain.models import (
     BacklogItem,
     CICheck,
     CIJobResult,
+    Decision,
     FileDiff,
     Job,
     Message,
@@ -2934,3 +2939,154 @@ class AnalysisDAO:
             return 0.0
 
         return (row["succeeded"] / row["total"]) * 100 if row["total"] > 0 else 0.0
+
+
+class DecisionDAO:
+    """DAO for Decision (Decision Visibility P0)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def create(
+        self,
+        task_id: str,
+        decision_type: DecisionType,
+        decider_type: DeciderType,
+        reason: str,
+        evidence: dict[str, Any],
+        alternatives: dict[str, Any] | None = None,
+        scope: dict[str, Any] | None = None,
+        selected_run_id: str | None = None,
+        pr_id: str | None = None,
+        risk_level: RiskLevel | None = None,
+        risk_level_reason: str | None = None,
+    ) -> Decision:
+        """Create a new decision record."""
+        id = generate_id()
+        now = now_iso()
+
+        await self.db.connection.execute(
+            """
+            INSERT INTO decisions (
+                id, task_id, decision_type, decider_type, reason, evidence,
+                alternatives, scope, selected_run_id, pr_id,
+                risk_level, risk_level_reason, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                id,
+                task_id,
+                decision_type.value,
+                decider_type.value,
+                reason,
+                json.dumps(evidence),
+                json.dumps(alternatives) if alternatives else None,
+                json.dumps(scope) if scope else None,
+                selected_run_id,
+                pr_id,
+                risk_level.value if risk_level else None,
+                risk_level_reason,
+                now,
+            ),
+        )
+        await self.db.connection.commit()
+
+        return Decision(
+            id=id,
+            task_id=task_id,
+            decision_type=decision_type,
+            decider_type=decider_type,
+            reason=reason,
+            evidence=evidence,
+            alternatives=alternatives,
+            scope=scope,
+            selected_run_id=selected_run_id,
+            pr_id=pr_id,
+            outcome=None,
+            outcome_reason=None,
+            outcome_refs=None,
+            risk_level=risk_level,
+            risk_level_reason=risk_level_reason,
+            created_at=datetime.fromisoformat(now),
+        )
+
+    async def get(self, decision_id: str) -> Decision | None:
+        """Get a decision by ID."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM decisions WHERE id = ?",
+            (decision_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_model(row)
+
+    async def list(self, task_id: str) -> builtins.list[Decision]:
+        """List decisions for a task."""
+        cursor = await self.db.connection.execute(
+            "SELECT * FROM decisions WHERE task_id = ? ORDER BY created_at ASC",
+            (task_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def list_by_type(
+        self, task_id: str, decision_type: DecisionType
+    ) -> builtins.list[Decision]:
+        """List decisions for a task filtered by type."""
+        cursor = await self.db.connection.execute(
+            """
+            SELECT * FROM decisions
+            WHERE task_id = ? AND decision_type = ?
+            ORDER BY created_at ASC
+            """,
+            (task_id, decision_type.value),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]
+
+    async def update_outcome(
+        self,
+        decision_id: str,
+        outcome: OutcomeStatus,
+        reason: str,
+        refs: builtins.list[str],
+    ) -> Decision | None:
+        """Update the outcome of a decision."""
+        await self.db.connection.execute(
+            """
+            UPDATE decisions
+            SET outcome = ?, outcome_reason = ?, outcome_refs = ?
+            WHERE id = ?
+            """,
+            (outcome.value, reason, json.dumps(refs), decision_id),
+        )
+        await self.db.connection.commit()
+        return await self.get(decision_id)
+
+    def _row_to_model(self, row: Any) -> Decision:
+        """Convert database row to Decision model."""
+        evidence = json.loads(row["evidence"]) if row["evidence"] else {}
+        alternatives = json.loads(row["alternatives"]) if row["alternatives"] else None
+        scope = json.loads(row["scope"]) if row["scope"] else None
+        outcome_refs = json.loads(row["outcome_refs"]) if row["outcome_refs"] else None
+
+        return Decision(
+            id=row["id"],
+            task_id=row["task_id"],
+            decision_type=DecisionType(row["decision_type"]),
+            decider_type=DeciderType(row["decider_type"]),
+            reason=row["reason"],
+            evidence=evidence,
+            alternatives=alternatives,
+            scope=scope,
+            selected_run_id=row["selected_run_id"],
+            pr_id=row["pr_id"],
+            outcome=OutcomeStatus(row["outcome"]) if row["outcome"] else None,
+            outcome_reason=row["outcome_reason"],
+            outcome_refs=outcome_refs,
+            risk_level=RiskLevel(row["risk_level"]) if row["risk_level"] else None,
+            risk_level_reason=row["risk_level_reason"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )

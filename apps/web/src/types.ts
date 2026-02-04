@@ -774,3 +774,117 @@ export interface ExecutorsStatus {
   codex_cli: ExecutorStatus;
   gemini_cli: ExecutorStatus;
 }
+
+// ============================================================
+// Decision Visibility (P0 Phase 1)
+// ============================================================
+
+export type DecisionType = 'selection' | 'promotion' | 'merge';
+export type DeciderType = 'human' | 'policy' | 'ai';
+export type OutcomeStatus = 'good' | 'bad' | 'unknown';
+export type RiskLevel = 'low' | 'medium' | 'high';
+
+export interface CIEvidence {
+  status: 'passed' | 'failed' | 'pending';
+  failed_checks: Array<{ name: string; reason: string }>;
+  check_names: string[];
+}
+
+export interface MetricsEvidence {
+  lines_changed: number;
+  files_changed: number;
+}
+
+export interface ReviewEvidence {
+  approvals: number;
+  change_requests: number;
+}
+
+export interface RefsEvidence {
+  ci_url: string | null;
+  pr_url: string | null;
+}
+
+export interface Evidence {
+  ci_results: CIEvidence | null;
+  metrics: MetricsEvidence | null;
+  review_summary: ReviewEvidence | null;
+  refs: RefsEvidence | null;
+}
+
+export interface RejectedRun {
+  run_id: string;
+  reason: string;
+  evidence: Evidence | null;
+}
+
+export interface Alternative {
+  rejected_runs: RejectedRun[];
+  comparison_axes: string[];
+}
+
+export interface ExcludedPathReason {
+  path: string;
+  reason: string;
+}
+
+export interface PromotionScope {
+  included_paths: string[];
+  excluded_paths: string[];
+  excluded_reasons: ExcludedPathReason[];
+}
+
+export interface Decision {
+  id: string;
+  task_id: string;
+  decision_type: DecisionType;
+  decider_type: DeciderType;
+  reason: string;
+  evidence: Record<string, unknown>;
+  alternatives: Alternative | null;
+  scope: PromotionScope | null;
+  selected_run_id: string | null;
+  pr_id: string | null;
+  outcome: OutcomeStatus | null;
+  outcome_reason: string | null;
+  outcome_refs: string[] | null;
+  risk_level: RiskLevel | null;
+  risk_level_reason: string | null;
+  created_at: string;
+}
+
+export interface DecisionCreate {
+  decision_type: DecisionType;
+  decider_type?: DeciderType;
+  reason: string;
+  // Selection fields
+  selected_run_id?: string;
+  rejected_run_ids?: string[];
+  rejection_reasons?: Record<string, string>;
+  comparison_axes?: string[];
+  // Promotion fields
+  run_id?: string;
+  pr_id?: string;
+  included_paths?: string[];
+  excluded_paths?: string[];
+  excluded_reasons?: ExcludedPathReason[];
+}
+
+export interface OutcomeUpdate {
+  outcome: OutcomeStatus;
+  reason: string;
+  refs: string[];
+}
+
+export interface DecisionSummary {
+  id: string;
+  task_id: string;
+  decision_type: DecisionType;
+  decider_type: DeciderType;
+  reason: string;
+  selected_run_id: string | null;
+  pr_id: string | null;
+  outcome: OutcomeStatus | null;
+  risk_level: RiskLevel | null;
+  created_at: string;
+}
