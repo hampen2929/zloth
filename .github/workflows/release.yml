@@ -19,7 +19,8 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    if: github.actor == github.repository_owner
+    # Note: workflow_dispatch can only be triggered by users with write access to the repository
+    # Tag push events are already protected by repository rulesets
     steps:
       - name: Checkout
         uses: actions/checkout@v4
