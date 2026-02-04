@@ -32,9 +32,6 @@ graph TD
     style C fill:#FDEDEC,stroke:#333,stroke-width:2px
     style D fill:#FDEBD0,stroke:#333,stroke-width:2px
 
-    subgraph " "
-        A
-    end
     note right of A: 現状のzlothはこのフェーズ
 ```
 
