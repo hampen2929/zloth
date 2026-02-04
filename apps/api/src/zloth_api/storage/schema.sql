@@ -270,3 +270,39 @@ CREATE TABLE IF NOT EXISTS ci_checks (
 
 CREATE INDEX IF NOT EXISTS idx_ci_checks_task_id ON ci_checks(task_id);
 CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
+
+-- Decisions (judgment records for governance)
+-- Records all decisions made during the development workflow
+CREATE TABLE IF NOT EXISTS decisions (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    decision_type TEXT NOT NULL,           -- selection_decision, promotion_decision, merge_decision
+    decider_type TEXT NOT NULL,            -- human, policy, ai
+
+    -- Context: what was decided
+    target_run_id TEXT,                    -- For selection_decision: which run was selected
+    target_pr_id TEXT,                     -- For promotion/merge_decision: which PR
+    alternative_run_ids TEXT,              -- JSON array: other runs that were compared
+
+    -- Rationale: why was it decided
+    rationale TEXT,                        -- Human-readable explanation
+    evidence_bundle TEXT,                  -- JSON: diff stats, test results, lint results, review score, etc.
+    policy_id TEXT,                        -- If decider_type='policy', which policy was applied
+
+    -- Outcome
+    outcome TEXT NOT NULL,                 -- accepted, rejected, modified, deferred
+    modifications TEXT,                    -- JSON: what was modified if outcome='modified'
+
+    -- Audit
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by TEXT,                       -- User ID or 'system' or 'policy:<policy_id>'
+
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_run_id) REFERENCES runs(id),
+    FOREIGN KEY (target_pr_id) REFERENCES prs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_task ON decisions(task_id);
+CREATE INDEX IF NOT EXISTS idx_decisions_type ON decisions(decision_type);
+CREATE INDEX IF NOT EXISTS idx_decisions_decider ON decisions(decider_type);
+CREATE INDEX IF NOT EXISTS idx_decisions_created_at ON decisions(created_at);

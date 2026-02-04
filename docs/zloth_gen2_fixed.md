@@ -33,7 +33,8 @@
 - Delegated Responsibility（責任の委譲）
   - ポリシー定義（スコープ・境界・KPI）に従い、計画→実装→検証→PR更新→CI通過→条件付き自動マージまでを自走。
   - 逸脱時は自動停止し、人間にエスカレーション（説明資料付き）。
-- Autonomous under Governance（理想への布石）
+- Autonomous Development under Governance（理想への布石）
+  - **Self-directed improvement within human-defined constraints**
   - 定常的な課題検出（依存脆弱性、リンタ逸脱、パフォーマンス劣化）と改善提案をポリシー枠内で継続実行。
 
 
@@ -202,9 +203,9 @@ erDiagram
 ## 付録：段階的ロードマップ対応表
 ```mermaid
 flowchart TB
-  V1[Decision Visibility] --> V2[Decision Compression]
-  V2 --> V3[Delegated Responsibility]
-  V3 --> V4[Autonomous under Governance]
+  V1[Phase 1: Decision Visibility] --> V2[Phase 2: Decision Reuse & Automation]
+  V2 --> V3[Phase 3: Delegated Responsibility]
+  V3 --> V4[Phase 4: Autonomous Development under Governance]
 
   subgraph M[主な機能]
     A[Evidence Bundle]
@@ -213,11 +214,15 @@ flowchart TB
     D[Docker Sandbox Exec]
     E[Checks Gating]
     F[Auto-merge Scoped]
+    G[Decision Templates]
+    H[Retry Strategy]
   end
 
   A --> V1
   D --> V1
   E --> V1
+  G --> V2
+  H --> V2
   B --> V2
   A --> V2
   C --> V3
