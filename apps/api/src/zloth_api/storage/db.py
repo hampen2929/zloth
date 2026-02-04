@@ -159,6 +159,13 @@ class Database:
             )
             await conn.commit()
 
+        # Migration: Add language column if it doesn't exist
+        if "language" not in pref_column_names:
+            await conn.execute(
+                "ALTER TABLE user_preferences ADD COLUMN language TEXT DEFAULT 'en'"
+            )
+            await conn.commit()
+
         # Migration: Add base_ref column to tasks table if it doesn't exist
         # This is for workspace/branch consistency (Phase 1.1 from docs/workspace_branch.md)
         cursor = await conn.execute("PRAGMA table_info(tasks)")
