@@ -15,6 +15,9 @@ zloth の進化は「Human in the Loop → Human out of the Loop」ではない�
 本質は **責任の所在を、人 → プロセス（ガバナンス）→ AI に段階的に移譲できる状態を作ること**。
 つまり、狙うのは「人間を減らす」ではなく **承認を省略できるほどの合理的な信頼を構築すること**。
 
+> **注意**: 責任主体は常に人間（組織）に残る。移譲されるのは「裁量」と「決定方式」である。
+> AIが勝手に責任を持つことはなく、人間が設計したガバナンスの枠内で動作する。
+
 ---
 
 ## 2. 進化のフェーズ
@@ -257,10 +260,31 @@ DB/API/画面設計で迷わないよう、各Decision Typeに必要なフィー
 | Decision Type | 必須フィールド | 説明 |
 |---------------|---------------|------|
 | `selection_decision` | `reason`, `alternatives`, `evidence` | evidence には比較軸（comparison_axes）と主要メトリクス |
-| `promotion_decision` | `reason`, `evidence`, `scope` | scope = どのファイル/変更をPR化したか |
-| `merge_decision` | `evidence`, `decider_type`, `risk_level` | evidence には CI/レビュー/ポリシー適合を含む |
+| `promotion_decision` | `reason`, `evidence`, `scope` | scope = どのファイル/変更をPR化したか（下記定義参照） |
+| `merge_decision` | `evidence`, `decider_type`, `risk_level`, `risk_level_reason` | evidence には CI/レビュー/ポリシー適合を含む |
 
-#### risk_level の定義
+#### scope の定義（promotion_decision）
+
+PR化の範囲を明確にするため、`scope` は以下の構造で記録する。
+**P0ではパス単位で十分**。hunk単位は将来拡張として `refs` に逃がす。
+
+```json
+{
+  "included_paths": ["src/components/Button.tsx", "src/utils/format.ts"],
+  "excluded_paths": ["src/components/Modal.tsx"],
+  "excluded_reasons": [
+    {"path": "src/components/Modal.tsx", "reason": "変更が大きすぎるため別PRに分割"}
+  ]
+}
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `included_paths` | string[] | Yes | PR化するファイルパス |
+| `excluded_paths` | string[] | No | 除外するファイルパス |
+| `excluded_reasons` | {path, reason}[] | No | 除外理由（監査用） |
+
+#### risk_level の定義（merge_decision）
 
 `merge_decision` における変更のリスクレベル。自動マージの可否判断に使用。
 
@@ -269,6 +293,23 @@ DB/API/画面設計で迷わないよう、各Decision Typeに必要なフィー
 | `low` | 軽微な変更（typo修正、コメント追加、lint修正など） | 可 |
 | `medium` | 通常の変更（機能追加、バグ修正） | ポリシー次第 |
 | `high` | 重大な変更（アーキテクチャ変更、セキュリティ関連、依存関係更新） | 不可（人間承認必須） |
+
+#### risk_level 導出ルール（初期版）
+
+主観を排除するため、以下のルールで `risk_level` を導出する。
+
+| ルールID | 条件 | 判定 |
+|----------|------|------|
+| `R001` | 依存関係ファイル変更（package*.json, requirements*.txt, go.mod, Cargo.toml 等） | `high` |
+| `R002` | セキュリティ関連パス（auth/, security/, crypto/, *.secret 等） | `high` |
+| `R003` | インフラ関連（terraform/, kubernetes/, docker-compose.yml 等） | `high` |
+| `R004` | ドキュメントのみ（docs/, *.md, README 等、コード変更なし） | `low` |
+| `R005` | テストのみ（tests/, *_test.*, *.spec.* 等、プロダクションコード変更なし） | `low` |
+| `R006` | フォーマット/lint修正のみ（機能変更なし） | `low` |
+| `R007` | 上記以外 | `medium` |
+
+`risk_level_reason` には適用されたルールID（例: `"R001: 依存関係ファイル変更"`）を記録する。
+複数ルールが該当する場合は、最も高いリスクレベルを採用し、全ルールIDを記録。
 
 ### Decision スキーマ
 
@@ -290,6 +331,24 @@ DB/API/画面設計で迷わないよう、各Decision Typeに必要なフィー
 - **拡張フィールド**: 将来のフォーマット変更は `refs` に格納し、コアスキーマを壊さない
 
 この方針により、Evidenceの肥大化を防ぎつつ、監査時には外部URLで詳細を追える。
+
+#### Core Evidence Keys（v1 - P0必須）
+
+P0の実装範囲を固定するため、L2達成に必要な**最小固定キーセット**を定義する。
+静的解析や複雑度は P1 以降で拡張。
+
+| キー | 型 | 必須 | 説明 |
+|------|-----|------|------|
+| `ci_results.status` | string | Yes | "passed" / "failed" / "pending" |
+| `ci_results.failed_checks` | {name, reason}[] | No | 失敗したチェックのみ記録 |
+| `metrics.lines_changed` | number | Yes | 変更行数 |
+| `metrics.files_changed` | number | Yes | 変更ファイル数 |
+| `review_summary.approvals` | number | Yes | 承認数 |
+| `review_summary.change_requests` | number | Yes | 変更要求数 |
+| `refs.ci_url` | string | Yes | CI結果へのURL |
+| `refs.pr_url` | string | Yes | PRへのURL |
+
+> **P0の最小セット = CI + diff規模 + review**。これで L2（Evidenceあり）を達成できる。
 
 #### evidence の構造
 
