@@ -7,11 +7,13 @@ import type {
   PRCreationMode,
   CodingMode,
   ExecutorStatus,
+  Language,
 } from '@/types';
 import { Modal, ModalBody } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { useToast } from './ui/Toast';
+import { useLanguage } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
   KeyIcon,
@@ -297,6 +299,9 @@ export function DefaultsTab() {
     githubApi.listRepos
   );
 
+  const { t, setLanguage: setGlobalLanguage } = useLanguage();
+  const labels = t.settings.defaults;
+
   const [selectedRepo, setSelectedRepo] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
@@ -311,6 +316,7 @@ export function DefaultsTab() {
   const [notifyOnWarning, setNotifyOnWarning] = useState<boolean>(true);
   const [mergeMethod, setMergeMethod] = useState<string>('squash');
   const [reviewMinScore, setReviewMinScore] = useState<number>(0.75);
+  const [languagePref, setLanguagePref] = useState<Language>('en');
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const { success, error: toastError } = useToast();
@@ -347,6 +353,7 @@ export function DefaultsTab() {
       setReviewMinScore(
         typeof preferences.review_min_score === 'number' ? preferences.review_min_score : 0.75
       );
+      setLanguagePref(preferences.language || 'en');
     }
   }, [preferences]);
 
@@ -424,11 +431,14 @@ export function DefaultsTab() {
         notify_on_warning: notifyOnWarning,
         merge_method: mergeMethod,
         review_min_score: reviewMinScore,
+        language: languagePref,
       });
       mutate('preferences');
-      success('Default settings saved successfully');
+      // Update global language context
+      setGlobalLanguage(languagePref);
+      success(labels.savedSuccess);
     } catch {
-      toastError('Failed to save settings');
+      toastError(labels.saveFailed);
     } finally {
       setLoading(false);
     }
@@ -452,6 +462,7 @@ export function DefaultsTab() {
         notify_on_warning: null,
         merge_method: null,
         review_min_score: null,
+        language: 'en',
       });
       setSelectedRepo('');
       setSelectedBranch('');
@@ -467,10 +478,12 @@ export function DefaultsTab() {
       setNotifyOnWarning(true);
       setMergeMethod('squash');
       setReviewMinScore(0.75);
+      setLanguagePref('en');
+      setGlobalLanguage('en');
       mutate('preferences');
-      success('Default settings cleared');
+      success(labels.clearedSuccess);
     } catch {
-      toastError('Failed to clear settings');
+      toastError(labels.clearFailed);
     } finally {
       setLoading(false);
     }
@@ -762,12 +775,34 @@ export function DefaultsTab() {
                 )}
               />
               <span className="text-sm font-medium text-gray-300">
-                Notify on warnings
+                {labels.notifyOnWarning}
               </span>
             </label>
           </div>
           <p className="text-xs text-gray-500">
-            Notification toggles apply to Slack and log notifications.
+            {labels.notificationsHint}
+          </p>
+        </div>
+
+        {/* Language selection */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-300">
+            {labels.language}
+          </label>
+          <select
+            value={languagePref}
+            onChange={(e) => setLanguagePref(e.target.value as Language)}
+            className={cn(
+              'w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+              'text-gray-100 transition-colors'
+            )}
+          >
+            <option value="en">{labels.languageOptions.en}</option>
+            <option value="ja">{labels.languageOptions.ja}</option>
+          </select>
+          <p className="text-xs text-gray-500">
+            {labels.languageHint}
           </p>
         </div>
 
@@ -779,7 +814,7 @@ export function DefaultsTab() {
             isLoading={loading}
             className="flex-1"
           >
-            Save Defaults
+            {labels.saveDefaults}
           </Button>
           <Button
             onClick={handleClear}
@@ -787,7 +822,7 @@ export function DefaultsTab() {
             disabled={!preferences?.default_repo_owner}
             isLoading={loading}
           >
-            Clear
+            {labels.clearDefaults}
           </Button>
         </div>
       </div>

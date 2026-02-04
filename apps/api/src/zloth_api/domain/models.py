@@ -616,6 +616,7 @@ class UserPreferences(BaseModel):
     notify_on_warning: bool = True
     merge_method: str = "squash"
     review_min_score: float = 0.75
+    language: str = "en"  # UI language preference: en|ja
 
 
 class UserPreferencesSave(BaseModel):
@@ -635,6 +636,7 @@ class UserPreferencesSave(BaseModel):
     notify_on_warning: bool | None = None
     merge_method: str | None = None
     review_min_score: float | None = None
+    language: str | None = None  # UI language preference: en|ja
 
 
 class PRCreateLink(BaseModel):

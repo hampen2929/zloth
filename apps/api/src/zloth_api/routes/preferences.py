@@ -43,4 +43,5 @@ async def save_preferences(
         notify_on_warning=data.notify_on_warning,
         merge_method=data.merge_method,
         review_min_score=data.review_min_score,
+        language=data.language,
     )
