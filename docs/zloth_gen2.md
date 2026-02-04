@@ -121,7 +121,7 @@ graph TD
 ### P0: フェーズ1の完成度向上 (Decision Visibilityの強化)
 *目的: 判断の材料を漏れなく提供し、トレーサビリティを確立する。フェーズ2のためのデータ収集基盤を構築する。*
 
-**成功指標**: 任意のPRについて「採択理由・比較軸・却下理由・CI結果」を**1画面で説明できる**状態を実現する。
+**成功指標**: 任意のPRについて「採択理由・**Evidence（CI/静的解析/メトリクス/レビュー）**・比較軸・却下理由/根拠」を**1画面で説明できる**状態を実現する（Trust Ladder L2達成）。
 
 - **[タスク1] 判断の関連付け強化:**
   - UI上で、AIの提案・差分・CI結果・レビューコメント・最終的な採用コード（あるいは手動修正）の繋がりを明確に可視化する。
@@ -250,6 +250,26 @@ decider_type: 'human' | 'policy' | 'ai'
 
 この分類により、各判断の責任者（`decider_type`）を明確に記録できる。
 
+### Decision Type ごとの必須フィールド
+
+DB/API/画面設計で迷わないよう、各Decision Typeに必要なフィールドを定義する。
+
+| Decision Type | 必須フィールド | 説明 |
+|---------------|---------------|------|
+| `selection_decision` | `reason`, `alternatives`, `evidence` | evidence には比較軸（comparison_axes）と主要メトリクス |
+| `promotion_decision` | `reason`, `evidence`, `scope` | scope = どのファイル/変更をPR化したか |
+| `merge_decision` | `evidence`, `decider_type`, `risk_level` | evidence には CI/レビュー/ポリシー適合を含む |
+
+#### risk_level の定義
+
+`merge_decision` における変更のリスクレベル。自動マージの可否判断に使用。
+
+| Level | 説明 | 自動マージ |
+|-------|------|-----------|
+| `low` | 軽微な変更（typo修正、コメント追加、lint修正など） | 可 |
+| `medium` | 通常の変更（機能追加、バグ修正） | ポリシー次第 |
+| `high` | 重大な変更（アーキテクチャ変更、セキュリティ関連、依存関係更新） | 不可（人間承認必須） |
+
 ### Decision スキーマ
 
 監査・納得を成立させるには「理由」だけでなく **根拠（Evidence）** が必要。
@@ -260,6 +280,16 @@ decider_type: 'human' | 'policy' | 'ai'
 | `reason` | string | 人間による説明（なぜこの判断をしたか） |
 | `evidence` | JSON | 機械的に検証可能な根拠 |
 | `alternatives` | JSON | 比較対象（却下案と却下理由/根拠） |
+
+#### Evidence 格納方針
+
+> **原則: Evidenceは「サマリ + リンク + ハッシュ」で保存し、詳細は外部参照に寄せる**
+
+- **DBに保存するもの**: UI表示・条件判定に必要な最小サマリ（固定キー）
+- **外部参照に寄せるもの**: ログ全文、チェック詳細、レビューコメント全文など
+- **拡張フィールド**: 将来のフォーマット変更は `refs` に格納し、コアスキーマを壊さない
+
+この方針により、Evidenceの肥大化を防ぎつつ、監査時には外部URLで詳細を追える。
 
 #### evidence の構造
 
@@ -284,7 +314,13 @@ decider_type: 'human' | 'policy' | 'ai'
   "review_summary": {
     "approved_by": ["reviewer_id"],
     "comments_resolved": true
-  }
+  },
+  "refs": {
+    "ci_url": "https://github.com/owner/repo/actions/runs/123456",
+    "pr_url": "https://github.com/owner/repo/pull/42",
+    "review_url": "https://github.com/owner/repo/pull/42#pullrequestreview-789"
+  },
+  "digest": "sha256:abc123..."
 }
 ```
 
@@ -325,9 +361,24 @@ decider_type: 'human' | 'policy' | 'ai'
 | **L0** | 追跡不可 | 判断の記録がない状態（**禁止**） | - |
 | **L1** | Trace あり | Decision が記録され、後から参照可能 | Phase 1 |
 | **L2** | Evidence あり | CI/metrics/review で判断を説明可能 | Phase 1 完了条件 |
-| **L3** | 再現可能 | 同条件なら同判断が導かれる | Phase 2 前半 |
+| **L3** | 再現可能 | 同条件なら同判断が導かれる（※下記定義参照） | Phase 2 前半 |
 | **L4** | 委譲可能 | ポリシーとして明文化され、人間の介入なしで実行可能 | Phase 3 |
 | **L5** | 自律可能 | ポリシー内でAIが自己改善サイクルを回せる | Phase 4 |
+
+#### L3「再現可能」の定義
+
+> **同条件** = 以下の入力パラメータが同じ場合、zlothの推奨（採択/却下/再試行）が一致すること
+
+| 条件カテゴリ | 具体例 |
+|-------------|--------|
+| リポジトリ | repo_id, base_branch |
+| 変更タイプ | feat / fix / refactor / docs / test / chore |
+| CI結果 | passed / failed / エラー種別 |
+| 静的解析値 | complexity, type_errors, lint_warnings |
+| 差分規模 | lines_changed, files_changed |
+| ポリシースコープ | 対象パス、許可/禁止ルール |
+
+Phase 2 前半では ML を使わず、**ルール（if/then）・テンプレート・しきい値・エラー分類→対処マッピング** で再現性を担保する。
 
 ```mermaid
 graph LR
