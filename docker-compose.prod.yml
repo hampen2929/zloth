@@ -48,8 +48,8 @@ services:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
-    expose:
-      - "8000"
+    ports:
+      - "${ZLOTH_API_PORT:-8000}:8000"
     volumes:
       - ./workspaces:/app/workspaces
       - ./data:/app/data
@@ -83,8 +83,8 @@ services:
       dockerfile: Dockerfile
       args:
         - API_URL=http://api:8000
-    expose:
-      - "3000"
+    ports:
+      - "${ZLOTH_WEB_PORT:-3000}:3000"
     depends_on:
       api:
         condition: service_healthy
