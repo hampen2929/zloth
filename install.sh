@@ -41,6 +41,11 @@ IMAGE_TAG="latest"
 REPO_URL="https://github.com/hampen2929/zloth.git"
 IMAGE_REGISTRY="ghcr.io/hampen2929/zloth"
 
+# Data paths (will be set in setup_directories)
+WORKSPACES_PATH=""
+DATA_PATH=""
+USE_HOME_ZLOTH=false
+
 # Print functions
 print_banner() {
     echo -e "${BLUE}"
@@ -483,12 +488,35 @@ patch_docker_compose() {
 
 # Create required directories
 setup_directories() {
-    print_step "Creating required directories..."
+    print_step "Setting up data directories..."
 
-    mkdir -p workspaces
-    mkdir -p data
+    local home_zloth="$HOME/.zloth"
 
-    print_success "Directories created: workspaces/, data/"
+    # Check if ~/.zloth exists and has data
+    if [ -d "$home_zloth" ]; then
+        print_success "Found existing ~/.zloth directory"
+        USE_HOME_ZLOTH=true
+
+        # Ensure subdirectories exist
+        mkdir -p "$home_zloth/workspaces"
+        mkdir -p "$home_zloth/data"
+
+        WORKSPACES_PATH="$home_zloth/workspaces"
+        DATA_PATH="$home_zloth/data"
+
+        print_success "Using existing data from: $home_zloth"
+    else
+        # Create directories in install location
+        mkdir -p workspaces
+        mkdir -p data
+
+        # Use absolute paths
+        WORKSPACES_PATH="$(pwd)/workspaces"
+        DATA_PATH="$(pwd)/data"
+
+        print_success "Directories created: workspaces/, data/"
+    fi
+
     echo ""
 }
 
@@ -507,8 +535,8 @@ services:
     ports:
       - "\${ZLOTH_API_PORT:-8000}:8000"
     volumes:
-      - ./workspaces:/app/workspaces
-      - ./data:/app/data
+      - ${WORKSPACES_PATH}:/app/workspaces
+      - ${DATA_PATH}:/app/data
     environment:
       - ZLOTH_HOST=0.0.0.0
       - ZLOTH_PORT=8000
@@ -531,12 +559,13 @@ services:
     depends_on:
       - api
     restart: unless-stopped
-
-volumes:
-  workspaces:
-  data:
 EOF
 
+    if [ "$USE_HOME_ZLOTH" = true ]; then
+        print_success "Data mounted from: ~/.zloth"
+    else
+        print_success "Data mounted from: ./workspaces, ./data"
+    fi
     print_success "Using images: ${IMAGE_REGISTRY}/api:${IMAGE_TAG}, ${IMAGE_REGISTRY}/web:${IMAGE_TAG}"
 }
 

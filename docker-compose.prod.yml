@@ -20,6 +20,8 @@
 # Environment Variables:
 #   ZLOTH_DOMAIN        - Your domain (e.g., zloth.example.com)
 #   ZLOTH_ACME_EMAIL    - Email for Let's Encrypt notifications
+#   ZLOTH_HOST_WORKSPACES_DIR - Host path for workspaces (default: ./workspaces)
+#   ZLOTH_HOST_DATA_DIR       - Host path for data (default: ./data)
 #
 
 version: '3.8'
@@ -51,8 +53,8 @@ services:
     ports:
       - "${ZLOTH_API_PORT:-8000}:8000"
     volumes:
-      - ./workspaces:/app/workspaces
-      - ./data:/app/data
+      - ${ZLOTH_HOST_WORKSPACES_DIR:-./workspaces}:/app/workspaces
+      - ${ZLOTH_HOST_DATA_DIR:-./data}:/app/data
     environment:
       - ZLOTH_HOST=0.0.0.0
       - ZLOTH_PORT=8000
