@@ -41,6 +41,10 @@ IMAGE_TAG="latest"
 REPO_URL="https://github.com/hampen2929/zloth.git"
 IMAGE_REGISTRY="ghcr.io/hampen2929/zloth"
 
+# Data paths (will be set in setup_directories)
+WORKSPACES_PATH=""
+DATA_PATH=""
+
 # Print functions
 print_banner() {
     echo -e "${BLUE}"
@@ -483,12 +487,26 @@ patch_docker_compose() {
 
 # Create required directories
 setup_directories() {
-    print_step "Creating required directories..."
+    print_step "Setting up data directories..."
 
-    mkdir -p workspaces
-    mkdir -p data
+    local home_zloth="$HOME/.zloth"
 
-    print_success "Directories created: workspaces/, data/"
+    # Always use ~/.zloth for data persistence
+    if [ -d "$home_zloth" ]; then
+        print_success "Found existing ~/.zloth directory"
+    else
+        print_success "Creating ~/.zloth directory"
+    fi
+
+    # Ensure ~/.zloth and subdirectories exist
+    mkdir -p "$home_zloth/workspaces"
+    mkdir -p "$home_zloth/data"
+
+    WORKSPACES_PATH="$home_zloth/workspaces"
+    DATA_PATH="$home_zloth/data"
+
+    print_success "Data directory: $home_zloth"
+
     echo ""
 }
 
@@ -507,8 +525,8 @@ services:
     ports:
       - "\${ZLOTH_API_PORT:-8000}:8000"
     volumes:
-      - ./workspaces:/app/workspaces
-      - ./data:/app/data
+      - ${WORKSPACES_PATH}:/app/workspaces
+      - ${DATA_PATH}:/app/data
     environment:
       - ZLOTH_HOST=0.0.0.0
       - ZLOTH_PORT=8000
@@ -518,6 +536,8 @@ services:
       - ZLOTH_GITHUB_APP_ID=\${ZLOTH_GITHUB_APP_ID:-}
       - ZLOTH_GITHUB_APP_PRIVATE_KEY=\${ZLOTH_GITHUB_APP_PRIVATE_KEY:-}
       - ZLOTH_GITHUB_APP_INSTALLATION_ID=\${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
+      - ZLOTH_WORKSPACES_DIR=/app/workspaces
+      - ZLOTH_DATA_DIR=/app/data
     restart: unless-stopped
 
   web:
@@ -529,12 +549,9 @@ services:
     depends_on:
       - api
     restart: unless-stopped
-
-volumes:
-  workspaces:
-  data:
 EOF
 
+    print_success "Data mounted from: ~/.zloth"
     print_success "Using images: ${IMAGE_REGISTRY}/api:${IMAGE_TAG}, ${IMAGE_REGISTRY}/web:${IMAGE_TAG}"
 }
 

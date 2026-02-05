@@ -1,7 +1,10 @@
 # zloth Docker Compose Configuration
 #
-# Default ports can be customized via environment variables:
+# Default ports and paths can be customized via environment variables:
 #   ZLOTH_API_PORT=8080 ZLOTH_WEB_PORT=3001 docker compose up -d
+#
+# To use ~/.zloth for data persistence:
+#   ZLOTH_HOST_WORKSPACES_DIR=~/.zloth/workspaces ZLOTH_HOST_DATA_DIR=~/.zloth/data docker compose up -d
 #
 version: '3.8'
 
@@ -13,8 +16,8 @@ services:
     ports:
       - "${ZLOTH_API_PORT:-8000}:8000"
     volumes:
-      - ./workspaces:/app/workspaces
-      - ./data:/app/data
+      - ${ZLOTH_HOST_WORKSPACES_DIR:-./workspaces}:/app/workspaces
+      - ${ZLOTH_HOST_DATA_DIR:-./data}:/app/data
     environment:
       - ZLOTH_HOST=0.0.0.0
       - ZLOTH_PORT=8000
@@ -24,6 +27,8 @@ services:
       - ZLOTH_GITHUB_APP_ID=${ZLOTH_GITHUB_APP_ID:-}
       - ZLOTH_GITHUB_APP_PRIVATE_KEY=${ZLOTH_GITHUB_APP_PRIVATE_KEY:-}
       - ZLOTH_GITHUB_APP_INSTALLATION_ID=${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
+      - ZLOTH_WORKSPACES_DIR=/app/workspaces
+      - ZLOTH_DATA_DIR=/app/data
     restart: unless-stopped
 
   web:
