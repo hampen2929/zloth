@@ -218,7 +218,7 @@ export function GitHubAppTab() {
           />
 
           <Textarea
-            label="Private Key"
+            label={config?.is_configured ? 'Private Key' : 'Private Key (required)'}
             value={privateKey}
             onChange={(e) => setPrivateKey(e.target.value)}
             placeholder="-----BEGIN RSA PRIVATE KEY-----"
@@ -240,7 +240,7 @@ export function GitHubAppTab() {
 
           <Button
             type="submit"
-            disabled={!appId}
+            disabled={!appId || (!config?.is_configured && !privateKey)}
             isLoading={loading}
             className="w-full"
           >
