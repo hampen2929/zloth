@@ -524,6 +524,8 @@ services:
     image: ${IMAGE_REGISTRY}/web:${IMAGE_TAG}
     ports:
       - "\${ZLOTH_WEB_PORT:-3000}:3000"
+    environment:
+      - API_URL=http://api:8000
     depends_on:
       - api
     restart: unless-stopped
