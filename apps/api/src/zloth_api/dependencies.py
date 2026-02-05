@@ -135,11 +135,12 @@ def get_workspace_service() -> WorkspaceService:
     return _workspace_service
 
 
-def get_output_manager() -> OutputManager:
-    """Get the output manager singleton."""
+async def get_output_manager() -> OutputManager:
+    """Get the output manager singleton (DB-backed for cross-process logs)."""
     global _output_manager
     if _output_manager is None:
-        _output_manager = OutputManager()
+        db = await get_db()
+        _output_manager = OutputManager(db=db)
     return _output_manager
 
 
@@ -155,7 +156,7 @@ async def get_run_service() -> RunService:
         workspace_service = get_workspace_service()
         user_preferences_dao = await get_user_preferences_dao()
         github_service = await get_github_service()
-        output_manager = get_output_manager()
+        output_manager = await get_output_manager()
         _run_service = RunService(
             run_dao,
             task_dao,
@@ -209,7 +210,7 @@ async def get_breakdown_service() -> BreakdownService:
     global _breakdown_service
     if _breakdown_service is None:
         repo_dao = await get_repo_dao()
-        output_manager = get_output_manager()
+        output_manager = await get_output_manager()
         backlog_dao = await get_backlog_dao()
         _breakdown_service = BreakdownService(repo_dao, output_manager, backlog_dao)
     return _breakdown_service
@@ -252,7 +253,7 @@ async def get_review_service() -> ReviewService:
         task_dao = await get_task_dao()
         message_dao = await get_message_dao()
         job_dao = await get_job_dao()
-        output_manager = get_output_manager()
+        output_manager = await get_output_manager()
         _review_service = ReviewService(
             review_dao,
             run_dao,
