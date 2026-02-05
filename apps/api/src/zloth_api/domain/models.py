@@ -434,18 +434,29 @@ Access to the following paths is forbidden:
 
 ### Summary File (REQUIRED)
 After completing all changes, you MUST create a summary file at `{SUMMARY_FILE_PATH}`.
-This file should contain a brief summary (1-2 sentences in English) of what you did.
+This file should contain a detailed summary of what you did.
 
-Example content for `{SUMMARY_FILE_PATH}`:
-```
-Added user authentication with JWT tokens and password reset functionality.
-```
-
-Important:
+Requirements:
+- Write in the SAME LANGUAGE as the user's task instruction
+  (e.g., if the task is in Japanese, write the summary in Japanese)
+- Include enough detail: describe WHAT was changed, WHY, and key decisions
+- Aim for 2-4 sentences that give a complete picture of the work done
 - Write ONLY the summary text, no headers or formatting
-- Keep it concise (1-2 sentences)
-- Write in English
 - This file will be automatically removed after reading
+
+Example (English task):
+```
+Implemented user authentication with JWT tokens. Added login/logout endpoints,
+password hashing with bcrypt, and token refresh. Created middleware for route
+protection and user session management.
+```
+
+Example (Japanese task / 日本語のタスクの場合):
+```
+JWTトークンによるユーザー認証を実装しました。ログイン・ログアウトの
+エンドポイント、bcryptによるパスワードハッシュ化、トークンリフレッシュ
+機能を追加しました。ルート保護のためのミドルウェアも作成しました。
+```
 """
 
 
