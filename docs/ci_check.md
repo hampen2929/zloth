@@ -1,34 +1,12 @@
-# Check CI 機能 実装計画
+# CI Check 機能
 
 ## 概要
 
-PRが作成済みの場合に「Check CI」ボタンを表示し、CIの状態を確認・ポーリングして結果をTask Chatに表示する機能を追加する。
+PRが作成済みの場合に「Check CI」ボタンを表示し、CIの状態を確認・ポーリングして結果をTask Chatに表示する機能。
 
-## 現状分析
+## 現在の実装状況
 
-### 既存インフラ（活用可能）
-
-| コンポーネント | ファイル | 説明 |
-|--------------|---------|------|
-| `CIPollingService` | `apps/api/src/zloth_api/services/ci_polling_service.py` | GitHubからCI状態をポーリング |
-| `github_service.get_pr_check_status()` | `apps/api/src/zloth_api/services/github_service.py:435` | PR のCI状態を取得 |
-| `CIResult`, `CIJobResult` | `apps/api/src/zloth_api/domain/models.py:952-989` | CI結果のデータモデル |
-| Timeline アーキテクチャ | `apps/web/src/components/ChatCodeView.tsx:388` | メッセージ・Run・Review の時系列表示 |
-| `RunResultCard` | `apps/web/src/components/RunResultCard.tsx` | Implementation 表示コンポーネント |
-| `ReviewResultCard` | `apps/web/src/components/ReviewResultCard.tsx` | Code Review 表示コンポーネント |
-
-### 不足している部分
-
-1. **フロントエンド**
-   - Check CI ボタン
-   - CI 結果表示用コンポーネント (`CIResultCard`)
-   - ポーリング処理とUI状態管理
-
-2. **バックエンド**
-   - CI状態を確認するAPIエンドポイント
-   - CIチェック記録用のデータモデル・DAO
-
-## アーキテクチャ設計
+### アーキテクチャ
 
 ```mermaid
 sequenceDiagram
@@ -39,367 +17,411 @@ sequenceDiagram
 
     User->>Frontend: Click "Check CI"
     Frontend->>API: POST /tasks/{task_id}/prs/{pr_id}/check-ci
-    API->>GitHub: Get PR check status
-    GitHub-->>API: status: "pending" | "success" | "failure"
+    API->>GitHub: GET /repos/{owner}/{repo}/pulls/{pr_number}
+    GitHub-->>API: PR data (with head SHA)
+    API->>GitHub: GET /repos/{owner}/{repo}/commits/{sha}/check-runs
+    GitHub-->>API: check_runs data
+    API->>API: _derive_status_from_jobs()
+    API-->>Frontend: CICheckResponse { ci_check, is_complete }
 
-    alt CI pending
-        API-->>Frontend: { status: "pending", ... }
-        loop Poll every 10s
+    alt is_complete = false
+        loop Poll every 10s (max 30min)
             Frontend->>API: POST /tasks/{task_id}/prs/{pr_id}/check-ci
-            API->>GitHub: Get PR check status
-            GitHub-->>API: status
-            API-->>Frontend: { status, jobs, ... }
+            API-->>Frontend: CICheckResponse
         end
     end
 
-    alt CI complete
-        API->>API: Create CICheck record
-        API-->>Frontend: { status: "success" | "failure", jobs, ... }
-        Frontend->>Frontend: Display CIResultCard in Chat
-    end
+    Frontend->>Frontend: Display CIResultCard
+```
+
+### コンポーネント構成
+
+| コンポーネント | ファイル | 説明 |
+|--------------|---------|------|
+| `CICheckService` | `apps/api/src/zloth_api/services/ci_check_service.py` | CI状態チェックのビジネスロジック |
+| `CICheckDAO` | `apps/api/src/zloth_api/storage/dao.py` | CI Checkレコードのデータアクセス |
+| `ciChecksApi` | `apps/web/src/lib/api.ts` | フロントエンドAPIクライアント |
+| `CIResultCard` | `apps/web/src/components/CIResultCard.tsx` | CI結果表示コンポーネント |
+| `ChatCodeView` | `apps/web/src/components/ChatCodeView.tsx` | Check CIボタンとポーリング処理 |
+
+## ステータス判定ロジック
+
+### バックエンド: `_derive_status_from_jobs()`
+
+**ファイル**: `apps/api/src/zloth_api/services/ci_check_service.py:207-248`
+
+```python
+def _derive_status_from_jobs(self, jobs: dict[str, str]) -> str:
+    if not jobs:
+        # ジョブが空 → 常に "pending"
+        return "pending"
+
+    pending_states = {"in_progress", "queued", "pending"}
+    failure_states = {"failure", "cancelled", "timed_out"}
+    success_states = {"success", "skipped", "neutral"}
+
+    # 優先度: failure > pending > success
+    if has_failure:
+        return "failure"
+    if has_pending:
+        return "pending"
+    if has_success:
+        return "success"
+
+    return "pending"  # フォールバック
+```
+
+### 完了判定: `is_complete`
+
+**ファイル**: `apps/api/src/zloth_api/services/ci_check_service.py:187`
+
+```python
+is_complete = status in ("success", "failure", "error")
+```
+
+| status | is_complete | ポーリング継続 |
+|--------|-------------|--------------|
+| `pending` | `false` | **継続** |
+| `success` | `true` | 停止 |
+| `failure` | `true` | 停止 |
+| `error` | `true` | 停止 |
+
+### フロントエンド表示
+
+**ファイル**: `apps/web/src/components/CIResultCard.tsx:206-222`
+
+| 条件 | 表示 |
+|------|------|
+| `status === 'pending'` かつ `jobs.length === 0` | 「Waiting for CI to start...」 |
+| `status === 'pending'` かつ `jobs.length > 0` | ジョブ一覧 + Pending バッジ |
+| `status === 'error'` かつ `jobs.length === 0` | 「Failed to check CI status」 |
+| `status === 'success'` | ジョブ一覧 + Success バッジ |
+| `status === 'failure'` | ジョブ一覧 + 失敗ジョブ詳細 + Failure バッジ |
+
+## 既知の問題
+
+### 問題: CIが完了しても「Pending」「Waiting for CI to start...」のまま
+
+**症状**:
+- PRのCIが実際には完了しているにも関わらず、UIは「Pending」「Waiting for CI to start...」のままになる
+
+**原因**:
+
+1. **GitHub Appに `checks:read` 権限がない**
+   - `check-runs` APIが403エラーを返す
+   - フォールバックの `statuses` APIでもジョブが見つからない場合、`jobs` は空のまま
+
+2. **CIワークフローが設定されていない**
+   - リポジトリにGitHub Actionsや外部CIが設定されていない場合、`check_runs` は空
+
+3. **CIがトリガーされていない**
+   - ワークフローはあるが、当該コミット/ブランチに対してトリガー条件を満たしていない
+
+4. **ステータス判定ロジックの挙動**
+   - `jobs` が空の場合、`_derive_status_from_jobs()` は常に `"pending"` を返す
+   - `status = "pending"` → `is_complete = false` → ポーリングが永遠に継続
+
+**該当コード**:
+
+```python
+# ci_check_service.py:216-218
+if not jobs:
+    # No jobs found - could be CI hasn't started yet
+    return "pending"
+```
+
+**影響**:
+- ポーリングがタイムアウト（30分）まで継続
+- ユーザーはCIが完了したことを認識できない
+
+### 改善案
+
+1. **タイムアウト後に `error` ステータスを返す**
+   - 一定時間（例: 5分）ジョブが見つからない場合、「No CI configured」として `is_complete = true` を返す
+
+2. **CI設定の有無をチェック**
+   - リポジトリのワークフロー一覧を取得し、CIが設定されていない場合は即座に通知
+
+3. **権限エラーの明示的なハンドリング**
+   - `checks:read` 権限がない場合、ユーザーに明確なエラーメッセージを表示
+
+---
+
+### 問題: MetricsのPending CI数が実際のタスク数より大幅に多い
+
+**症状**:
+- タスク数は10程度なのに、MetricsページのPending CI数が数十〜数千になる
+- データベースに大量の重複したCI Checkレコードが蓄積される
+
+**原因**:
+
+1. **ポーリングごとに新しいレコードが作成される**
+   - `check_ci()` が呼ばれるたびに、新しいCI Checkレコードが作成される可能性がある
+   - フロントエンドは10秒ごとにポーリング、タイムアウトは30分
+   - 1つのPRで最大180回のポーリング → 大量の重複レコード
+
+2. **SHA未取得時のレコード重複**
+   - CIがまだ開始していない場合、`sha=None` でレコードが作成される
+   - 次のポーリングでも `sha=None` → 既存レコードの検索がスキップされ、新規レコードが作成
+   - SHAが取得できるようになると、また新しいレコードが作成される
+
+3. **Metricsクエリが単純なCOUNT**
+   - `SELECT COUNT(*) FROM ci_checks WHERE status = 'pending'`
+   - PR/タスクごとの重複排除をしていない
+
+**該当コード**:
+
+```python
+# ci_check_service.py:146-157 (問題のあるロジック)
+existing = None
+if sha:
+    existing = await self.ci_check_dao.get_by_pr_and_sha(pr_id, sha)
+    # sha=None の既存レコードは検索されない
+else:
+    # sha が None の場合、既存レコードを探さずに新規作成
+    existing = await self.ci_check_dao.get_latest_pending_by_pr_id(pr_id)
+
+# dao.py:2561-2567 (Metricsクエリ)
+SELECT COUNT(*) as count
+FROM ci_checks
+WHERE status = 'pending'
+# → 重複を含む全レコードをカウント
+```
+
+**重複レコード生成の流れ**:
+
+```mermaid
+sequenceDiagram
+    participant Frontend
+    participant API
+    participant DB
+
+    Note over Frontend,DB: Poll 1: CI未開始
+    Frontend->>API: POST /check-ci
+    API->>DB: get_latest_pending_by_pr_id(pr_id)
+    DB-->>API: null
+    API->>DB: create(sha=null, status=pending)
+    Note over DB: Record A created
+
+    Note over Frontend,DB: Poll 2: CI未開始 (10秒後)
+    Frontend->>API: POST /check-ci
+    API->>DB: get_latest_pending_by_pr_id(pr_id)
+    DB-->>API: Record A
+    API->>DB: update(Record A)
+    Note over DB: Record A updated (正常)
+
+    Note over Frontend,DB: Poll 3: CI開始、SHA取得
+    Frontend->>API: POST /check-ci
+    API->>DB: get_by_pr_and_sha(pr_id, "abc123")
+    DB-->>API: null (SHA違い)
+    API->>DB: get_latest_pending_by_pr_id(pr_id)
+    DB-->>API: Record A (sha=null)
+    API->>DB: update(Record A, sha="abc123")
+    Note over DB: Record A updated with SHA
+
+    Note over Frontend,DB: 新しいコミットがpushされた場合
+    Frontend->>API: POST /check-ci
+    API->>DB: get_by_pr_and_sha(pr_id, "def456")
+    DB-->>API: null
+    API->>DB: create(sha="def456", status=pending)
+    Note over DB: Record B created (新しいSHA)
+```
+
+**影響**:
+- データベース肥大化
+- Metricsの数値が実態と乖離
+- API応答の遅延（大量レコードの取得）
+
+### 改善案
+
+1. **Metricsクエリの修正**
+   - PRごとにユニークなCI Checkのみをカウント
+   ```sql
+   SELECT COUNT(DISTINCT pr_id) as count
+   FROM ci_checks
+   WHERE status = 'pending'
+   ```
+
+2. **定期的なクリーンアップ**
+   - 古いpendingレコードを自動削除
+   - `scripts/reset_pending.py` を定期実行
+
+3. **レコード重複防止の強化**
+   - 詳細は `docs/ci_check_duplicate_fix.md` を参照
+
+**関連ドキュメント**: [CI Check Duplicate Fix](./ci_check_duplicate_fix.md)
+
+---
+
+## API仕様
+
+### エンドポイント
+
+#### POST `/tasks/{task_id}/prs/{pr_id}/check-ci`
+
+CI状態をチェックし、結果を返す。
+
+**レスポンス**:
+```json
+{
+  "ci_check": {
+    "id": "uuid",
+    "task_id": "uuid",
+    "pr_id": "uuid",
+    "status": "pending" | "success" | "failure" | "error",
+    "workflow_run_id": null | number,
+    "sha": "abc1234...",
+    "jobs": {
+      "lint": "success",
+      "test": "in_progress",
+      "build": "queued"
+    },
+    "failed_jobs": [
+      {
+        "job_name": "test",
+        "result": "failure",
+        "error_log": "Error message..."
+      }
+    ],
+    "created_at": "2024-01-15T10:30:45Z",
+    "updated_at": "2024-01-15T10:30:45Z"
+  },
+  "is_complete": false
+}
+```
+
+#### GET `/tasks/{task_id}/ci-checks`
+
+タスクの全CI Checkレコードを取得。
+
+### クールダウン機構
+
+**ファイル**: `apps/api/src/zloth_api/services/ci_check_service.py:51-74`
+
+- 同一PR+SHAに対するAPIコールを30秒間抑制
+- メモリ内キャッシュ（5分で自動クリーンアップ）
+- `force=True` でクールダウンをバイパス可能
+
+## ポーリング仕様
+
+| 項目 | 値 | ファイル |
+|------|-----|---------|
+| ポーリング間隔 | 10秒 | `api.ts:407` |
+| タイムアウト | 30分 | `api.ts:408` |
+| バックエンドクールダウン | 30秒/PR+SHA | `ci_check_service.py:19` |
+
+### フロントエンドポーリング
+
+**ファイル**: `apps/web/src/lib/api.ts:398-425`
+
+```typescript
+checkWithPolling: async (taskId, prId, options) => {
+  const pollInterval = options?.pollInterval ?? 10000; // 10秒
+  const maxWaitTime = options?.maxWaitTime ?? 1800000; // 30分
+
+  while (Date.now() - startTime < maxWaitTime) {
+    const response = await ciChecksApi.check(taskId, prId);
+    options?.onProgress?.(response.ci_check);
+
+    if (response.is_complete) {
+      return response.ci_check;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new ApiError(504, 'CI check timed out');
+}
 ```
 
 ## データモデル
 
-### Backend: CICheck モデル
+### CICheck
 
 ```python
-# apps/api/src/zloth_api/domain/models.py
-
 class CICheck(BaseModel):
-    """CI check result record for a PR."""
     id: str
     task_id: str
     pr_id: str
     status: str  # "pending" | "success" | "failure" | "error"
-    workflow_run_id: int | None = None
-    sha: str | None = None
-    jobs: dict[str, str] = Field(default_factory=dict)  # job_name -> result
-    failed_jobs: list[CIJobResult] = Field(default_factory=list)
+    workflow_run_id: int | None
+    sha: str | None
+    jobs: dict[str, str]  # job_name -> result
+    failed_jobs: list[CIJobResult]
     created_at: datetime
     updated_at: datetime
 ```
 
-### Backend: CICheckResponse モデル
+### CIJobResult
 
 ```python
-# apps/api/src/zloth_api/domain/models.py
-
-class CICheckResponse(BaseModel):
-    """Response for CI check API."""
-    ci_check: CICheck
-    is_complete: bool  # True if CI is finished (success/failure/error)
-```
+class CIJobResult(BaseModel):
+    job_name: str
+    result: str  # "success" | "failure" | "skipped" | "cancelled" | etc.
+    error_log: str | None
 ```
 
-### Frontend: CICheck 型
+### Job ステータス一覧
 
-```typescript
-// apps/web/src/types.ts
+| カテゴリ | ステータス |
+|---------|----------|
+| Pending | `in_progress`, `queued`, `pending` |
+| Failure | `failure`, `cancelled`, `timed_out` |
+| Success | `success`, `skipped`, `neutral` |
 
-export interface CIJobResult {
-  job_name: string;
-  result: string;  // "success" | "failure" | "skipped" | "cancelled"
-  error_log: string | null;
-}
+## GitHub App 権限
 
-export interface CICheck {
-  id: string;
-  task_id: string;
-  pr_id: string;
-  status: string;  // "pending" | "success" | "failure" | "error"
-  workflow_run_id: number | null;
-  sha: string | null;
-  jobs: Record<string, string>;
-  failed_jobs: CIJobResult[];
-  created_at: string;
-  updated_at: string;
-}
+CI Check機能には以下の権限が必要:
 
-export interface CICheckResponse {
-  ci_check: CICheck;
-  is_complete: boolean;
-}
-```
+| 権限 | レベル | 用途 |
+|------|-------|------|
+| **Checks** | Read | `check-runs` APIでジョブ状態を取得 |
+| **Pull requests** | Read | PR情報（head SHA）を取得 |
 
-## 実装タスク
-
-### Phase 1: Backend API
-
-#### 1.1 データベーススキーマ追加
-
-**ファイル**: `apps/api/src/zloth_api/storage/schema.sql`
-
-```sql
-CREATE TABLE IF NOT EXISTS ci_checks (
-    id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    pr_id TEXT NOT NULL,
-    status TEXT NOT NULL,
-    workflow_run_id INTEGER,
-    sha TEXT,
-    jobs TEXT,  -- JSON
-    failed_jobs TEXT,  -- JSON
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (task_id) REFERENCES tasks(id),
-    FOREIGN KEY (pr_id) REFERENCES prs(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ci_checks_task_id ON ci_checks(task_id);
-CREATE INDEX IF NOT EXISTS idx_ci_checks_pr_id ON ci_checks(pr_id);
-```
-
-#### 1.2 DAO 追加
-
-**ファイル**: `apps/api/src/zloth_api/storage/dao.py`
-
-- `CICheckDAO` クラス追加
-  - `create()`: CICheck レコード作成
-  - `get()`: ID で取得
-  - `get_by_pr_id()`: PR ID で最新を取得
-  - `update()`: 更新
-  - `list_by_task_id()`: Task の全 CICheck を取得
-
-#### 1.3 サービス追加
-
-**ファイル**: `apps/api/src/zloth_api/services/ci_check_service.py` (新規)
-
-```python
-class CICheckService:
-    """Service for checking CI status of PRs."""
-
-    async def check_ci(self, task_id: str, pr_id: str) -> CICheckResponse:
-        """
-        Check CI status for a PR.
-
-        - Fetches current CI status from GitHub
-        - Creates or updates CICheck record
-        - Returns response with completion status
-        """
-
-    async def get_ci_checks(self, task_id: str) -> list[CICheck]:
-        """Get all CI checks for a task."""
-```
-
-#### 1.4 API エンドポイント追加
-
-**ファイル**: `apps/api/src/zloth_api/routes/prs.py`
-
-```python
-@router.post("/tasks/{task_id}/prs/{pr_id}/check-ci")
-async def check_ci(
-    task_id: str,
-    pr_id: str,
-    ci_check_service: Annotated[CICheckService, Depends(get_ci_check_service)],
-) -> CICheckResponse:
-    """Check CI status for a PR."""
-    return await ci_check_service.check_ci(task_id, pr_id)
-
-@router.get("/tasks/{task_id}/ci-checks")
-async def list_ci_checks(
-    task_id: str,
-    ci_check_service: Annotated[CICheckService, Depends(get_ci_check_service)],
-) -> list[CICheck]:
-    """List all CI checks for a task."""
-    return await ci_check_service.get_ci_checks(task_id)
-```
-
-### Phase 2: Frontend UI
-
-#### 2.1 API クライアント追加
-
-**ファイル**: `apps/web/src/lib/api.ts`
-
-```typescript
-export const ciChecksApi = {
-  check: (taskId: string, prId: string): Promise<CICheckResponse> =>
-    fetchApi(`/tasks/${taskId}/prs/${prId}/check-ci`, { method: 'POST' }),
-
-  list: (taskId: string): Promise<CICheck[]> =>
-    fetchApi(`/tasks/${taskId}/ci-checks`),
-};
-```
-
-#### 2.2 CIResultCard コンポーネント作成
-
-**ファイル**: `apps/web/src/components/CIResultCard.tsx` (新規)
-
-- `RunResultCard` と `ReviewResultCard` を参考に同様の体裁で作成
-- 表示内容:
-  - ヘッダー: "CI Check" ラベル + ステータスバッジ
-  - ジョブ一覧: 各ジョブの名前と結果
-  - 失敗ジョブ: エラーログ表示（展開可能）
-  - タイムスタンプ
-
-```typescript
-interface CIResultCardProps {
-  ciCheck: CICheck;
-  expanded?: boolean;
-  onToggleExpand?: () => void;
-}
-
-export function CIResultCard({ ciCheck, expanded, onToggleExpand }: CIResultCardProps) {
-  // Status badge color
-  const statusColor = {
-    success: 'bg-green-500',
-    failure: 'bg-red-500',
-    pending: 'bg-yellow-500',
-    error: 'bg-red-500',
-  }[ciCheck.status] || 'bg-gray-500';
-
-  return (
-    <div className="bg-zinc-900 rounded-lg border border-zinc-700 overflow-hidden">
-      {/* Header with "CI Check" label and status */}
-      {/* Jobs list */}
-      {/* Failed jobs with error logs */}
-    </div>
-  );
-}
-```
-
-#### 2.3 Check CI ボタン追加
-
-**ファイル**: `apps/web/src/components/SessionHeader.tsx` または関連コンポーネント
-
-- PRが存在する場合に「Check CI」ボタンを表示
-- ボタンクリックでポーリング開始
-
-```typescript
-// Check CI ボタンの条件付き表示
-{pr && (
-  <Button
-    onClick={handleCheckCI}
-    disabled={isCheckingCI}
-    variant="outline"
-  >
-    {isCheckingCI ? (
-      <>
-        <Spinner className="mr-2" />
-        Checking CI...
-      </>
-    ) : (
-      'Check CI'
-    )}
-  </Button>
-)}
-```
-
-#### 2.4 ポーリングロジック実装
-
-**ファイル**: `apps/web/src/components/ChatCodeView.tsx` または新規フック
-
-```typescript
-// useCheckCI hook
-function useCheckCI(taskId: string, prId: string) {
-  const [isChecking, setIsChecking] = useState(false);
-  const [ciCheck, setCICheck] = useState<CICheck | null>(null);
-
-  const checkCI = useCallback(async () => {
-    setIsChecking(true);
-
-    const poll = async () => {
-      const response = await ciChecksApi.check(taskId, prId);
-      setCICheck(response.ci_check);
-
-      if (!response.is_complete) {
-        // Continue polling every 10 seconds
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        await poll();
-      } else {
-        setIsChecking(false);
-      }
-    };
-
-    await poll();
-  }, [taskId, prId]);
-
-  return { isChecking, ciCheck, checkCI };
-}
-```
-
-#### 2.5 Timeline への統合
-
-**ファイル**: `apps/web/src/components/ChatCodeView.tsx`
-
-```typescript
-// TimelineItem 型に ci-check を追加
-type TimelineItem =
-  | { type: 'message-run'; message: Message; run: Run; createdAt: string }
-  | { type: 'review'; review: Review; createdAt: string }
-  | { type: 'ci-check'; ciCheck: CICheck; createdAt: string };
-
-// Timeline の構築に CICheck を追加
-const timeline = useMemo(() => {
-  const items: TimelineItem[] = [];
-
-  // ... existing message-run and review items ...
-
-  // Add CI checks
-  ciChecks.forEach((ciCheck) => {
-    items.push({
-      type: 'ci-check',
-      ciCheck,
-      createdAt: ciCheck.created_at,
-    });
-  });
-
-  return items.sort((a, b) =>
-    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-}, [messages, runs, reviews, ciChecks]);
-
-// Timeline のレンダリングに CIResultCard を追加
-{item.type === 'ci-check' && (
-  <div key={item.ciCheck.id} className="space-y-3">
-    <CIResultCard ciCheck={item.ciCheck} />
-  </div>
-)}
-```
-
-## ファイル変更一覧
-
-### 新規作成
-
-| ファイル | 説明 |
-|---------|------|
-| `apps/api/src/zloth_api/services/ci_check_service.py` | CIチェックサービス |
-| `apps/web/src/components/CIResultCard.tsx` | CI結果表示コンポーネント |
-
-### 変更
-
-| ファイル | 変更内容 |
-|---------|---------|
-| `apps/api/src/zloth_api/storage/schema.sql` | `ci_checks` テーブル追加 |
-| `apps/api/src/zloth_api/storage/dao.py` | `CICheckDAO` クラス追加 |
-| `apps/api/src/zloth_api/domain/models.py` | `CICheck`, `CICheckResponse` モデル追加 |
-| `apps/api/src/zloth_api/routes/prs.py` | CI チェックエンドポイント追加 |
-| `apps/api/src/zloth_api/dependencies.py` | `CICheckService` の DI 設定 |
-| `apps/web/src/types.ts` | `CICheck`, `CICheckResponse` 型追加 |
-| `apps/web/src/lib/api.ts` | `ciChecksApi` 追加 |
-| `apps/web/src/components/ChatCodeView.tsx` | Timeline に CICheck を統合 |
-| `apps/web/src/components/SessionHeader.tsx` (または関連) | Check CI ボタン追加 |
+権限がない場合、`statuses` APIにフォールバックするが、情報が限定的になる可能性がある。
 
 ## UI デザイン
 
-### Check CI ボタン配置
+### Pending 状態（ジョブあり）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Task: Fix authentication bug                               │
+│  🕐 CI Check                                    ⏳ Pending   │
+│─────────────────────────────────────────────────────────────│
 │                                                             │
-│  [Create PR ▾]  [Update PR ▾]  [Check CI]                  │
-│                                   ↑                         │
-│                            PRが存在する場合に表示            │
+│  ✓ 2 passed  🕐 1 running                                  │
+│                                                             │
+│  Jobs                                                       │
+│  ├─ ✓ lint          success                                │
+│  ├─ ✓ test          success                                │
+│  └─ 🕐 build        in_progress                            │
+│                                                             │
+│  Checked at: 2024-01-15 10:30:45                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### CIResultCard デザイン
+### Pending 状態（ジョブなし）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  🔵 CI Check                                    ✓ Success   │
+│  🕐 CI Check                                    ⏳ Pending   │
 │─────────────────────────────────────────────────────────────│
+│                                                             │
+│                    🕐                                       │
+│           Waiting for CI to start...                        │
+│                                                             │
+│  Checked at: 2024-01-15 10:30:45                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Success 状態
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ✓ CI Check                                    ✓ Success    │
+│─────────────────────────────────────────────────────────────│
+│                                                             │
+│  ✓ 3 passed  ○ 1 skipped                                   │
 │                                                             │
 │  Jobs                                                       │
 │  ├─ ✓ lint          success                                │
@@ -411,21 +433,24 @@ const timeline = useMemo(() => {
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 失敗時の CIResultCard
+### Failure 状態
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  🔵 CI Check                                    ✗ Failure   │
+│  ✗ CI Check                                    ✗ Failure    │
 │─────────────────────────────────────────────────────────────│
+│                                                             │
+│  ✓ 1 passed  ✗ 1 failed  ○ 1 skipped                       │
 │                                                             │
 │  Jobs                                                       │
 │  ├─ ✓ lint          success                                │
 │  ├─ ✗ test          failure                                │
 │  └─ ○ build         skipped                                │
 │                                                             │
-│  ▼ Failed Jobs                                              │
+│  ▼ Failed Jobs (1)                                          │
 │  ┌─────────────────────────────────────────────────────────┐
-│  │  test                                                   │
+│  │  test                                        failure    │
+│  │  ───────────────────────────────────────────────────── │
 │  │  Error: FAIL src/utils.test.ts                         │
 │  │    ● should validate email format                       │
 │  │      Expected: true                                     │
@@ -436,56 +461,26 @@ const timeline = useMemo(() => {
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## ポーリング仕様
+## トラブルシューティング
 
-| 項目 | 値 |
-|------|-----|
-| ポーリング間隔 | 10秒 |
-| タイムアウト | 30分 |
-| 最大リトライ | なし（タイムアウトまで継続） |
+### Q: 「Waiting for CI to start...」が長時間表示される
 
-### ステータス判定
+**考えられる原因**:
+1. リポジトリにCIが設定されていない
+2. GitHub Appに `checks:read` 権限がない
+3. CIワークフローのトリガー条件を満たしていない
 
-| GitHub Status | CICheck status | is_complete |
-|---------------|----------------|-------------|
-| `pending` | `pending` | `false` |
-| `success` | `success` | `true` |
-| `failure` | `failure` | `true` |
-| `error` | `error` | `true` |
+**対処法**:
+1. リポジトリのActionsタブでワークフローを確認
+2. GitHub App設定で権限を確認
+3. ワークフローファイル（`.github/workflows/*.yml`）のトリガー条件を確認
 
-## テスト計画
+### Q: CI結果が更新されない
 
-### Backend テスト
+**考えられる原因**:
+1. 30秒のクールダウン期間中
+2. ネットワークエラー
 
-1. **CICheckDAO テスト**
-   - CRUD 操作の確認
-   - `get_by_pr_id` の最新取得確認
-
-2. **CICheckService テスト**
-   - GitHub API モックを使用
-   - 各ステータス（pending/success/failure）の処理確認
-   - CICheck レコードの作成・更新確認
-
-3. **API エンドポイントテスト**
-   - 正常系: CI チェック実行
-   - 異常系: 存在しない PR
-
-### Frontend テスト
-
-1. **CIResultCard テスト**
-   - 各ステータスの表示確認
-   - 失敗ジョブのエラーログ表示確認
-
-2. **ポーリングテスト**
-   - ポーリング開始・停止の確認
-   - 完了時のポーリング停止確認
-
-## 注意事項
-
-1. **既存の `CIPollingService`**: バックグラウンドポーリング用に設計されているため、今回は `github_service.get_pr_check_status()` を直接使用する方がシンプル
-
-2. **レート制限**: GitHub API のレート制限に注意。ポーリング間隔を10秒以上に設定
-
-3. **エラーハンドリング**: GitHub App の権限不足やネットワークエラーを適切にハンドリング
-
-4. **型安全性**: mypy strict mode に準拠した型定義を使用
+**対処法**:
+1. 30秒待ってから再度チェック
+2. ブラウザのネットワークタブでAPIエラーを確認
