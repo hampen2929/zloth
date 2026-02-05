@@ -518,6 +518,8 @@ services:
       - ZLOTH_GITHUB_APP_ID=\${ZLOTH_GITHUB_APP_ID:-}
       - ZLOTH_GITHUB_APP_PRIVATE_KEY=\${ZLOTH_GITHUB_APP_PRIVATE_KEY:-}
       - ZLOTH_GITHUB_APP_INSTALLATION_ID=\${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
+      - ZLOTH_WORKSPACES_DIR=/app/workspaces
+      - ZLOTH_DATA_DIR=/app/data
     restart: unless-stopped
 
   web:
