@@ -12,7 +12,8 @@
 #   --dir DIR         Installation directory (default: ./zloth)
 #   --branch BRANCH   Git branch to checkout (default: main)
 #   --tag TAG         Docker image tag to use (default: latest)
-#   --build           Build images locally instead of pulling from registry
+#   --build           Build images locally (default)
+#   --pull            Pull pre-built images from registry instead of building locally
 #   --api-port PORT   API server port (default: 8000)
 #   --web-port PORT   Web UI port (default: 3000)
 #   --no-start        Don't start services after installation
@@ -36,7 +37,7 @@ API_PORT="8000"
 WEB_PORT="3000"
 START_SERVICES=true
 UPGRADE_MODE=false
-BUILD_LOCAL=false
+BUILD_LOCAL=true
 IMAGE_TAG="latest"
 REPO_URL="https://github.com/hampen2929/zloth.git"
 IMAGE_REGISTRY="ghcr.io/hampen2929/zloth"
@@ -91,6 +92,10 @@ parse_args() {
                 BUILD_LOCAL=true
                 shift
                 ;;
+            --pull)
+                BUILD_LOCAL=false
+                shift
+                ;;
             --api-port)
                 API_PORT="$2"
                 shift 2
@@ -127,7 +132,8 @@ show_help() {
     echo "  --dir DIR         Installation directory (default: ./zloth)"
     echo "  --branch BRANCH   Git branch to checkout (default: main)"
     echo "  --tag TAG         Docker image tag to use (default: latest)"
-    echo "  --build           Build images locally instead of pulling from registry"
+    echo "  --build           Build images locally (default)"
+    echo "  --pull            Pull pre-built images from registry instead of building locally"
     echo "  --api-port PORT   API server port (default: 8000)"
     echo "  --web-port PORT   Web UI port (default: 3000)"
     echo "  --no-start        Don't start services after installation"
@@ -141,8 +147,8 @@ show_help() {
     echo "  # Install with a specific version"
     echo "  curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --tag v1.0.0"
     echo ""
-    echo "  # Build images locally instead of pulling"
-    echo "  curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --build"
+    echo "  # Pull pre-built images from registry (requires published release)"
+    echo "  curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --pull"
     echo ""
     echo "  # Install to custom directory"
     echo "  curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --dir ~/my-zloth"
@@ -582,8 +588,13 @@ start_services() {
         generate_compose_prod
 
         print_step "Pulling and starting zloth services..."
-        ZLOTH_API_PORT="$API_PORT" ZLOTH_WEB_PORT="$WEB_PORT" $compose_cmd -f docker-compose.prod.yml pull
-        ZLOTH_API_PORT="$API_PORT" ZLOTH_WEB_PORT="$WEB_PORT" $compose_cmd -f docker-compose.prod.yml up -d
+        if ! ZLOTH_API_PORT="$API_PORT" ZLOTH_WEB_PORT="$WEB_PORT" $compose_cmd -f docker-compose.prod.yml pull 2>/dev/null; then
+            print_warning "Failed to pull pre-built images. Falling back to local build..."
+            BUILD_LOCAL=true
+            ZLOTH_API_PORT="$API_PORT" ZLOTH_WEB_PORT="$WEB_PORT" $compose_cmd up -d --build
+        else
+            ZLOTH_API_PORT="$API_PORT" ZLOTH_WEB_PORT="$WEB_PORT" $compose_cmd -f docker-compose.prod.yml up -d
+        fi
     fi
 
     print_success "Services started"

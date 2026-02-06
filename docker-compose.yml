@@ -29,6 +29,12 @@ services:
       - ZLOTH_GITHUB_APP_INSTALLATION_ID=${ZLOTH_GITHUB_APP_INSTALLATION_ID:-}
       - ZLOTH_WORKSPACES_DIR=/app/workspaces
       - ZLOTH_DATA_DIR=/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   web:
@@ -40,7 +46,8 @@ services:
     ports:
       - "${ZLOTH_WEB_PORT:-3000}:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
