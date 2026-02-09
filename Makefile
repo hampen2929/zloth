@@ -42,6 +42,19 @@ dev:
 	(cd apps/api && PYTHONPATH=src uv run uvicorn zloth_api.main:app --host $(API_HOST) --port $$API_PORT --reload) & \
 	(cd apps/web && API_URL=$$API_URL npm run dev)
 
+# Local execution (zloth CLI)
+start:
+	@cd apps/api && uv run python -m zloth_api.cli start
+
+start-dev:
+	@cd apps/api && uv run python -m zloth_api.cli start --reload
+
+stop:
+	@cd apps/api && uv run python -m zloth_api.cli stop
+
+status:
+	@cd apps/api && uv run python -m zloth_api.cli status
+
 # CLI Agents Installation
 # Claude Code CLI (Anthropic)
 # https://docs.anthropic.com/en/docs/claude-code

@@ -1,0 +1,26 @@
+#!/bin/bash
+#
+# zloth - CLI wrapper for local execution mode
+#
+# This script delegates to the Python CLI module.
+# Place it in your PATH or run it directly from the project root.
+#
+
+set -e
+
+# Resolve the project root directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+API_DIR="$PROJECT_ROOT/apps/api"
+
+# Check if uv is available
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is not installed."
+    echo "Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+
+# Run the CLI via uv
+cd "$API_DIR"
+exec uv run python -m zloth_api.cli "$@"

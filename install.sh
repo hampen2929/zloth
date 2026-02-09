@@ -15,6 +15,7 @@
 #   --build           Build images locally instead of pulling from registry
 #   --api-port PORT   API server port (default: 8000)
 #   --web-port PORT   Web UI port (default: 3000)
+#   --local           Install for local execution (no Docker required)
 #   --no-start        Don't start services after installation
 #   --upgrade         Upgrade existing installation
 #   --help            Show this help message
@@ -37,6 +38,7 @@ WEB_PORT="3000"
 START_SERVICES=true
 UPGRADE_MODE=false
 BUILD_LOCAL=false
+LOCAL_MODE=false
 IMAGE_TAG="latest"
 REPO_URL="https://github.com/hampen2929/zloth.git"
 IMAGE_REGISTRY="ghcr.io/hampen2929/zloth"
@@ -91,6 +93,10 @@ parse_args() {
                 BUILD_LOCAL=true
                 shift
                 ;;
+            --local)
+                LOCAL_MODE=true
+                shift
+                ;;
             --api-port)
                 API_PORT="$2"
                 shift 2
@@ -128,6 +134,7 @@ show_help() {
     echo "  --branch BRANCH   Git branch to checkout (default: main)"
     echo "  --tag TAG         Docker image tag to use (default: latest)"
     echo "  --build           Build images locally instead of pulling from registry"
+    echo "  --local           Install for local execution (no Docker required)"
     echo "  --api-port PORT   API server port (default: 8000)"
     echo "  --web-port PORT   Web UI port (default: 3000)"
     echo "  --no-start        Don't start services after installation"
@@ -149,6 +156,9 @@ show_help() {
     echo ""
     echo "  # Upgrade existing installation"
     echo "  cd zloth && curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --upgrade"
+    echo ""
+    echo "  # Local mode (no Docker required)"
+    echo "  curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --local"
     echo ""
     echo "  # Use custom ports (if defaults are in use)"
     echo "  curl -fsSL https://raw.githubusercontent.com/hampen2929/zloth/main/install.sh | bash -s -- --api-port 8080 --web-port 3001"
@@ -220,6 +230,199 @@ check_prerequisites() {
         exit 1
     fi
 
+    echo ""
+}
+
+# Check prerequisites for local mode (uv, node, npm instead of Docker)
+check_prerequisites_local() {
+    print_step "Checking prerequisites for local mode..."
+
+    local missing_deps=()
+
+    # Check Git
+    if ! command -v git &> /dev/null; then
+        missing_deps+=("git")
+    else
+        print_success "Git found: $(git --version)"
+    fi
+
+    # Check Python 3.13+
+    if command -v python3 &> /dev/null; then
+        local py_version
+        py_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        local py_major py_minor
+        py_major=$(echo "$py_version" | cut -d. -f1)
+        py_minor=$(echo "$py_version" | cut -d. -f2)
+        if [ "$py_major" -ge 3 ] && [ "$py_minor" -ge 13 ]; then
+            print_success "Python found: $(python3 --version)"
+        else
+            print_warning "Python $py_version found, but Python 3.13+ is required"
+            missing_deps+=("python3.13+")
+        fi
+    else
+        missing_deps+=("python3.13+")
+    fi
+
+    # Check uv
+    if command -v uv &> /dev/null; then
+        print_success "uv found: $(uv --version)"
+    else
+        print_warning "uv not found. Installing..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+        if command -v uv &> /dev/null; then
+            print_success "uv installed: $(uv --version)"
+        else
+            missing_deps+=("uv")
+        fi
+    fi
+
+    # Check Node.js
+    if command -v node &> /dev/null; then
+        print_success "Node.js found: $(node --version)"
+    else
+        missing_deps+=("node")
+    fi
+
+    # Check npm
+    if command -v npm &> /dev/null; then
+        print_success "npm found: $(npm --version)"
+    else
+        missing_deps+=("npm")
+    fi
+
+    # Report missing dependencies
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        print_error "Missing required dependencies: ${missing_deps[*]}"
+        echo ""
+        echo "Please install the missing dependencies:"
+        for dep in "${missing_deps[@]}"; do
+            case $dep in
+                git)
+                    echo "  Git: https://git-scm.com/downloads"
+                    ;;
+                python3.13+)
+                    echo "  Python 3.13+: https://www.python.org/downloads/"
+                    ;;
+                uv)
+                    echo "  uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
+                    ;;
+                node|npm)
+                    echo "  Node.js: https://nodejs.org/"
+                    ;;
+            esac
+        done
+        exit 1
+    fi
+
+    echo ""
+}
+
+# Install dependencies for local mode
+install_local_dependencies() {
+    print_step "Installing API dependencies..."
+    (cd "$INSTALL_DIR/apps/api" && uv sync --extra dev)
+    print_success "API dependencies installed"
+
+    print_step "Installing Web dependencies..."
+    (cd "$INSTALL_DIR/apps/web" && npm ci)
+    print_success "Web dependencies installed"
+
+    echo ""
+}
+
+# Setup zloth CLI symlink
+setup_cli_sym() {
+    print_step "Setting up zloth CLI..."
+
+    local bin_script="$INSTALL_DIR/bin/zloth"
+    local target_dir="$HOME/.local/bin"
+
+    if [ ! -f "$bin_script" ]; then
+        print_warning "CLI script not found at $bin_script"
+        return
+    fi
+
+    chmod +x "$bin_script"
+
+    # Create ~/.local/bin if it doesn't exist
+    mkdir -p "$target_dir"
+
+    # Create symlink
+    if [ -L "$target_dir/zloth" ] || [ -f "$target_dir/zloth" ]; then
+        rm -f "$target_dir/zloth"
+    fi
+    ln -s "$(cd "$INSTALL_DIR" && pwd)/bin/zloth" "$target_dir/zloth"
+
+    # Check if ~/.local/bin is in PATH
+    if echo "$PATH" | grep -q "$target_dir"; then
+        print_success "zloth CLI installed to $target_dir/zloth"
+    else
+        print_success "zloth CLI installed to $target_dir/zloth"
+        print_warning "Add ~/.local/bin to your PATH:"
+        echo '  echo '\''export PATH="$HOME/.local/bin:$PATH"'\'' >> ~/.bashrc && source ~/.bashrc'
+    fi
+
+    echo ""
+}
+
+# Start services in local mode
+start_services_local() {
+    if [ "$START_SERVICES" = false ]; then
+        print_step "Skipping service startup (--no-start specified)"
+        return
+    fi
+
+    print_step "Starting zloth services locally..."
+
+    local bin_script="$INSTALL_DIR/bin/zloth"
+
+    if [ -f "$bin_script" ]; then
+        chmod +x "$bin_script"
+        "$bin_script" start --port "$API_PORT" --web-port "$WEB_PORT"
+    else
+        # Fallback: start directly
+        (cd "$INSTALL_DIR/apps/api" && \
+            PYTHONPATH=src uv run uvicorn zloth_api.main:app \
+                --host 0.0.0.0 --port "$API_PORT" &)
+
+        (cd "$INSTALL_DIR/apps/web" && \
+            API_URL="http://localhost:$API_PORT" npm run dev &)
+
+        print_success "Services started in background"
+    fi
+
+    echo ""
+}
+
+# Print completion message for local mode
+print_completion_local() {
+    echo -e "${GREEN}"
+    echo "  ╔═══════════════════════════════════════════╗"
+    echo "  ║    zloth local installation complete!     ║"
+    echo "  ╚═══════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo ""
+
+    if [ "$START_SERVICES" = true ]; then
+        echo "  Access zloth at:"
+        echo "    Web UI:  http://localhost:${WEB_PORT}"
+        echo "    API:     http://localhost:${API_PORT}"
+        echo ""
+    fi
+
+    echo "  CLI Commands:"
+    echo "    zloth start          # Start all services"
+    echo "    zloth start --reload # Start with auto-reload (dev mode)"
+    echo "    zloth stop           # Stop all services"
+    echo "    zloth status         # Check service status"
+    echo ""
+    echo "  Next steps:"
+    echo "    1. Open http://localhost:${WEB_PORT} in your browser"
+    echo "    2. Go to Settings and add your LLM API keys"
+    echo "    3. (Optional) Configure GitHub App for PR operations"
+    echo ""
+    echo "  Documentation: https://github.com/hampen2929/zloth"
     echo ""
 }
 
@@ -669,31 +872,59 @@ print_completion() {
 main() {
     print_banner
     parse_args "$@"
-    check_prerequisites
 
-    # Check port availability before starting (only if services will be started)
-    if [ "$START_SERVICES" = true ]; then
-        check_ports
-    fi
+    if [ "$LOCAL_MODE" = true ]; then
+        # Local mode: no Docker required
+        check_prerequisites_local
 
-    if [ "$UPGRADE_MODE" = false ]; then
-        setup_repository
+        # Check port availability before starting (only if services will be started)
+        if [ "$START_SERVICES" = true ]; then
+            check_ports
+        fi
+
+        if [ "$UPGRADE_MODE" = false ]; then
+            setup_repository
+        else
+            setup_repository
+        fi
+
+        # Use INSTALL_DIR as absolute path for local functions
+        INSTALL_DIR="$(cd "$INSTALL_DIR" 2>/dev/null && pwd || echo "$INSTALL_DIR")"
+
+        setup_environment
+        setup_directories
+        install_local_dependencies
+        setup_cli_sym
+        start_services_local
+        print_completion_local
     else
-        # Already in the target directory for upgrade
-        setup_repository
+        # Docker mode (default)
+        check_prerequisites
+
+        # Check port availability before starting (only if services will be started)
+        if [ "$START_SERVICES" = true ]; then
+            check_ports
+        fi
+
+        if [ "$UPGRADE_MODE" = false ]; then
+            setup_repository
+        else
+            # Already in the target directory for upgrade
+            setup_repository
+        fi
+
+        setup_environment
+        setup_directories
+
+        # Patch docker-compose.yml if custom ports are used
+        if [ "$API_PORT" != "8000" ] || [ "$WEB_PORT" != "3000" ]; then
+            patch_docker_compose
+        fi
+
+        start_services
+        wait_for_services
+        print_completion
     fi
-
-    setup_environment
-    setup_directories
-
-    # Patch docker-compose.yml if custom ports are used
-    if [ "$API_PORT" != "8000" ] || [ "$WEB_PORT" != "3000" ]; then
-        patch_docker_compose
-    fi
-
-    start_services
-    wait_for_services
-    print_completion
 }
 
 # Run main function
