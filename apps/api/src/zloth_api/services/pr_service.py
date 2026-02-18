@@ -1034,15 +1034,25 @@ IMPORTANT INSTRUCTIONS:
     ) -> str:
         """Generate a simple fallback description for new PR.
 
+        When a repository pull_request_template is available, it is used as the
+        base structure so that the output respects the repository's conventions.
+
         Args:
             diff: Unified diff string.
             title: PR title.
             run: Run object.
-            template: Optional PR template string (unused, kept for signature).
+            template: Optional PR template from the repository.
 
         Returns:
             Simple description string.
         """
+        if template:
+            return self._fill_template_fallback(
+                template=template,
+                summary=run.summary or title,
+                diff=diff,
+            )
+
         # Count changes
         added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
         removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
@@ -1508,14 +1518,24 @@ IMPORTANT INSTRUCTIONS:
     def _generate_fallback_description(self, diff: str, pr: PR, template: str | None = None) -> str:
         """Generate a simple fallback description.
 
+        When a repository pull_request_template is available, it is used as the
+        base structure so that the output respects the repository's conventions.
+
         Args:
             diff: Unified diff string.
             pr: PR object.
-            template: Optional PR template string (unused, kept for signature).
+            template: Optional PR template from the repository.
 
         Returns:
             Simple description string.
         """
+        if template:
+            return self._fill_template_fallback(
+                template=template,
+                summary=pr.title,
+                diff=diff,
+            )
+
         # Count changes
         added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
         removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
@@ -1538,6 +1558,49 @@ IMPORTANT INSTRUCTIONS:
 - [ ] Manual testing
 - [ ] Unit tests
 """
+
+    def _fill_template_fallback(
+        self,
+        template: str,
+        summary: str,
+        diff: str,
+    ) -> str:
+        """Fill a PR template with basic diff metadata.
+
+        This is used when the LLM executor is unavailable (e.g. worktree
+        deleted or executor failure).  Rather than discarding the repository's
+        pull_request_template and emitting a generic zloth format, we keep the
+        template structure and fill in what we can determine statically.
+
+        Args:
+            template: The repository's pull_request_template content.
+            summary: A short summary (run summary or PR title).
+            diff: Unified diff string.
+
+        Returns:
+            The template with HTML comments replaced by generated content.
+        """
+        added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
+        removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
+        files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
+
+        files_list = [f"- {f}" for f in sorted(files)[:10]]
+        if len(files) > 10:
+            files_list.append("- ...")
+        changes_text = "\n".join(files_list)
+        changes_text += f"\n- Total: +{added_lines} -{removed_lines} lines"
+
+        change_info = f"{summary}\n\n### Changed files\n{changes_text}"
+
+        # Replace HTML comment placeholders commonly found in PR templates
+        # (e.g. <!-- Description --> or <!-- Please describe ... -->)
+        result = re.sub(r"<!--.*?-->", change_info, template, count=1, flags=re.DOTALL)
+
+        # If the template had no HTML comment to replace, append the info
+        if result == template:
+            result = template.rstrip() + "\n\n" + change_info + "\n"
+
+        return result
 
     async def get(self, task_id: str, pr_id: str) -> PR | None:
         """Get a PR by ID.
