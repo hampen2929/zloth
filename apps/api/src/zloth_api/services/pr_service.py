@@ -1034,34 +1034,29 @@ IMPORTANT INSTRUCTIONS:
     ) -> str:
         """Generate a simple fallback description for new PR.
 
+        When a repository pull_request_template is provided, use it as the
+        base structure so that the PR description follows the repo convention.
+
         Args:
             diff: Unified diff string.
             title: PR title.
             run: Run object.
-            template: Optional PR template string (unused, kept for signature).
+            template: Optional PR template string from the repository.
 
         Returns:
             Simple description string.
         """
-        # Count changes
-        added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
-        removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
-        files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
-
         summary = run.summary or title
+        changes_info = self._build_changes_info(diff)
 
-        # Generate changes as simple bullet points
-        files_list = [f"- {f}" for f in sorted(files)[:10]]
-        if len(files) > 10:
-            files_list.append("- ...")
-        changes_text = "\n".join(files_list)
-        changes_text += f"\n- Total: +{added_lines} -{removed_lines} lines"
+        if template:
+            return self._fill_template(template, summary=summary, changes_info=changes_info)
 
         return f"""## Summary
 {summary}
 
 ## Changes
-{changes_text}
+{changes_info}
 
 ## Test Plan
 - [ ] Manual testing
@@ -1508,36 +1503,84 @@ IMPORTANT INSTRUCTIONS:
     def _generate_fallback_description(self, diff: str, pr: PR, template: str | None = None) -> str:
         """Generate a simple fallback description.
 
+        When a repository pull_request_template is provided, use it as the
+        base structure so that the PR description follows the repo convention.
+
         Args:
             diff: Unified diff string.
             pr: PR object.
-            template: Optional PR template string (unused, kept for signature).
+            template: Optional PR template string from the repository.
 
         Returns:
             Simple description string.
         """
-        # Count changes
-        added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
-        removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
-        files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
+        summary = pr.title
+        changes_info = self._build_changes_info(diff)
 
-        # Generate changes as simple bullet points
-        files_list = [f"- {f}" for f in sorted(files)[:10]]
-        if len(files) > 10:
-            files_list.append("- ...")
-        changes_text = "\n".join(files_list)
-        changes_text += f"\n- Total: +{added_lines} -{removed_lines} lines"
+        if template:
+            return self._fill_template(template, summary=summary, changes_info=changes_info)
 
         return f"""## Summary
-{pr.title}
+{summary}
 
 ## Changes
-{changes_text}
+{changes_info}
 
 ## Test Plan
 - [ ] Manual testing
 - [ ] Unit tests
 """
+
+    def _build_changes_info(self, diff: str) -> str:
+        """Build a human-readable summary of changed files from a diff.
+
+        Args:
+            diff: Unified diff string.
+
+        Returns:
+            Bullet-point list of changed files with line counts.
+        """
+        added_lines = len(re.findall(r"^\+[^+]", diff, re.MULTILINE))
+        removed_lines = len(re.findall(r"^-[^-]", diff, re.MULTILINE))
+        files = set(re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE))
+
+        files_list = [f"- {f}" for f in sorted(files)[:10]]
+        if len(files) > 10:
+            files_list.append("- ...")
+        changes_text = "\n".join(files_list)
+        changes_text += f"\n- Total: +{added_lines} -{removed_lines} lines"
+        return changes_text
+
+    def _fill_template(
+        self,
+        template: str,
+        *,
+        summary: str,
+        changes_info: str,
+    ) -> str:
+        """Fill a repository PR template with available information.
+
+        Appends a short summary and file-change list at the top of the
+        template so reviewers have context while the template structure
+        is preserved.
+
+        Args:
+            template: Raw PR template content from the repository.
+            summary: Short summary text (run summary or PR title).
+            changes_info: Formatted list of changed files.
+
+        Returns:
+            Template with prepended context.
+        """
+        context_block = f"""{summary}
+
+### Changed files
+{changes_info}
+
+---
+
+"""
+        return context_block + template
 
     async def get(self, task_id: str, pr_id: str) -> PR | None:
         """Get a PR by ID.
