@@ -1,163 +1,169 @@
-"""Database connection and initialization."""
+"""Database connection and initialization.
+
+This module provides a unified Database class that works with both
+SQLite (aiosqlite) and PostgreSQL (asyncpg) backends. The backend is
+selected based on the ZLOTH_DATABASE_URL environment variable:
+
+- sqlite:///path/to/db.sqlite (default)
+- postgresql://user:pass@host:port/dbname
+"""
+
+from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from zloth_api.config import settings
+from zloth_api.storage.backend import DatabaseBackend, parse_database_url
+
+if TYPE_CHECKING:
+    from zloth_api.storage.sqlite_backend import SQLiteBackend
 
 
 class Database:
-    """Async SQLite database wrapper."""
+    """Database wrapper with support for SQLite and PostgreSQL backends.
 
-    def __init__(self, db_path: Path | None = None):
-        if db_path:
-            self.db_path = db_path
+    This class provides a unified interface for database operations that
+    works with both SQLite and PostgreSQL. The backend is automatically
+    selected based on the database URL.
+
+    For backward compatibility, the class also exposes the raw aiosqlite
+    connection when using SQLite backend.
+    """
+
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        database_url: str | None = None,
+    ) -> None:
+        """Initialize database.
+
+        Args:
+            db_path: Path to SQLite database file (legacy parameter).
+            database_url: Database URL (sqlite:// or postgresql://).
+                         If not provided, uses settings.database_url.
+        """
+        self._backend: DatabaseBackend | None = None
+        self._backend_type: str = "sqlite"
+        self._connection_string: str = ""
+
+        # Determine database URL
+        if database_url:
+            url = database_url
+        elif db_path:
+            # Legacy: db_path parameter for SQLite
+            url = f"sqlite:///{db_path}"
+        elif settings.database_url:
+            url = settings.database_url
         elif settings.data_dir:
-            self.db_path = settings.data_dir / "zloth.db"
+            url = f"sqlite:///{settings.data_dir / 'zloth.db'}"
         else:
-            raise ValueError("data_dir must be set in settings")
-        self._connection: aiosqlite.Connection | None = None
+            raise ValueError("No database URL or path provided")
+
+        self._backend_type, self._connection_string = parse_database_url(url)
+
+        # For backward compatibility with tests that use db_path
+        if self._backend_type == "sqlite":
+            self.db_path = Path(self._connection_string)
+        else:
+            self.db_path = None  # type: ignore[assignment]
 
     async def connect(self) -> None:
         """Connect to the database."""
-        self._connection = await aiosqlite.connect(self.db_path)
-        self._connection.row_factory = aiosqlite.Row
-        await self._connection.execute("PRAGMA foreign_keys = ON")
+        if self._backend_type == "sqlite":
+            from zloth_api.storage.sqlite_backend import SQLiteBackend
+
+            self._backend = SQLiteBackend(self._connection_string)
+        elif self._backend_type == "postgresql":
+            from zloth_api.storage.postgres_backend import PostgresBackend
+
+            self._backend = PostgresBackend(self._connection_string)
+        else:
+            raise ValueError(f"Unsupported backend type: {self._backend_type}")
+
+        await self._backend.connect()
 
     async def disconnect(self) -> None:
         """Disconnect from the database."""
-        if self._connection:
-            await self._connection.close()
-            self._connection = None
+        if self._backend:
+            await self._backend.disconnect()
+            self._backend = None
 
     async def initialize(self) -> None:
         """Initialize the database schema."""
-        schema_path = Path(__file__).parent / "schema.sql"
-        schema = schema_path.read_text()
-
-        if not self._connection:
+        if not self._backend:
             await self.connect()
 
-        conn = self.connection
-        await conn.executescript(schema)
-        await conn.commit()
+        # Load appropriate schema
+        schema_path = Path(__file__).parent / self._get_schema_filename()
+        schema = schema_path.read_text()
+
+        await self.backend.initialize(schema)
 
         # Run migrations for existing databases
         await self._run_migrations()
 
+    def _get_schema_filename(self) -> str:
+        """Get the appropriate schema filename for the backend."""
+        if self._backend_type == "postgresql":
+            return "schema_postgres.sql"
+        return "schema.sql"
+
     async def _run_migrations(self) -> None:
         """Run database migrations for existing databases."""
-        conn = self.connection
-        cursor = await conn.execute("PRAGMA table_info(runs)")
-        columns = await cursor.fetchall()
-        column_names = [col["name"] for col in columns]
+        backend = self.backend
 
         # Migration: Add session_id column to runs table if it doesn't exist
-        if "session_id" not in column_names:
-            await conn.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
-            await conn.commit()
+        await backend.add_column("runs", "session_id", "TEXT")
 
         # Migration: Add commit_sha column to runs table if it doesn't exist
-        if "commit_sha" not in column_names:
-            await conn.execute("ALTER TABLE runs ADD COLUMN commit_sha TEXT")
-            await conn.commit()
+        await backend.add_column("runs", "commit_sha", "TEXT")
 
         # Migration: Add message_id column to runs table if it doesn't exist
-        if "message_id" not in column_names:
-            await conn.execute(
-                "ALTER TABLE runs ADD COLUMN message_id TEXT REFERENCES messages(id)"
-            )
-            await conn.commit()
+        # Note: PostgreSQL doesn't support adding FK constraint in ALTER TABLE ADD COLUMN
+        await backend.add_column("runs", "message_id", "TEXT")
 
-        # Migration: Add default_branch_prefix column to user_preferences table if it doesn't exist
-        cursor = await conn.execute("PRAGMA table_info(user_preferences)")
-        pref_columns = await cursor.fetchall()
-        pref_column_names = [col["name"] for col in pref_columns]
+        # user_preferences migrations
+        await backend.add_column("user_preferences", "default_branch_prefix", "TEXT")
+        await backend.add_column("user_preferences", "default_pr_creation_mode", "TEXT")
+        await backend.add_column("user_preferences", "default_coding_mode", "TEXT")
+        await backend.add_column("user_preferences", "auto_generate_pr_description", "INTEGER", "0")
+        await backend.add_column(
+            "user_preferences", "update_pr_title_on_regenerate", "INTEGER", "1"
+        )
+        await backend.add_column("user_preferences", "enable_gating_status", "INTEGER", "0")
+        await backend.add_column("user_preferences", "notify_on_ready", "INTEGER", "1")
+        await backend.add_column("user_preferences", "notify_on_complete", "INTEGER", "1")
+        await backend.add_column("user_preferences", "notify_on_failure", "INTEGER", "1")
+        await backend.add_column("user_preferences", "notify_on_warning", "INTEGER", "1")
+        await backend.add_column("user_preferences", "merge_method", "TEXT", "'squash'")
+        await backend.add_column("user_preferences", "review_min_score", "REAL", "0.75")
 
-        if "default_branch_prefix" not in pref_column_names:
-            await conn.execute("ALTER TABLE user_preferences ADD COLUMN default_branch_prefix TEXT")
-            await conn.commit()
+    @property
+    def backend(self) -> DatabaseBackend:
+        """Get the database backend."""
+        if not self._backend:
+            raise RuntimeError("Database not connected")
+        return self._backend
 
-        # Migration: Add default_pr_creation_mode column if it doesn't exist
-        if "default_pr_creation_mode" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN default_pr_creation_mode TEXT"
-            )
-            await conn.commit()
+    @property
+    def backend_type(self) -> str:
+        """Get the backend type ('sqlite' or 'postgresql')."""
+        return self._backend_type
 
-        # Migration: Add default_coding_mode column if it doesn't exist
-        if "default_coding_mode" not in pref_column_names:
-            await conn.execute("ALTER TABLE user_preferences ADD COLUMN default_coding_mode TEXT")
-            await conn.commit()
+    @property
+    def is_postgres(self) -> bool:
+        """Check if using PostgreSQL backend."""
+        return self._backend_type == "postgresql"
 
-        # Migration: Add auto_generate_pr_description column if it doesn't exist
-        if "auto_generate_pr_description" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences "
-                "ADD COLUMN auto_generate_pr_description INTEGER DEFAULT 0"
-            )
-            await conn.commit()
-
-        # Migration: Add update_pr_title_on_regenerate column if it doesn't exist
-        if "update_pr_title_on_regenerate" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences "
-                "ADD COLUMN update_pr_title_on_regenerate INTEGER DEFAULT 1"
-            )
-            await conn.commit()
-
-        # Migration: Add enable_gating_status column if it doesn't exist
-        if "enable_gating_status" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN enable_gating_status INTEGER DEFAULT 0"
-            )
-            await conn.commit()
-
-        # Migration: Add notify_on_ready column if it doesn't exist
-        if "notify_on_ready" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN notify_on_ready INTEGER DEFAULT 1"
-            )
-            await conn.commit()
-
-        # Migration: Add notify_on_complete column if it doesn't exist
-        if "notify_on_complete" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN notify_on_complete INTEGER DEFAULT 1"
-            )
-            await conn.commit()
-
-        # Migration: Add notify_on_failure column if it doesn't exist
-        if "notify_on_failure" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN notify_on_failure INTEGER DEFAULT 1"
-            )
-            await conn.commit()
-
-        # Migration: Add notify_on_warning column if it doesn't exist
-        if "notify_on_warning" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN notify_on_warning INTEGER DEFAULT 1"
-            )
-            await conn.commit()
-
-        # Migration: Add merge_method column if it doesn't exist
-        if "merge_method" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN merge_method TEXT DEFAULT 'squash'"
-            )
-            await conn.commit()
-
-        # Migration: Add review_min_score column if it doesn't exist
-        if "review_min_score" not in pref_column_names:
-            await conn.execute(
-                "ALTER TABLE user_preferences ADD COLUMN review_min_score REAL DEFAULT 0.75"
-            )
-            await conn.commit()
+    @property
+    def is_sqlite(self) -> bool:
+        """Check if using SQLite backend."""
+        return self._backend_type == "sqlite"
 
         # Migration: Add language column if it doesn't exist
         if "language" not in pref_column_names:
@@ -184,25 +190,71 @@ class Database:
 
     @property
     def connection(self) -> aiosqlite.Connection:
-        """Get the database connection."""
-        if not self._connection:
+        """Get the raw aiosqlite connection (SQLite only).
+
+        This property is provided for backward compatibility with existing
+        DAO code. For new code, use the backend interface instead.
+
+        Raises:
+            RuntimeError: If not using SQLite backend or not connected.
+        """
+        if self._backend_type != "sqlite":
+            raise RuntimeError(
+                "Direct connection access is only available for SQLite backend. "
+                "Use backend interface for PostgreSQL."
+            )
+        if not self._backend:
             raise RuntimeError("Database not connected")
-        return self._connection
+
+
+        sqlite_backend: SQLiteBackend = self._backend  # type: ignore[assignment]
+        return sqlite_backend.connection
 
     async def fetch_one(
         self, query: str, params: tuple[Any, ...] | None = None
     ) -> aiosqlite.Row | None:
-        """Execute a query and fetch one row."""
-        conn = self.connection
-        cursor = await conn.execute(query, params or ())
-        return await cursor.fetchone()
+        """Execute a query and fetch one row (SQLite compatibility).
+
+        For backward compatibility. New code should use backend.fetch_one().
+        """
+        if self._backend_type == "sqlite":
+            conn = self.connection
+            cursor = await conn.execute(query, params or ())
+            return await cursor.fetchone()
+        else:
+            # For PostgreSQL, translate query and use backend
+            row = await self.backend.fetch_one(query, params)
+            return row  # type: ignore[return-value]
 
     async def execute(self, query: str, params: tuple[Any, ...] | None = None) -> aiosqlite.Cursor:
-        """Execute a query and return the cursor."""
-        conn = self.connection
-        cursor = await conn.execute(query, params or ())
-        await conn.commit()
-        return cursor
+        """Execute a query and return the cursor (SQLite compatibility).
+
+        For backward compatibility. New code should use backend.execute().
+        """
+        if self._backend_type == "sqlite":
+            conn = self.connection
+            cursor = await conn.execute(query, params or ())
+            await conn.commit()
+            return cursor
+        else:
+            # For PostgreSQL, use backend
+            await self.backend.execute(query, params)
+            # Return a dummy cursor-like object for compatibility
+            return _DummyCursor()  # type: ignore[return-value]
+
+
+class _DummyCursor:
+    """Dummy cursor for PostgreSQL backward compatibility."""
+
+    rowcount: int = 0
+
+    async def fetchone(self) -> None:
+        """Fetch one row (not supported in PostgreSQL compatibility mode)."""
+        return None
+
+    async def fetchall(self) -> list[Any]:
+        """Fetch all rows (not supported in PostgreSQL compatibility mode)."""
+        return []
 
 
 # Global database instance
@@ -219,6 +271,17 @@ async def get_db() -> Database:
     return _db
 
 
+async def reset_db() -> None:
+    """Reset the global database instance.
+
+    Useful for testing and reconfiguration.
+    """
+    global _db
+    if _db is not None:
+        await _db.disconnect()
+        _db = None
+
+
 @asynccontextmanager
 async def get_db_context() -> AsyncGenerator[Database]:
     """Get database as async context manager."""
@@ -227,3 +290,21 @@ async def get_db_context() -> AsyncGenerator[Database]:
         yield db
     finally:
         pass  # Connection managed globally
+
+
+async def create_database(database_url: str | None = None) -> Database:
+    """Create a new database instance with the specified URL.
+
+    This is useful for creating separate database connections,
+    e.g., for testing or multi-tenant scenarios.
+
+    Args:
+        database_url: Database URL. If not provided, uses settings.
+
+    Returns:
+        New Database instance (not the global singleton).
+    """
+    db = Database(database_url=database_url)
+    await db.connect()
+    await db.initialize()
+    return db
