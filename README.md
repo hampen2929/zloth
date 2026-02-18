@@ -241,7 +241,7 @@ zloth/
 
 ### v0.2
 - Docker sandbox for command execution (tests, linting)
-- GitHub App authentication
+- ~~GitHub App authentication~~ (completed)
 - Review/Meta agent for comparing outputs
 - PR comment-triggered re-runs
 
