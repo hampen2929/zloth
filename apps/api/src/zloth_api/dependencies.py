@@ -4,6 +4,7 @@ from zloth_api.config import settings
 from zloth_api.domain.enums import JobKind
 from zloth_api.queue.sqlite import SQLiteQueue
 from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
+from zloth_api.services.ai_task_creator import AITaskCreatorService
 from zloth_api.services.analysis_service import AnalysisService
 from zloth_api.services.breakdown_service import BreakdownService
 from zloth_api.services.ci_check_service import CICheckService
@@ -57,6 +58,7 @@ _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
 _job_worker: JobWorker | None = None
 _sqlite_queue: SQLiteQueue | None = None
+_ai_task_creator: AITaskCreatorService | None = None
 
 
 def get_crypto_service() -> CryptoService:
@@ -213,6 +215,18 @@ async def get_breakdown_service() -> BreakdownService:
         backlog_dao = await get_backlog_dao()
         _breakdown_service = BreakdownService(repo_dao, output_manager, backlog_dao)
     return _breakdown_service
+
+
+async def get_ai_task_creator_service() -> AITaskCreatorService:
+    """Get the AI task creator service singleton."""
+    global _ai_task_creator
+    if _ai_task_creator is None:
+        repo_dao = await get_repo_dao()
+        task_dao = await get_task_dao()
+        message_dao = await get_message_dao()
+        output_manager = get_output_manager()
+        _ai_task_creator = AITaskCreatorService(repo_dao, task_dao, message_dao, output_manager)
+    return _ai_task_creator
 
 
 async def get_kanban_service() -> KanbanService:

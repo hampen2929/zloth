@@ -1319,6 +1319,52 @@ class ErrorPattern(BaseModel):
     affected_files: list[str] = Field(default_factory=list)
 
 
+# ============================================================
+# AI Task Creation
+# ============================================================
+
+
+class AITaskCreateRequest(BaseModel):
+    """Request for AI-driven task creation."""
+
+    repo_id: str = Field(..., description="Repository ID")
+    instruction: str = Field(..., description="High-level instruction for task creation")
+    executor_type: ExecutorType = Field(
+        default=ExecutorType.CLAUDE_CODE, description="Executor to use for analysis"
+    )
+    coding_mode: CodingMode = Field(
+        default=CodingMode.SEMI_AUTO, description="Coding mode for created tasks"
+    )
+    auto_start: bool = Field(default=False, description="Whether to auto-start agentic execution")
+    context: dict[str, Any] | None = Field(None, description="Additional context")
+
+
+class AICreatedTask(BaseModel):
+    """A task created by AI."""
+
+    id: str = Field(..., description="Task ID")
+    title: str = Field(..., description="Task title")
+    instruction: str = Field(..., description="Instruction for the coding agent")
+    coding_mode: CodingMode = Field(..., description="Coding mode")
+    auto_started: bool = Field(default=False, description="Whether agentic execution was started")
+
+
+class AITaskCreateResponse(BaseModel):
+    """Response from AI task creation."""
+
+    session_id: str = Field(..., description="Session ID for polling")
+    status: BreakdownStatus = Field(..., description="Session status")
+    created_tasks: list[AICreatedTask] = Field(default_factory=list, description="Created tasks")
+    summary: str | None = Field(None, description="Summary of what was created")
+    codebase_analysis: CodebaseAnalysis | None = Field(None, description="Codebase analysis result")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+# ============================================================
+# Analysis & Recommendations
+# ============================================================
+
+
 class AnalysisRecommendation(BaseModel):
     """Analysis-based recommendation."""
 

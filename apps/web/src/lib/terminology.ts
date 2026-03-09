@@ -422,6 +422,12 @@ export const homeLabels = {
   settingUpWorkspace: 'Setting up workspace...',
   loadingRepositories: 'Loading repositories...',
   noRepositoriesFound: 'No repositories found',
+  singleTask: 'Single Task',
+  aiCreateTasks: 'AI Create Tasks',
+  aiCreating: 'AI is analyzing and creating tasks...',
+  aiCreateSuccess: 'tasks created',
+  aiCreateFailed: 'AI task creation failed',
+  autoStartExecution: 'Auto-start execution',
 } as const;
 
 export const homeLabelsJa = {
@@ -433,6 +439,12 @@ export const homeLabelsJa = {
   settingUpWorkspace: 'ワークスペースを設定中...',
   loadingRepositories: 'リポジトリを読み込み中...',
   noRepositoriesFound: 'リポジトリが見つかりません',
+  singleTask: 'シングルタスク',
+  aiCreateTasks: 'AIスレ立て',
+  aiCreating: 'AIがコードベースを分析してタスクを作成中...',
+  aiCreateSuccess: '件のタスクを作成しました',
+  aiCreateFailed: 'AIタスク作成に失敗しました',
+  autoStartExecution: '自動実行を開始',
 } as const;
 
 /**
