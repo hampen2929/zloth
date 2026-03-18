@@ -277,7 +277,7 @@ class WorkspaceService:
                 # Pull
                 pull_branch = branch or repo.active_branch.name
                 try:
-                    repo.git.pull("origin", pull_branch)
+                    repo.git.pull("--no-rebase", "origin", pull_branch)
                     return MergeResult(success=True)
                 except git.GitCommandError as e:
                     error_str = str(e)
