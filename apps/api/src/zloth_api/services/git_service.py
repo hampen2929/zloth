@@ -855,6 +855,15 @@ class GitService:
                     f"(attempt {attempt + 1}/{max_retries})"
                 )
 
+                # Unshallow if needed — shallow clones (depth=1) cannot merge
+                # diverged histories (e.g., after GitHub "Update branch").
+                await self._ensure_unshallow(repo_path, auth_url=auth_url)
+
+                # Fetch the specific branch explicitly.  Single-branch clones
+                # only have a refspec for the *base* branch, so a plain
+                # `git fetch` won't retrieve the working branch from remote.
+                await self._fetch_branch(repo_path, branch=branch, auth_url=auth_url)
+
                 pull_result = await self.pull(repo_path, branch=branch, auth_url=auth_url)
                 required_pull = True
 
@@ -872,6 +881,87 @@ class GitService:
                     )
 
         return PushResult(success=False, error="Max retries exceeded", required_pull=required_pull)
+
+    async def _ensure_unshallow(
+        self,
+        repo_path: Path,
+        auth_url: str | None = None,
+    ) -> None:
+        """Unshallow the repository if it is a shallow clone.
+
+        Shallow clones (``--depth 1``) cannot merge diverged histories because
+        git lacks enough commit history to compute a merge base.  This is
+        triggered when the remote branch has been updated independently (e.g.
+        via GitHub's "Update branch" button).
+
+        The method is a no-op when the repository is already unshallowed.
+        """
+
+        def _unshallow() -> None:
+            shallow_file = repo_path / ".git" / "shallow"
+            if not shallow_file.exists():
+                return
+
+            repo = git.Repo(repo_path)
+            original_url: str | None = None
+            if auth_url:
+                try:
+                    original_url = repo.remotes.origin.url
+                    repo.remotes.origin.set_url(auth_url)
+                except Exception:
+                    pass
+
+            try:
+                logger.info("Unshallowing repository before pull…")
+                repo.git.fetch("--unshallow")
+            except git.GitCommandError as exc:
+                # Already unshallowed between our check and fetch, or remote
+                # does not support unshallow — log and continue.
+                logger.warning(f"Unshallow failed (continuing): {exc}")
+            finally:
+                if original_url:
+                    repo.remotes.origin.set_url(original_url)
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _unshallow)
+
+    async def _fetch_branch(
+        self,
+        repo_path: Path,
+        branch: str,
+        auth_url: str | None = None,
+    ) -> None:
+        """Fetch a specific branch from origin.
+
+        Single-branch clones (``--single-branch``) only have a fetch refspec
+        for the base branch.  A plain ``git fetch`` will therefore never
+        retrieve the *working* branch that was created after the clone.  This
+        helper explicitly fetches the given branch so that ``git pull origin
+        <branch>`` can find it.
+        """
+
+        def _fetch_branch_sync() -> None:
+            repo = git.Repo(repo_path)
+            original_url: str | None = None
+            if auth_url:
+                try:
+                    original_url = repo.remotes.origin.url
+                    repo.remotes.origin.set_url(auth_url)
+                except Exception:
+                    pass
+
+            try:
+                refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
+                repo.git.fetch("origin", refspec)
+            except git.GitCommandError as exc:
+                # The branch may not exist on remote yet (first push).
+                logger.debug(f"Fetch branch {branch} failed (continuing): {exc}")
+            finally:
+                if original_url:
+                    repo.remotes.origin.set_url(original_url)
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _fetch_branch_sync)
 
     async def fetch(
         self,
@@ -1027,8 +1117,10 @@ class GitService:
                 pull_branch = branch or repo.active_branch.name
 
                 try:
-                    # Try to pull
-                    repo.git.pull("origin", pull_branch)
+                    # Try to pull with explicit merge strategy.
+                    # Newer git versions require specifying how to reconcile
+                    # divergent branches when pull.rebase is not configured.
+                    repo.git.pull("--no-rebase", "origin", pull_branch)
                     return PullResult(success=True)
                 except git.GitCommandError as e:
                     error_str = str(e)
