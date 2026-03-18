@@ -10,7 +10,6 @@ via GitHub's "Update branch" button), the push_with_retry logic correctly:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import git
@@ -18,14 +17,17 @@ import pytest
 
 from zloth_api.services.git_service import GitService
 
+# Default git identity used by all test repos so that merge commits
+# succeed even on CI runners where no global git config exists.
+_GIT_USER_NAME = "Test User"
+_GIT_USER_EMAIL = "test@example.com"
 
-def _run(coro: object) -> object:
-    """Helper to run a coroutine in the current event loop or create one."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)  # type: ignore[arg-type]
-    finally:
-        loop.close()
+
+def _configure_git_identity(repo: git.Repo) -> None:
+    """Set ``user.name`` and ``user.email`` on a repo (local scope)."""
+    with repo.config_writer() as cw:
+        cw.set_value("user", "name", _GIT_USER_NAME)
+        cw.set_value("user", "email", _GIT_USER_EMAIL)
 
 
 def _create_bare_remote_with_commit(tmp_path: Path) -> Path:
@@ -36,6 +38,7 @@ def _create_bare_remote_with_commit(tmp_path: Path) -> Path:
     """
     seed_path = tmp_path / "_seed"
     seed_repo = git.Repo.init(seed_path)
+    _configure_git_identity(seed_repo)
     seed_repo.git.checkout("-b", "main")
 
     readme = seed_path / "README.md"
@@ -73,6 +76,7 @@ def _shallow_clone_workspace(
     # Restore plain path as remote URL (matches production behaviour where
     # auth URL is swapped back after clone).
     repo.remotes.origin.set_url(str(remote_path))
+    _configure_git_identity(repo)
     repo.git.checkout("-b", work_branch)
     return repo
 
@@ -92,7 +96,8 @@ def setup_repos(tmp_path: Path) -> tuple[Path, Path, Path]:
 
     # Create a normal clone for simulating remote-side changes
     committer_path = tmp_path / "committer"
-    git.Repo.clone_from(str(remote_path), str(committer_path))
+    committer_repo = git.Repo.clone_from(str(remote_path), str(committer_path))
+    _configure_git_identity(committer_repo)
 
     workspace_path = tmp_path / "workspace"
     return remote_path, committer_path, workspace_path
