@@ -23,6 +23,7 @@ from zloth_api.services.repo_service import RepoService
 from zloth_api.services.review_service import ReviewService
 from zloth_api.services.run_service import RunService
 from zloth_api.services.settings_service import SettingsService
+from zloth_api.services.title_service import TitleService
 from zloth_api.services.workspace_service import WorkspaceService
 from zloth_api.storage.dao import (
     PRDAO,
@@ -55,6 +56,7 @@ _ci_polling_service: CIPollingService | None = None
 _agentic_orchestrator: AgenticOrchestrator | None = None
 _pr_status_poller: PRStatusPoller | None = None
 _pr_service: PRService | None = None
+_title_service: TitleService | None = None
 _job_worker: JobWorker | None = None
 _sqlite_queue: SQLiteQueue | None = None
 
@@ -184,6 +186,17 @@ async def get_pr_service() -> PRService:
             pr_dao, task_dao, run_dao, repo_service, github_service, git_service
         )
     return _pr_service
+
+
+async def get_title_service() -> TitleService:
+    """Get the title service singleton."""
+    global _title_service
+    if _title_service is None:
+        task_dao = await get_task_dao()
+        message_dao = await get_message_dao()
+        repo_dao = await get_repo_dao()
+        _title_service = TitleService(task_dao, message_dao, repo_dao)
+    return _title_service
 
 
 async def get_github_service() -> GitHubService:

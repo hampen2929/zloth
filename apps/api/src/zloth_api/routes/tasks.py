@@ -10,6 +10,7 @@ from zloth_api.dependencies import (
     get_pr_dao,
     get_run_dao,
     get_task_dao,
+    get_title_service,
     get_user_preferences_dao,
 )
 from zloth_api.domain.enums import CodingMode, TaskBaseKanbanStatus, TaskKanbanStatus
@@ -18,6 +19,8 @@ from zloth_api.domain.models import (
     AgenticStartResponse,
     AgenticStatusResponse,
     CICheckSummary,
+    GenerateTitleRequest,
+    GenerateTitleResponse,
     Message,
     MessageCreate,
     PRSummary,
@@ -80,6 +83,7 @@ def _compute_kanban_status(
 
 if TYPE_CHECKING:
     from zloth_api.services.agentic_orchestrator import AgenticOrchestrator
+    from zloth_api.services.title_service import TitleService
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -281,6 +285,56 @@ async def bulk_create_tasks(
         created_tasks=created_tasks,
         count=len(created_tasks),
     )
+
+
+# ============================================================
+# Title Generation
+# ============================================================
+
+
+@router.post(
+    "/{task_id}/generate-title",
+    response_model=GenerateTitleResponse,
+    status_code=200,
+)
+async def generate_title(
+    task_id: str,
+    data: GenerateTitleRequest | None = None,
+    task_dao: TaskDAO = Depends(get_task_dao),
+    title_service: "TitleService" = Depends(get_title_service),
+) -> GenerateTitleResponse:
+    """Generate a title for a task using AI.
+
+    Uses conversation messages and optional instruction to generate
+    a concise title. The generated title is saved to the task.
+
+    Args:
+        task_id: Target task ID.
+        data: Optional request body with instruction.
+        task_dao: Task DAO.
+        title_service: Title generation service.
+
+    Returns:
+        GenerateTitleResponse with task_id and generated title.
+
+    Raises:
+        HTTPException: If task not found.
+    """
+    task = await task_dao.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    instruction = data.instruction if data else None
+
+    try:
+        title = await title_service.generate_title(
+            task_id=task_id,
+            instruction=instruction,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return GenerateTitleResponse(task_id=task_id, title=title)
 
 
 # ============================================================

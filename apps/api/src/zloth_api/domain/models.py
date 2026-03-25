@@ -751,6 +751,23 @@ class TaskBulkCreated(BaseModel):
     count: int = Field(..., description="Number of tasks created")
 
 
+class GenerateTitleRequest(BaseModel):
+    """Request for generating a task title."""
+
+    instruction: str | None = Field(
+        None,
+        description="Optional explicit instruction for title generation. "
+        "If not provided, uses conversation messages as context.",
+    )
+
+
+class GenerateTitleResponse(BaseModel):
+    """Response from title generation."""
+
+    task_id: str = Field(..., description="Task ID")
+    title: str = Field(..., description="Generated title")
+
+
 # ============================================================
 # Backlog
 # ============================================================

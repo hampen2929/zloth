@@ -1,0 +1,81 @@
+name: Contents Creation
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "Task ID to generate title for"
+        required: true
+        type: string
+      instruction:
+        description: "Optional instruction for title generation"
+        required: false
+        type: string
+        default: ""
+      api_url:
+        description: "zloth API base URL"
+        required: false
+        type: string
+        default: "http://localhost:8000"
+
+  workflow_call:
+    inputs:
+      task_id:
+        description: "Task ID to generate title for"
+        required: true
+        type: string
+      instruction:
+        description: "Optional instruction for title generation"
+        required: false
+        type: string
+        default: ""
+      api_url:
+        description: "zloth API base URL"
+        required: false
+        type: string
+        default: "http://localhost:8000"
+
+jobs:
+  generate-title:
+    name: Generate Title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate title via API
+        id: generate
+        run: |
+          BODY='{}'
+          if [ -n "$INSTRUCTION" ]; then
+            BODY=$(jq -n --arg inst "$INSTRUCTION" '{"instruction": $inst}')
+          fi
+
+          RESPONSE=$(curl -sf \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            "${API_URL}/v1/tasks/${TASK_ID}/generate-title")
+
+          if [ $? -ne 0 ]; then
+            echo "::error::Failed to call generate-title API"
+            exit 1
+          fi
+
+          TITLE=$(echo "$RESPONSE" | jq -r '.title')
+          TASK_ID_RESULT=$(echo "$RESPONSE" | jq -r '.task_id')
+
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          echo "task_id=$TASK_ID_RESULT" >> "$GITHUB_OUTPUT"
+        env:
+          API_URL: ${{ inputs.api_url }}
+          TASK_ID: ${{ inputs.task_id }}
+          INSTRUCTION: ${{ inputs.instruction }}
+
+      - name: Save to summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Generated Title
+
+          | Field | Value |
+          |-------|-------|
+          | **Task ID** | \`${{ steps.generate.outputs.task_id }}\` |
+          | **Title** | ${{ steps.generate.outputs.title }} |
+          EOF
