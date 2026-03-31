@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --no-turbo",
+    "dev:turbo": "next dev",
     "dev:poll": "WATCHPACK_POLLING=true next dev --no-turbo",
     "build": "next build",
     "start": "next start",
