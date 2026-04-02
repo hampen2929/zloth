@@ -370,6 +370,33 @@ export interface TaskBulkCreated {
   count: number;
 }
 
+// AI Task Creation
+export interface AITaskCreateRequest {
+  repo_id: string;
+  instruction: string;
+  executor_type: ExecutorType;
+  coding_mode: CodingMode;
+  auto_start: boolean;
+  context?: Record<string, unknown>;
+}
+
+export interface AICreatedTask {
+  id: string;
+  title: string;
+  instruction: string;
+  coding_mode: CodingMode;
+  auto_started: boolean;
+}
+
+export interface AITaskCreateResponse {
+  session_id: string;
+  status: BreakdownStatus;
+  created_tasks: AICreatedTask[];
+  summary: string | null;
+  codebase_analysis: CodebaseAnalysis | null;
+  error: string | null;
+}
+
 // Kanban
 export type TaskKanbanStatus =
   | 'backlog'

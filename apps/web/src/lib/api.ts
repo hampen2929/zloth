@@ -57,6 +57,9 @@ import type {
   AnalysisRecommendation,
   PromptQualityAnalysis,
   ExecutorsStatus,
+  AITaskCreateRequest,
+  AITaskCreateResponse,
+  BreakdownLogsResponse as AITaskLogsResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -499,6 +502,84 @@ export const breakdownApi = {
     poll();
 
     // Return cleanup function
+    return () => {
+      cancelled = true;
+    };
+  },
+};
+
+// AI Task Creation
+export const aiTasksApi = {
+  create: (data: AITaskCreateRequest) =>
+    fetchApi<AITaskCreateResponse>('/tasks/ai-create', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getResult: (sessionId: string) =>
+    fetchApi<AITaskCreateResponse>(`/tasks/ai-create/${sessionId}`),
+
+  getLogs: (sessionId: string, fromLine: number = 0) =>
+    fetchApi<AITaskLogsResponse>(
+      `/tasks/ai-create/${sessionId}/logs?from_line=${fromLine}`
+    ),
+
+  autoStart: (sessionId: string) =>
+    fetchApi<{ started_task_ids: string[]; errors: { task_id: string; error: string }[] }>(
+      `/tasks/ai-create/${sessionId}/auto-start`,
+      { method: 'POST' }
+    ),
+
+  /**
+   * Stream AI task creation logs by polling.
+   */
+  streamLogs: (
+    sessionId: string,
+    options: {
+      fromLine?: number;
+      onLine: (line: OutputLine) => void;
+      onComplete: () => void;
+      onError: (error: Error) => void;
+    }
+  ): (() => void) => {
+    let cancelled = false;
+    let nextLine = options.fromLine ?? 0;
+    const pollInterval = 500;
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      try {
+        const result = await aiTasksApi.getLogs(sessionId, nextLine);
+
+        for (const log of result.logs) {
+          if (cancelled) break;
+          options.onLine(log);
+        }
+
+        if (result.logs.length > 0) {
+          nextLine = result.total_lines;
+        }
+
+        if (result.is_complete) {
+          options.onComplete();
+          return;
+        }
+
+        if (!cancelled) {
+          setTimeout(poll, pollInterval);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          options.onError(
+            error instanceof Error ? error : new Error('Failed to fetch logs')
+          );
+        }
+      }
+    };
+
+    poll();
+
     return () => {
       cancelled = true;
     };

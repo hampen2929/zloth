@@ -3,8 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { reposApi, tasksApi, githubApi, preferencesApi, runsApi } from '@/lib/api';
-import type { GitHubRepository, ExecutorType, CodingMode } from '@/types';
+import { reposApi, tasksApi, githubApi, preferencesApi, runsApi, aiTasksApi } from '@/lib/api';
+import type { GitHubRepository, ExecutorType, CodingMode, AICreatedTask } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useShortcutText, isModifierPressed } from '@/lib/platform';
@@ -21,7 +21,11 @@ import {
   ExclamationTriangleIcon,
   Cog6ToothIcon,
   BoltIcon,
+  SparklesIcon,
+  CheckCircleIcon,
 } from '@heroicons/react/24/outline';
+
+type HomeMode = 'single' | 'ai-create';
 
 export default function HomePage() {
   const router = useRouter();
@@ -37,6 +41,9 @@ export default function HomePage() {
   const [selectedMode, setSelectedMode] = useState<CodingMode>('interactive');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [homeMode, setHomeMode] = useState<HomeMode>('single');
+  const [autoStart, setAutoStart] = useState(false);
+  const [aiCreatedTasks, setAiCreatedTasks] = useState<AICreatedTask[] | null>(null);
 
   // Dropdown states
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
@@ -107,6 +114,11 @@ export default function HomePage() {
       return;
     }
 
+    if (homeMode === 'ai-create') {
+      await handleAICreateTasks();
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -152,6 +164,64 @@ export default function HomePage() {
       router.push(`/tasks/${task.id}?${params.toString()}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start task';
+      setError(message);
+      toastError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAICreateTasks = async () => {
+    if (!instruction.trim() || !selectedRepo || !selectedBranch) return;
+    if (selectedCLIs.length === 0) return;
+
+    setLoading(true);
+    setError(null);
+    setAiCreatedTasks(null);
+
+    try {
+      // Clone/select the repository
+      const repo = await reposApi.select({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.name,
+        branch: selectedBranch,
+      });
+
+      // Start AI task creation
+      const response = await aiTasksApi.create({
+        repo_id: repo.id,
+        instruction: instruction,
+        executor_type: selectedCLIs[0],
+        coding_mode: selectedMode,
+        auto_start: autoStart,
+      });
+
+      // Poll for result
+      const pollInterval = 2000;
+      const maxWait = 300000; // 5 minutes
+      const startTime = Date.now();
+
+      let result = response;
+      while (result.status === 'running' && Date.now() - startTime < maxWait) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        const polled = await aiTasksApi.getResult(result.session_id);
+        if (polled) result = polled;
+      }
+
+      if (result.status === 'succeeded' && result.created_tasks.length > 0) {
+        setAiCreatedTasks(result.created_tasks);
+        clearInstruction();
+
+        // If auto-start was requested and tasks were created
+        if (autoStart) {
+          await aiTasksApi.autoStart(result.session_id);
+        }
+      } else if (result.status === 'failed') {
+        setError(result.error || t.home.aiCreateFailed);
+        toastError(result.error || t.home.aiCreateFailed);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t.home.aiCreateFailed;
       setError(message);
       toastError(message);
     } finally {
@@ -213,8 +283,65 @@ export default function HomePage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
       <div className="w-full max-w-3xl px-4">
+        {/* Mode Tabs */}
+        <div className="flex gap-1 mb-3 bg-gray-800/50 rounded-lg p-1 w-fit">
+          <button
+            onClick={() => { setHomeMode('single'); setAiCreatedTasks(null); }}
+            className={cn(
+              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+              homeMode === 'single'
+                ? 'bg-gray-700 text-white'
+                : 'text-gray-400 hover:text-white'
+            )}
+          >
+            {t.home.singleTask}
+          </button>
+          <button
+            onClick={() => { setHomeMode('ai-create'); setAiCreatedTasks(null); }}
+            className={cn(
+              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5',
+              homeMode === 'ai-create'
+                ? 'bg-purple-600 text-white'
+                : 'text-gray-400 hover:text-white'
+            )}
+          >
+            <SparklesIcon className="w-4 h-4" />
+            {t.home.aiCreateTasks}
+          </button>
+        </div>
+
+        {/* AI Created Tasks Result */}
+        {aiCreatedTasks && aiCreatedTasks.length > 0 && (
+          <div className="mb-4 p-4 bg-green-900/20 border border-green-800/50 rounded-xl">
+            <div className="flex items-center gap-2 text-green-400 mb-3">
+              <CheckCircleIcon className="w-5 h-5" />
+              <span className="font-medium">{aiCreatedTasks.length} {t.home.aiCreateSuccess}</span>
+            </div>
+            <div className="space-y-2">
+              {aiCreatedTasks.map((task) => (
+                <button
+                  key={task.id}
+                  onClick={() => router.push(`/tasks/${task.id}`)}
+                  className="w-full text-left p-3 bg-gray-800/50 hover:bg-gray-800 rounded-lg transition-colors group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-200 group-hover:text-white">{task.title}</span>
+                    <span className="text-xs text-gray-500 group-hover:text-gray-400">View &rarr;</span>
+                  </div>
+                  {task.auto_started && (
+                    <span className="text-xs text-purple-400 mt-1 inline-block">Auto-started</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Main Input Area */}
-        <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-lg">
+        <div className={cn(
+          'bg-gray-900 border rounded-xl shadow-lg',
+          homeMode === 'ai-create' ? 'border-purple-700/50' : 'border-gray-700'
+        )}>
           {/* Textarea */}
           <div className="p-4">
             <textarea
@@ -247,6 +374,19 @@ export default function HomePage() {
 
             {/* Right side buttons */}
             <div className="flex items-center gap-2">
+              {/* Auto-start checkbox (AI Create mode only) */}
+              {homeMode === 'ai-create' && (
+                <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoStart}
+                    onChange={(e) => setAutoStart(e.target.checked)}
+                    className="rounded border-gray-600 bg-gray-800 text-purple-500 focus:ring-purple-500 w-3.5 h-3.5"
+                  />
+                  {t.home.autoStartExecution}
+                </label>
+              )}
+
               {/* Image attach button (placeholder) */}
               <button
                 className="p-2 text-gray-500 hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-800"
@@ -262,16 +402,28 @@ export default function HomePage() {
                 disabled={!canSubmit}
                 className={cn(
                   'p-2 rounded-lg transition-all',
-                  'focus:outline-none focus:ring-2 focus:ring-blue-500',
-                  canSubmit
-                    ? 'bg-white text-gray-900 hover:bg-gray-100'
-                    : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                  'focus:outline-none focus:ring-2',
+                  homeMode === 'ai-create'
+                    ? cn(
+                        'focus:ring-purple-500',
+                        canSubmit
+                          ? 'bg-purple-600 text-white hover:bg-purple-500'
+                          : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                      )
+                    : cn(
+                        'focus:ring-blue-500',
+                        canSubmit
+                          ? 'bg-white text-gray-900 hover:bg-gray-100'
+                          : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                      )
                 )}
                 title={`Submit (${submitShortcut})`}
-                aria-label="Submit task"
+                aria-label={homeMode === 'ai-create' ? 'AI Create Tasks' : 'Submit task'}
               >
                 {loading ? (
                   <div className="w-5 h-5 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+                ) : homeMode === 'ai-create' ? (
+                  <SparklesIcon className="w-5 h-5" />
                 ) : (
                   <ArrowUpIcon className="w-5 h-5" />
                 )}
@@ -352,8 +504,11 @@ export default function HomePage() {
         {/* Loading indicator */}
         {loading && (
           <div className="mt-4 flex items-center justify-center gap-2 text-gray-400">
-            <div className="w-4 h-4 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
-            <span>{t.home.settingUpWorkspace}</span>
+            <div className={cn(
+              'w-4 h-4 border-2 border-gray-600 rounded-full animate-spin',
+              homeMode === 'ai-create' ? 'border-t-purple-500' : 'border-t-blue-500'
+            )} />
+            <span>{homeMode === 'ai-create' ? t.home.aiCreating : t.home.settingUpWorkspace}</span>
           </div>
         )}
       </div>
