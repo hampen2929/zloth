@@ -999,6 +999,7 @@ The following files have merge conflicts that MUST be resolved before proceeding
 5. If the base branch removed functionality that must remain in this branch, preserve it
 6. Remove ALL conflict markers completely
 7. Ensure the resolved code is syntactically correct and functional
+8. After editing each file, run `git add <file>` to mark it as resolved
 
 ### Conflict Marker Format:
 ```
@@ -1057,10 +1058,21 @@ After resolving ALL conflicts, proceed with the original task below.
 
         await self._read_and_remove_summary_file(worktree_path, logs)
 
-        remaining_conflicts = await self.workspace_service.get_conflict_files(worktree_path)
-        if remaining_conflicts:
-            remaining = ", ".join(remaining_conflicts)
+        # Check if AI left conflict markers in any of the files
+        still_conflicted = await self.workspace_service.has_conflict_markers(
+            worktree_path, conflict_files
+        )
+        if still_conflicted:
+            remaining = ", ".join(still_conflicted)
             raise RuntimeError(f"Unresolved merge conflicts remain: {remaining}")
+
+        # Stage resolved files so git marks them as resolved in the index.
+        # The AI may edit the file content but not run `git add`, leaving the
+        # index in an unmerged state.
+        try:
+            await self.workspace_service.stage_files(worktree_path, conflict_files)
+        except Exception as e:
+            logger.warning(f"Failed to stage resolved conflict files: {e}")
 
         merge_head = worktree_path / ".git" / "MERGE_HEAD"
         if merge_head.exists():

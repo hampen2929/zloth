@@ -554,6 +554,50 @@ class WorkspaceService:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _abort)
 
+    async def stage_files(self, workspace_path: Path, files: list[str]) -> None:
+        """Stage specific files.
+
+        Args:
+            workspace_path: Path to the workspace.
+            files: List of file paths relative to the workspace root.
+        """
+
+        def _stage() -> None:
+            repo = git.Repo(workspace_path)
+            repo.git.add("--", *files)
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _stage)
+
+    async def has_conflict_markers(self, workspace_path: Path, files: list[str]) -> list[str]:
+        """Check if files still contain conflict markers in their content.
+
+        Args:
+            workspace_path: Path to the workspace.
+            files: List of file paths relative to the workspace root.
+
+        Returns:
+            List of file paths that still contain conflict markers.
+        """
+        markers = ("<<<<<<< ", "=======", ">>>>>>> ")
+
+        def _check() -> list[str]:
+            conflicted: list[str] = []
+            for f in files:
+                fpath = workspace_path / f
+                if not fpath.exists():
+                    continue
+                try:
+                    content = fpath.read_text(errors="replace")
+                    if any(m in content for m in markers):
+                        conflicted.append(f)
+                except Exception:
+                    pass
+            return conflicted
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _check)
+
     async def stage_all(self, workspace_path: Path) -> None:
         """Stage all changes.
 
