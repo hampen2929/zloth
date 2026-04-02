@@ -100,6 +100,7 @@ export function GitHubAppTab() {
 
   // When source is 'env', the config is read-only
   const isEnvConfig = config?.source === 'env';
+  const isInitialSetup = !isEnvConfig && !config?.is_configured;
 
   useEffect(() => {
     if (config && config.source !== 'env') {
@@ -115,6 +116,11 @@ export function GitHubAppTab() {
     setSaveError(null);
 
     try {
+      // Frontend guard: require Private Key on first-time setup
+      if (isInitialSetup && !privateKey.trim()) {
+        setSaveError('Private Key is required for initial configuration');
+        return;
+      }
       await githubApi.saveConfig({
         app_id: appId,
         private_key: privateKey || undefined,
@@ -240,7 +246,7 @@ export function GitHubAppTab() {
 
           <Button
             type="submit"
-            disabled={!appId}
+            disabled={!appId || (isInitialSetup && !privateKey.trim())}
             isLoading={loading}
             className="w-full"
           >
