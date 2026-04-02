@@ -35,9 +35,12 @@ def _build_run() -> Run:
 async def test_resolve_conflicts_completes_merge(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "MERGE_HEAD").write_text("merge")
+    # Create a resolved file (no conflict markers)
+    (tmp_path / "file.txt").write_text("resolved content")
 
     workspace_service = AsyncMock(spec=WorkspaceService)
-    workspace_service.get_conflict_files.return_value = []
+    workspace_service.has_conflict_markers = AsyncMock(return_value=[])
+    workspace_service.stage_files = AsyncMock()
     workspace_service.complete_merge.return_value = "abc1234"
 
     run_service = RunService(
@@ -70,6 +73,7 @@ async def test_resolve_conflicts_completes_merge(tmp_path: Path) -> None:
         logs=logs,
     )
 
+    workspace_service.stage_files.assert_awaited_once_with(tmp_path, ["file.txt"])
     workspace_service.complete_merge.assert_awaited_once()
     assert any("Completed merge after conflict resolution" in entry for entry in logs)
 
@@ -77,9 +81,11 @@ async def test_resolve_conflicts_completes_merge(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_resolve_conflicts_raises_on_remaining_conflicts(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
+    # Create a file that still has conflict markers
+    (tmp_path / "file.txt").write_text("<<<<<<< HEAD\nlocal\n=======\nremote\n>>>>>>> main\n")
 
     workspace_service = AsyncMock(spec=WorkspaceService)
-    workspace_service.get_conflict_files.return_value = ["file.txt"]
+    workspace_service.has_conflict_markers = AsyncMock(return_value=["file.txt"])
 
     run_service = RunService(
         run_dao=AsyncMock(spec=RunDAO),
