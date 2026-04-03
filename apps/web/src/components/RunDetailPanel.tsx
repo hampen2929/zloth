@@ -88,10 +88,11 @@ export function RunDetailPanel({
   const [pendingSyncRunId, setPendingSyncRunId] = useState<string | null>(null);
   const updateDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Update tab when run changes or status changes
+  // Update tab only when run changes (not when status changes, to preserve user's tab selection)
   useEffect(() => {
     setActiveTab(getDefaultTab(run.status));
-  }, [run.id, run.status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.id]);
   const { success, error } = useToast();
 
   const { data: preferences } = useSWR('preferences', preferencesApi.get);
