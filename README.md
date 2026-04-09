@@ -11,7 +11,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/hampen2929/zloth.svg)](https://github.com/hampen2929/zloth/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/hampen2929/zloth.svg)](https://github.com/hampen2929/zloth/pulls)
 
-> BYO API Key / Multi-model Parallel Execution / Conversation-driven PR Development
+> BYO API Key | Multi-model Parallel Execution | Conversation-driven PR Development
 
 **zloth** is a self-hostable cloud coding agent that lets you:
 - Use your own API keys (OpenAI, Anthropic, Google)
