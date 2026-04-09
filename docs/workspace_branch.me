@@ -1,0 +1,214 @@
+# 同一Task内のワークスペース／ブランチ一貫性（現状整理・原因・改善計画）
+
+## 背景
+
+同一のTask（= 会話単位）でAIとやりとりを継続していると、意図せず「作業しているブランチ」が変わって見える／実際に変わることがある。
+
+あるべき姿は以下。
+
+- **同一Task内では同一のワークスペースを使い続ける**
+- **同一Task内では同一の作業ブランチ（head）を使い続ける**
+- **同一Task内の base_ref（ベースブランチ／基点）も一貫して固定される**
+  - 明示的に「ベースを変える」操作をした場合のみ変わる
+
+本ドキュメントでは、コードベースの現状挙動を整理し、ブランチが変わり得る原因を特定し、あるべきを実現するための計画を示す。
+
+---
+
+## 現状の設計・実装（コードから読み取れる事実）
+
+### エンティティと永続化フィールド
+
+- `Repo`
+  - `selected_branch`: **ユーザーが選択したブランチ**（ただしRepo全体で共有され、選択のたびに上書きされ得る）
+  - `workspace_path`: Repoをクローンした“メイン”のワークスペース
+- `Task`
+  - **Task自体には base_ref/ブランチ固定のフィールドが存在しない**
+- `Run`
+  - `base_ref`: Run作成時に決まる基点ブランチ（文字列）
+  - `worktree_path`: 実際には clone workspace のパス（互換名）
+  - `working_branch`: 実作業ブランチ名（例: `zloth/abcd1234`）
+
+（参照: `apps/api/src/zloth_api/domain/models.py`, `apps/api/src/zloth_api/storage/schema.sql`）
+
+### Run作成時の base_ref 決定ロジック（重要）
+
+`RunService.create_runs()` で CLI Run を作る際、base_ref は次で決まる。
+
+- `base_ref = data.base_ref or repo.selected_branch or repo.default_branch`
+
+つまり **Task単位で固定されず、Run作成ごとに Repo の可変値（selected_branch）を再参照し得る**。
+
+（参照: `apps/api/src/zloth_api/services/run_service.py`）
+
+### ワークスペース／ブランチの再利用（同一Task継続のキー）
+
+CLI Run 作成時、以下の流れで「既存ワークスペースの再利用」を試みる。
+
+- `RunDAO.get_latest_worktree_run(task_id, executor_type)` で **同一Task×同一executor_type の直近Run** を取得
+- `RunWorkspaceManager.get_reusable_workspace(existing_run, repo, base_ref)` で再利用可否を判定
+  - invalid/壊れている場合は再利用せず新規作成
+  - `base_ref == repo.default_branch` のときだけ「defaultが進んでいたら再利用しない」判定が入る
+    - `git_service.is_ancestor(ancestor=origin/<default>, descendant=HEAD)` が False なら新規作成
+
+再利用に成功すると **同一Task内でもブランチは維持**される（新Runにも `existing_run.working_branch/worktree_path` がコピーされる）。
+
+一方、再利用に失敗すると **新しい `run_{run_id}` クローン＋新しい `zloth/<run_id[:8]>` ブランチ**が作成され、同一Task内でも“ブランチが変わった”状態になる。
+
+（参照: `apps/api/src/zloth_api/services/run_workspace_manager.py` / `apps/api/src/zloth_api/services/workspace_service.py`）
+
+### Repo.selected_branch は「Repo全体で共有」かつメインcloneに checkout が走る
+
+`RepoService.select()` は既存Repoに対して `selected_branch` を更新し、さらに `repo.workspace_path`（メインclone）で checkout を試みる。
+
+これはTask/Runとは独立に、**Repo単位の状態を動かす**ため、UI操作や別Taskの選択が同一Repoに対して発生すると、別文脈の選択が混線し得る。
+
+（参照: `apps/api/src/zloth_api/services/repo_service.py`）
+
+---
+
+## 「ブランチが意図せず変わる」起こりうる挙動（整理）
+
+### 挙動A: 同一Task内で base_ref が変わる（= ベースが揺れる）
+
+同一Taskで追加指示を出すたびに Run が新規作成されるが、そのたびに `repo.selected_branch` が再参照される。
+
+よって、例えば以下で揺れる。
+
+- 別タブ／別Taskで同じRepoのブランチを選び直した
+- UIが「現在選択中のRepoブランチ」をグローバルに持っており、Taskコンテキストと独立に変わった
+
+結果: **同一Taskのはずなのに、次のRunが別 base_ref を持つ**。
+
+### 挙動B: 同一Task内で working_branch/workspace が変わる（= “作業ブランチが変わった”）
+
+同一Task内でも、ワークスペース再利用判定が外れると新規ワークスペースが作られるため、作業ブランチも変わる。
+
+代表的な再利用失敗要因:
+
+- **ワークスペースの破損／削除**（手動削除、クリーンアップ、ディスク掃除など）
+- **base_ref が repo.default_branch のとき**、default の最新が取り込まれていないと判定された
+  - この場合、同一Taskでも「最新defaultを取り込むため」として新規ワークスペース作成に倒れる
+
+結果: **同一Taskの継続指示でも、新しい `zloth/<新run>` ブランチへ“切り替わった”ように見える**。
+
+### 挙動C: 「同一Task」でも executor_type が違うと別ワークスペースになる
+
+Runは `task_id × executor_type` で再利用されるため、同一Taskでも executor を変えると別ワークスペース／別ブランチになる（仕様）。
+
+（例: `claude_code` と `codex_cli` は別）
+
+---
+
+## 原因の特定（結論）
+
+主因は次の2点の組み合わせ。
+
+1. **Taskに base_ref（選択ブランチ）が保存されていない**
+   - `RunService.create_runs()` が `repo.selected_branch` を Run 作成ごとに参照するため、Repo側の選択変更が同一Task内のRunに波及し得る
+2. **同一Taskでもワークスペース再利用が “条件付き” で失敗しうる**
+   - 失敗時に新規clone＋新規ブランチを作るため、“ブランチが変わった”体験になる
+
+補足:
+
+- `RepoService.select()` が Repoのメインcloneで checkout を動かす点も、Repo単位の状態が他操作の影響を受けやすく、混線を助長する（ただしRunの作業cloneとは別なので、直接の原因は「base_refの決め方」と「再利用の失敗」）。
+
+---
+
+## あるべき仕様（不変条件）
+
+### 不変条件（強制する）
+
+- **Task単位で base_ref を固定**する
+  - Task作成時に決め、以後は「明示的に変更」するまで変えない
+- **Task×executor_type 単位で workspace と working_branch を固定**する
+  - 追加指示（メッセージ）でRunが増えても、同じワークスペース（パス）と同じ作業ブランチ名を再利用する
+- “最新defaultを取り込む”は **ブランチを変えずに同期/マージで行う**
+  - 「ブランチが変わる（新規runブランチに移る）」ことを手段にしない
+
+### 例外（許容する）
+
+- ユーザーが明示的に「ベースブランチを変更」した場合
+- ユーザーが明示的に「ワークスペースをリセット（作業ブランチ作り直し）」した場合
+- 物理的にワークスペースが壊れている場合（復旧不能）
+
+---
+
+## 実現計画（提案）
+
+### 1) Taskに base_ref を永続化する（最優先）
+
+- **DB**: `tasks` に `base_ref`（または `selected_branch`）カラム追加
+  - 例: `task_base_ref TEXT`（名称は要検討）
+- **Backend**:
+  - Task作成時に `repo.selected_branch or repo.default_branch` を task.base_ref として保存
+  - Run作成時は `data.base_ref` が無ければ **task.base_ref を必ず使う**
+    - フォールバックとして `latest_run.base_ref`（同一Task×executor_type の直近）を使う案も有効
+- **Frontend**:
+  - Task作成画面のブランチ選択を「Taskに固定される値」として扱う
+  - 追加指示時の `RunCreate.base_ref` は **task.base_ref を送る**（サーバ側で固定しても良いが、二重で守る）
+
+期待効果:
+
+- `Repo.selected_branch` が別操作で更新されても、**同一Task内の base_ref が揺れない**
+
+### 2) 「ワークスペース再利用の失敗条件」を見直し、ブランチが変わらないようにする
+
+現状は `base_ref == default_branch` のとき「defaultが進んでいたら再利用しない」→ 新規clone を作りがち。
+
+方針案:
+
+- **原則**: 同一Task×executor_type で一度作ったワークスペースは再利用する
+- default更新の取り込みは、新規clone作成ではなく以下で行う
+  - `sync_with_remote()`（PR branch のリモート更新取り込み）
+  - `merge_base_branch()`（base branch の更新を current branch にマージ）
+- どうしても新規作成が必要なのは、`is_valid` が false の場合など「破損」時に限定する
+
+期待効果:
+
+- 同一Taskの追加指示で **working_branch/workspace が不意に切り替わらない**
+
+### 3) 「Task×executor_type の固定ワークスペース」を明示的に管理する
+
+現状は「直近Runのworktree_path/working_branch」を再利用しているため、条件次第で揺れる。
+
+改善案:
+
+- `task_workspaces` のような新テーブルを導入し、
+  - `task_id`, `executor_type`, `workspace_path`, `working_branch`, `base_ref`, `created_at` を保持
+  - Run は参照（外部キー）するだけにする
+- あるいは、互換性重視なら `runs` の中で「固定Run（workspace owner）」概念を導入する
+
+期待効果:
+
+- 「Taskの作業場所」がRunの副産物ではなく、**Taskの一次情報になる**
+
+### 4) 明示的な操作として「ベース変更」「作業ブランチ作り直し」を提供する
+
+UI/APIに以下を追加して、暗黙の切り替えをなくす。
+
+- **ベース変更**: Taskの base_ref を更新（必要なら base をマージするか、作業ブランチを作り直すかを選べる）
+- **リセット**: 現在の task_workspaces を破棄し、新しいブランチで再開
+
+### 5) 監視性（ログ・表示）を上げ、混線を検知しやすくする
+
+- Run作成時に必ず以下をログ/レスポンスに含める
+  - `task.base_ref`, `run.base_ref`, `workspace_path`, `working_branch`, `executor_type`
+- UIに「Task固定ブランチ（base_ref）」「作業ブランチ（working_branch）」を分けて表示する
+
+### 6) テスト／検証観点
+
+- **ユニットテスト**: `base_ref` 解決優先順位
+  - `data.base_ref` > `task.base_ref` > `latest_run.base_ref` > `repo.default_branch`
+- **統合テスト**: 同一Taskに追加指示を複数回送っても、`working_branch` が変わらない
+- **回帰テスト**: 破損時のみ新規workspaceが作られる
+- **並行性**: 同一Taskで同時にRun作成が走った場合も workspace が二重作成されない（ロック/一意制約で担保）
+
+---
+
+## まとめ
+
+現状の「ブランチが意図せず変わる」問題は、**Taskにブランチ（base_ref）が固定されていない**ことと、**ワークスペース再利用が条件付きで外れて新規ブランチが作られる**ことが主因。
+
+解決の軸は「Taskに base_ref を固定して永続化」「同一Task×executor_type のワークスペース／作業ブランチを固定管理」「更新取り込みは同期/マージで行いブランチを変えない」の3点。
+
