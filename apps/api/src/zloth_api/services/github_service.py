@@ -79,8 +79,10 @@ class GitHubService:
         Note: installation_id is optional. If not provided, the service will
         auto-discover installations from the GitHub App.
         """
-        # Check if config exists
-        existing = await self.db.fetch_one("SELECT id FROM github_app_config WHERE id = 1")
+        # Check if config exists (include private_key to determine has_private_key later)
+        existing = await self.db.fetch_one(
+            "SELECT id, private_key FROM github_app_config WHERE id = 1"
+        )
 
         if data.private_key:
             # Encode private key to base64 for storage
@@ -126,9 +128,21 @@ class GitHubService:
         # Clear installations cache
         self._installations_cache = None
 
+        # Determine if private key exists:
+        # - If a new private_key was provided in this request, it's now saved
+        # - If not provided but existing record has one, it's still in DB
+        has_private_key = bool(data.private_key) or (
+            existing is not None and bool(existing["private_key"])
+        )
+
         return GitHubAppConfig(
             app_id=data.app_id,
+            app_id_masked=self._mask_value(data.app_id),
             installation_id=data.installation_id,
+            installation_id_masked=self._mask_value(data.installation_id)
+            if data.installation_id
+            else None,
+            has_private_key=has_private_key,
             is_configured=True,
             source="db",
         )
