@@ -15,6 +15,7 @@ Welcome to the zloth documentation. This guide will help you understand, develop
 - [Development Guide](./development.md) - Environment setup and development workflow
 - [Agent System](./agents.md) - Agent architecture and LLM integration
 - [Development Metrics](./dev-metrics.md) - Metrics for measuring development productivity
+- [Sumika-Inspired Design](./sumika_inspired_design.md) - Goal駆動の上位構造とプロセスゲートをzlothに取り込む拡張設計
 
 ### For Contributors
 
